@@ -91,6 +91,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	var activeMenu ui.Menu
 	providerMenu := ui.NewProviderMenu(cfg)
+	settingsMenu := ui.NewSettingsMenu(cfg)
 	pttMenu := ui.NewSetupMenu(cfg)
 	setActiveMenu := func(menu ui.Menu) {
 		activeMenu = menu
@@ -226,6 +227,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				} else {
 					setActiveMenu(pttMenu)
 				}
+			case sdl.K_F3:
+				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+					setActiveMenu(nil)
+				} else {
+					setActiveMenu(settingsMenu)
+				}
 			}
 			return true
 		case *sdl.ControllerButtonEvent:
@@ -266,6 +273,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				setActiveMenu(providerMenu)
 			case sdl.CONTROLLER_BUTTON_X:
 				setActiveMenu(pttMenu)
+			case sdl.CONTROLLER_BUTTON_LEFTSHOULDER, sdl.CONTROLLER_BUTTON_RIGHTSHOULDER:
+				setActiveMenu(settingsMenu)
 			}
 			return true
 		}

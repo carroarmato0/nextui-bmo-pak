@@ -59,7 +59,7 @@ func TestSetupMenuToggleAndSave(t *testing.T) {
 func TestSettingsMenuUsesSamePTTChoices(t *testing.T) {
 	cfg := config.Default()
 	cfg.PTTButtons = []string{"BTN_THUMBL"}
-	menu := NewSettingsMenu(cfg)
+	menu := NewPTTMenu(cfg)
 	overlay := menu.Overlay()
 
 	if overlay.Title != "SETTINGS" {

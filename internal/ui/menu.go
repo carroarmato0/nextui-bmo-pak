@@ -42,7 +42,7 @@ func NewSetupMenu(cfg config.Config) *PTTMenu {
 	return &PTTMenu{title: "SETUP", cfg: cfg}
 }
 
-func NewSettingsMenu(cfg config.Config) *PTTMenu {
+func NewPTTMenu(cfg config.Config) *PTTMenu {
 	cfg.Normalize()
 	return &PTTMenu{title: "SETTINGS", cfg: cfg}
 }
