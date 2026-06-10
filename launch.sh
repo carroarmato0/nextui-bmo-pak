@@ -22,5 +22,9 @@ export BMO_DATA_ROOT="$BMO_DATA_ROOT"
 export HOME="$BMO_DATA_ROOT/BMO"
 export PATH="$PAK_DIR:$PATH"
 mkdir -p "$HOME" "$BMO_DATA_ROOT/logs"
+# The device has no system CA certificate store; point Go's TLS stack at the
+# bundled cert file so HTTPS calls to OpenAI and other providers work.
+export SSL_CERT_FILE="$PAK_DIR/assets/ca-certificates.crt"
+
 cd "$PAK_DIR"
 exec "$PAK_DIR/bin/$PLATFORM/bmo-pak" "$@"

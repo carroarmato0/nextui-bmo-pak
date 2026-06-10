@@ -274,6 +274,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	scheduler := assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
+	var errorSince time.Time // tracks when error state was entered for auto-recovery
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -308,6 +309,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 		switch snap.Current {
 		case assistant.StateIdle:
+			errorSince = time.Time{}
 			if now.After(nextIdleUpdate) {
 				step := scheduler.Next(now.Sub(snap.LastInteraction))
 				currentIdleExpression = step.Expression
@@ -315,16 +317,29 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 			expr = string(currentIdleExpression)
 		case assistant.StateListening:
+			errorSince = time.Time{}
 			expr = string(assistant.ExpressionListening)
 		case assistant.StateThinking:
+			errorSince = time.Time{}
 			expr = string(assistant.ExpressionThinking)
 		case assistant.StateSpeaking:
+			errorSince = time.Time{}
 			expr = string(assistant.ExpressionSpeaking)
 		case assistant.StateSleeping:
+			errorSince = time.Time{}
 			expr = string(assistant.ExpressionSleeping)
 		case assistant.StateError:
 			expr = string(assistant.ExpressionConcerned)
+			if errorSince.IsZero() {
+				errorSince = now
+				logger.Warnf("entered error state; will auto-recover in 5s")
+			} else if now.Sub(errorSince) >= 5*time.Second {
+				machine.Transition(assistant.EventRecover)
+				errorSince = time.Time{}
+				logger.Infof("auto-recovered from error state")
+			}
 		default:
+			errorSince = time.Time{}
 			if expr == "" {
 				expr = string(assistant.ExpressionNeutral)
 			}
