@@ -67,10 +67,6 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 		for ev := range watcher.Events() {
 			if ev.Held {
 				snap := machine.Snapshot()
-				if snap.SleepReason == assistant.SleepReasonQuotaExhausted {
-					logger.Debugf("PTT press ignored because quota is exhausted")
-					continue
-				}
 				if snap.Current == assistant.StateSleeping || snap.Current == assistant.StateError {
 					machine.Transition(assistant.EventWake)
 				}

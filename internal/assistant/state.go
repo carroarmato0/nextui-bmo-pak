@@ -226,6 +226,7 @@ func applyTransitionEffects(m *Machine, current State, next State, event Event) 
 	case EventWake:
 		m.expression = ExpressionNeutral
 		m.sleepReason = SleepReasonNone
+		m.quota.Exhausted = false // user is explicitly retrying; let the pipeline decide
 	case EventQuotaExhausted:
 		m.expression = ExpressionSleeping
 		m.sleepReason = SleepReasonQuotaExhausted
