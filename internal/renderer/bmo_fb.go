@@ -227,56 +227,61 @@ func (r *Renderer) present() error {
 	return err
 }
 
-type expressionStyle struct {
-	EyeOpen     float64
-	EyeSquint   float64
-	Mouth       mouthKind
-	BrowTilt    float64
-	PupilShiftX float64
-	PupilShiftY float64
-	PupilScale  float64
-	Sleepy      bool
-	Talky       bool
-	Laughing    bool
-	Whistling   bool
-	Frown       bool
-}
-
-type mouthKind int
+type bmoEyeType uint8
 
 const (
-	mouthNeutral mouthKind = iota
-	mouthSmile
-	mouthFrown
-	mouthOpen
-	mouthWhistle
-	mouthLine
+	bmoEyeDot       bmoEyeType = iota // dot: idle, concerned, thinking
+	bmoEyePill                         // narrow vertical pill: excited, speaking
+	bmoEyePillLarge                    // wider pill + shine: listening
+	bmoEyeArc                          // upward ∩ arc: happy/squint
+	bmoEyeFlat                         // horizontal line: sleeping
 )
+
+type bmoMouthType uint8
+
+const (
+	bmoMouthIdleSmile  bmoMouthType = iota // gentle upward curve
+	bmoMouthFrown                          // gentle downward curve
+	bmoMouthOpenLarge                      // full open with teeth + tongue
+	bmoMouthOpenSpeak                      // smaller open, animated for TTS
+	bmoMouthOpenSmall                      // tiny 'o': listening
+)
+
+type bmoBrowType uint8
+
+const (
+	bmoBrowNone        bmoBrowType = iota
+	bmoBrowWorried                          // inner corners lower
+	bmoBrowRaisedRight                      // one raised brow: thinking
+)
+
+type expressionStyle struct {
+	Eye        bmoEyeType
+	Mouth      bmoMouthType
+	Brow       bmoBrowType
+	Animated   bool // speaking mouth oscillation
+	Sleepy     bool // ZZZ marks
+	RightEyeUp bool // thinking: right eye slightly higher
+}
 
 func styleForExpression(expr string) expressionStyle {
 	switch normalizeExpression(expr) {
-	case "blink":
-		return expressionStyle{EyeOpen: 0.06, Mouth: mouthNeutral}
 	case "listening":
-		return expressionStyle{EyeOpen: 1.0, Mouth: mouthLine, PupilScale: 1.0}
+		return expressionStyle{Eye: bmoEyePillLarge, Mouth: bmoMouthOpenSmall}
 	case "thinking":
-		return expressionStyle{EyeOpen: 0.85, Mouth: mouthLine, BrowTilt: -0.6, PupilScale: 0.9}
+		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthIdleSmile, Brow: bmoBrowRaisedRight, RightEyeUp: true}
 	case "speaking":
-		return expressionStyle{EyeOpen: 0.95, Mouth: mouthOpen, Talky: true, PupilScale: 1.0}
+		return expressionStyle{Eye: bmoEyePill, Mouth: bmoMouthOpenSpeak, Animated: true}
 	case "sleeping":
-		return expressionStyle{EyeOpen: 0.02, Mouth: mouthSmile, Sleepy: true}
+		return expressionStyle{Eye: bmoEyeFlat, Mouth: bmoMouthIdleSmile, Sleepy: true}
 	case "concerned":
-		return expressionStyle{EyeOpen: 0.82, Mouth: mouthFrown, BrowTilt: 0.8, Frown: true}
-	case "smile":
-		return expressionStyle{EyeOpen: 1.0, Mouth: mouthSmile, PupilScale: 1.0}
-	case "laugh":
-		return expressionStyle{EyeOpen: 0.45, EyeSquint: 0.55, Mouth: mouthOpen, Laughing: true}
-	case "whistle":
-		return expressionStyle{EyeOpen: 0.55, Mouth: mouthWhistle, Whistling: true, PupilScale: 0.75}
-	case "look_around":
-		return expressionStyle{EyeOpen: 1.0, Mouth: mouthNeutral, PupilScale: 1.0}
-	default:
-		return expressionStyle{EyeOpen: 1.0, Mouth: mouthNeutral, PupilScale: 1.0}
+		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthFrown, Brow: bmoBrowWorried}
+	case "smile", "laugh", "excited":
+		return expressionStyle{Eye: bmoEyeArc, Mouth: bmoMouthOpenLarge}
+	case "blink":
+		return expressionStyle{Eye: bmoEyeFlat, Mouth: bmoMouthIdleSmile}
+	default: // neutral, idle
+		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthIdleSmile}
 	}
 }
 
@@ -299,13 +304,12 @@ func normalizeExpression(expr string) string {
 
 func (r *Renderer) drawBackdrop(layout Layout, phase float64) {
 	w, h := layout.W, layout.H
-	// A subtle vignette and highlight wash to keep the screen lively.
-	r.fillRectColor(0, 0, w, h, rgba{22, 108, 121, 255})
+	r.fillRectColor(0, 0, w, h, rgba{0x4e, 0xcb, 0xa8, 255}) // body teal #4ECBA8
 	for i := int32(0); i < 3; i++ {
 		sx := w/5 + i*w/4
 		sy := h/5 + int32(math.Sin(phase*0.7+float64(i))*float64(h)/16)
 		sz := clampInt32(w/18, 18, 44)
-		r.fillCircle(txClamp(sx, sz, w), txClamp(sy, sz, h), sz/2, rgba{255, 255, 255, 10})
+		r.fillCircle(txClamp(sx, sz, w), txClamp(sy, sz, h), sz/2, rgba{255, 255, 255, 8})
 	}
 }
 
@@ -313,89 +317,155 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 	outer := rectInset(layout.W, layout.H, layout.Margin)
 	inner := rectInset(layout.W, layout.H, layout.Margin+layout.ScreenInset)
 
-	r.fillRoundedRect(outer.X, outer.Y, outer.W, outer.H, layout.CornerRadius, rgba{18, 88, 97, 255})
-	r.fillRoundedRect(inner.X, inner.Y, inner.W, inner.H, layout.CornerRadius-layout.ScreenInset/2, rgba{23, 128, 132, 255})
-	r.fillRoundedRect(inner.X+layout.GlowInset, inner.Y+layout.GlowInset, inner.W-2*layout.GlowInset, inner.H-2*layout.GlowInset, layout.CornerRadius/2, rgba{46, 170, 170, 34})
+	// Body (bright teal) and screen background (pale mint).
+	r.fillRoundedRect(outer.X, outer.Y, outer.W, outer.H, layout.CornerRadius,
+		rgba{0x4e, 0xcb, 0xa8, 255}) // #4ECBA8
+	r.fillRoundedRect(inner.X, inner.Y, inner.W, inner.H,
+		layout.CornerRadius-layout.ScreenInset/2,
+		rgba{0x90, 0xe5, 0xc8, 255}) // #90e5c8
 
-	centerX := layout.W / 2
-	leftEyeX := centerX - layout.EyeGap/2 - layout.EyeW
-	rightEyeX := centerX + layout.EyeGap/2
-	eyeY := layout.EyeY
-	pupilXShift := int32(math.Round(style.PupilShiftX * float64(layout.EyeW/4)))
-	pupilYShift := int32(math.Round(style.PupilShiftY * float64(layout.EyeH/6)))
+	iw := float64(inner.W)
+	ih := float64(inner.H)
+	ix := inner.X
+	iy := inner.Y
 
-	browColor := rgba{16, 57, 68, 255}
-	browLift := int32(math.Round(style.BrowTilt * float64(layout.EyeH) / 8))
-	r.drawLine(leftEyeX, eyeY-layout.EyeH/2-layout.BrowH, leftEyeX+layout.EyeW, eyeY-layout.EyeH/2-layout.BrowH-browLift, browColor)
-	r.drawLine(rightEyeX, eyeY-layout.EyeH/2-layout.BrowH-browLift, rightEyeX+layout.EyeW, eyeY-layout.EyeH/2-layout.BrowH, browColor)
+	// Canonical eye positions (bmo-face skill): left=20.3%, right=79.2%, cy=37.4%
+	lx := ix + int32(iw*0.203)
+	rx := ix + int32(iw*0.792)
+	ey := iy + int32(ih*0.374)
 
-	eyeColor := rgba{13, 48, 62, 255}
-	eyeOpen := style.EyeOpen
-	if frame.ReducedMotion {
-		eyeOpen = minFloat(eyeOpen, 0.9)
-	}
-	if eyeOpen < 0.12 {
-		r.drawEyeClosed(leftEyeX, eyeY, layout.EyeW, layout.EyeH, eyeColor)
-		r.drawEyeClosed(rightEyeX, eyeY, layout.EyeW, layout.EyeH, eyeColor)
-	} else {
-		r.drawEye(leftEyeX, eyeY, layout.EyeW, layout.EyeH, eyeOpen, eyeColor)
-		r.drawEye(rightEyeX, eyeY, layout.EyeW, layout.EyeH, eyeOpen, eyeColor)
+	dark := rgba{0x1a, 0x1a, 0x1a, 255}
+
+	// Eyes
+	switch style.Eye {
+	case bmoEyeDot:
+		dotR := max32(4, int32(iw*0.032))
+		r.fillCircle(lx, ey, dotR, dark)
+		if style.RightEyeUp {
+			r.fillCircle(rx, iy+int32(ih*0.348), dotR, dark)
+		} else {
+			r.fillCircle(rx, ey, dotR, dark)
+		}
+
+	case bmoEyePill:
+		pw := max32(5, int32(iw*0.035))
+		ph := max32(14, int32(ih*0.129))
+		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
+		r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
+
+	case bmoEyePillLarge:
+		pw := max32(8, int32(iw*0.059))
+		ph := max32(18, int32(ih*0.181))
+		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
+		r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
+		shR := max32(2, int32(iw*0.015))
+		r.fillCircle(lx-pw/4, ey-ph/4, shR, rgba{255, 255, 255, 140})
+		r.fillCircle(rx-pw/4, ey-ph/4, shR, rgba{255, 255, 255, 140})
+
+	case bmoEyeArc:
+		// ∩ upward arc: endpoints y=41.9%, control y=32.3%, half-width=18.8%
+		ahw := int32(iw * 0.188)
+		aey := iy + int32(ih*0.419)
+		aqy := iy + int32(ih*0.323)
+		thk := max32(3, int32(iw*0.025))
+		lArc := quadBezierPoints(point{lx - ahw, aey}, point{lx, aqy}, point{lx + ahw, aey}, 14)
+		rArc := quadBezierPoints(point{rx - ahw, aey}, point{rx, aqy}, point{rx + ahw, aey}, 14)
+		r.drawBezierThick(lArc, thk, dark)
+		r.drawBezierThick(rArc, thk, dark)
+
+	case bmoEyeFlat:
+		fhw := max32(10, int32(iw*0.074))
+		fh := max32(3, int32(ih*0.032))
+		r.fillRectColor(lx-fhw, ey-fh/2, fhw*2, fh, dark)
+		r.fillRectColor(rx-fhw, ey-fh/2, fhw*2, fh, dark)
 	}
 
-	expr := normalizeExpression(frame.Expression)
-	lookPhase := phase
-	if style.PupilShiftX == 0 && style.Mouth == mouthNeutral && !style.Talky && !style.Laughing && !style.Whistling {
-		lookPhase *= 0.35
+	// Brows
+	browR := max32(2, int32(ih*0.016))
+	switch style.Brow {
+	case bmoBrowWorried:
+		lox := ix + int32(iw*0.109)
+		lix := ix + int32(iw*0.287)
+		rix := ix + int32(iw*0.713)
+		rox := ix + int32(iw*0.891)
+		byOuter := iy + int32(ih*0.226)
+		byInner := iy + int32(ih*0.323)
+		r.drawThickLine(lox, byOuter, lix, byInner, browR, dark)
+		r.drawThickLine(rix, byInner, rox, byOuter, browR, dark)
+	case bmoBrowRaisedRight:
+		rix := ix + int32(iw*0.713)
+		rox := ix + int32(iw*0.891)
+		byRaised := iy + int32(ih*0.194)
+		byBase := iy + int32(ih*0.258)
+		r.drawThickLine(rix, byBase, rox, byRaised, browR, dark)
 	}
-	pupilShiftX, pupilShiftY := pupilXShift, pupilYShift
-	if expr == "look_around" {
-		pupilShiftX = int32(math.Round(math.Sin(lookPhase*0.9) * float64(layout.EyeW) / 8))
-		pupilShiftY = int32(math.Round(math.Sin(lookPhase*1.2+1.1) * float64(layout.EyeH) / 12))
-	}
-	pupilW := int32(math.Round(float64(layout.PupilW) * style.PupilScale))
-	pupilH := int32(math.Round(float64(layout.PupilH) * style.PupilScale))
-	if pupilW < 8 {
-		pupilW = 8
-	}
-	if pupilH < 8 {
-		pupilH = 8
-	}
-	pupilColor := rgba{3, 17, 28, 255}
-	r.drawPupil(leftEyeX+layout.EyeW/2-pupilW/2+pupilShiftX, eyeY-layout.EyeH/2+pupilH/2+pupilShiftY, pupilW, pupilH, pupilColor)
-	r.drawPupil(rightEyeX+layout.EyeW/2-pupilW/2-pupilShiftX, eyeY-layout.EyeH/2+pupilH/2-pupilShiftY, pupilW, pupilH, pupilColor)
-	r.drawPupil(leftEyeX+layout.EyeW/2-pupilW/3+pupilShiftX/2, eyeY-layout.EyeH/2+pupilH/3+pupilShiftY/2, pupilW/5, pupilH/5, rgba{255, 255, 255, 80})
-	r.drawPupil(rightEyeX+layout.EyeW/2-pupilW/3-pupilShiftX/2, eyeY-layout.EyeH/2+pupilH/3-pupilShiftY/2, pupilW/5, pupilH/5, rgba{255, 255, 255, 80})
 
-	mouthY := layout.MouthY
-	mouthColor := rgba{10, 40, 54, 255}
-	if style.Laughing {
-		mouthY += int32(math.Sin(phase*3.0) * 2)
-	}
+	// Mouth
+	cx := ix + inner.W/2
+	slx := ix + int32(iw*0.381)
+	srx := ix + int32(iw*0.600)
+	sey := iy + int32(ih*0.587)
+	sqy := iy + int32(ih*0.665)
+	fqy := iy + int32(ih*0.510)
+	mouthSW := max32(3, int32(ih*0.026))
+	mx := ix + int32(iw*0.292)
+	mw := int32(iw * 0.416)
+	mty := iy + int32(ih*0.523)
+	mh := int32(ih * 0.277)
+	mr := int32(float64(mh) * 0.48)
+	tth := int32(float64(mh) * 0.28)
+	teeth := rgba{0xe4, 0xe4, 0xe4, 255}
+	interior := rgba{0x1a, 0x78, 0x48, 255}
+	tongue := rgba{0x16, 0xae, 0x81, 255}
+	trx := int32(float64(mw/2) * 0.69)
+	try := int32(float64(mh) * 0.16)
+	tcy := mty + tth + int32(float64(mh-tth)*0.67)
+
 	switch style.Mouth {
-	case mouthNeutral:
-		r.drawMouthLine(centerX, mouthY, layout.MouthLineW, mouthColor)
-	case mouthSmile:
-		r.drawMouthSmile(centerX, mouthY, layout.MouthW, layout.MouthH, mouthColor)
-	case mouthFrown:
-		r.drawMouthFrown(centerX, mouthY, layout.MouthW, layout.MouthH, mouthColor)
-	case mouthOpen:
-		openH := layout.MouthOpenH
-		if style.Talky {
-			openH = int32(float64(layout.MouthOpenH) * (0.45 + 0.25*math.Sin(phase*8.0)))
+	case bmoMouthIdleSmile:
+		smilePts := quadBezierPoints(point{slx, sey}, point{cx, sqy}, point{srx, sey}, 14)
+		r.drawBezierThick(smilePts, mouthSW, dark)
+
+	case bmoMouthFrown:
+		frownPts := quadBezierPoints(point{slx, sey}, point{cx, fqy}, point{srx, sey}, 14)
+		r.drawBezierThick(frownPts, mouthSW, dark)
+
+	case bmoMouthOpenLarge:
+		r.fillRoundedRect(mx, mty, mw, mh, mr, dark)
+		r.fillRectColor(mx+mr/2, mty+3, mw-mr, tth-3, teeth)
+		r.fillRoundedRect(mx+3, mty+tth, mw-6, mh-tth-3, mr-2, interior)
+		r.fillEllipse(cx-trx, tcy-try, trx*2, try*2, tongue)
+
+	case bmoMouthOpenSpeak:
+		smx := ix + int32(iw*0.341)
+		smw := int32(iw * 0.318)
+		smty := iy + int32(ih*0.548)
+		smhBase := int32(ih * 0.213)
+		smh := smhBase
+		if style.Animated {
+			smh = int32(float64(smhBase) * (0.50 + 0.30*math.Sin(phase*8.0)))
+			if smh < smhBase/4 {
+				smh = smhBase / 4
+			}
 		}
-		if style.Laughing {
-			openH = int32(float64(layout.MouthOpenH) * 1.1)
-		}
-		r.drawMouthOpen(centerX, mouthY, layout.MouthW, openH, mouthColor)
-	case mouthWhistle:
-		r.drawMouthWhistle(centerX, mouthY, layout.MouthW/4, mouthColor)
-	case mouthLine:
-		r.drawMouthLine(centerX, mouthY, layout.MouthLineW, mouthColor)
+		smr := int32(float64(smh) * 0.48)
+		stth := int32(float64(smh) * 0.28)
+		stcy := smty + stth + int32(float64(smh-stth)*0.67)
+		strx := int32(float64(smw/2) * 0.69)
+		stry := int32(float64(smh) * 0.16)
+		r.fillRoundedRect(smx, smty, smw, smh, smr, dark)
+		r.fillRectColor(smx+smr/2, smty+3, smw-smr, stth-3, teeth)
+		r.fillRoundedRect(smx+3, smty+stth, smw-6, smh-stth-3, smr-2, interior)
+		r.fillEllipse(cx-strx, stcy-stry, strx*2, stry*2, tongue)
+
+	case bmoMouthOpenSmall:
+		soRX := max32(8, int32(iw*0.074))
+		soRY := max32(5, int32(ih*0.065))
+		soCy := iy + int32(ih*0.665)
+		r.fillEllipse(cx-soRX, soCy-soRY, soRX*2, soRY*2, dark)
+		r.fillEllipse(cx-soRX*3/4, soCy-soRY*3/4, soRX*3/2, soRY*3/2, interior)
 	}
-	if style.Talky || expr == "neutral" {
-		bob := int32(math.Sin(phase*1.3) * 2)
-		r.drawMouthLine(centerX, mouthY+bob, layout.MouthLineW, rgba{7, 34, 46, 120})
-	}
+
 	if style.Sleepy {
 		r.drawSleepMarks(layout, phase)
 	}
@@ -570,52 +640,6 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	}
 }
 
-func (r *Renderer) drawEye(x, y, w, h int32, open float64, c rgba) {
-	visibleH := int32(math.Round(float64(h) * open))
-	if visibleH < 4 {
-		visibleH = 4
-	}
-	cy := y - h/2 + visibleH/2
-	r.fillRoundedRect(x, cy-visibleH/2, w, visibleH, visibleH/2, c)
-}
-
-func (r *Renderer) drawEyeClosed(x, y, w, h int32, c rgba) {
-	cy := y - h/2 + h/2
-	r.drawLine(x+8, cy, x+w-8, cy, c)
-	r.drawLine(x+10, cy+1, x+w-10, cy+1, rgba{c.R, c.G, c.B, 150})
-}
-
-func (r *Renderer) drawPupil(x, y, w, h int32, c rgba) {
-	r.fillEllipse(x, y, w, h, c)
-}
-
-func (r *Renderer) drawMouthLine(cx, cy, halfW int32, c rgba) {
-	r.drawLine(cx-halfW, cy, cx+halfW, cy, c)
-	r.drawLine(cx-halfW+1, cy+1, cx+halfW-1, cy+1, rgba{c.R, c.G, c.B, 120})
-}
-
-func (r *Renderer) drawMouthWhistle(cx, cy, radius int32, c rgba) {
-	r.fillEllipse(cx-radius, cy-radius, radius*2, radius*2, c)
-	r.fillEllipse(cx-radius/2, cy-radius/2, radius, radius, rgba{214, 235, 227, 80})
-}
-
-func (r *Renderer) drawMouthOpen(cx, cy, w, h int32, c rgba) {
-	r.fillEllipse(cx-w/2, cy-h/2, w, h, c)
-	r.fillEllipse(cx-w/4, cy-h/5, w/2, h/3, rgba{46, 25, 34, 160})
-}
-
-func (r *Renderer) drawMouthSmile(cx, cy, w, h int32, c rgba) {
-	points := arcPoints(cx, cy, float64(w)/2.0, float64(h)/2.0, math.Pi, 2*math.Pi, 18)
-	r.drawPolyline(points, c)
-	r.drawPolyline(offsetPoints(points, 0, 1), rgba{c.R, c.G, c.B, 120})
-}
-
-func (r *Renderer) drawMouthFrown(cx, cy, w, h int32, c rgba) {
-	points := arcPoints(cx, cy+int32(float64(h)*0.2), float64(w)/2.0, float64(h)/2.5, 0, math.Pi, 18)
-	r.drawPolyline(points, c)
-	r.drawPolyline(offsetPoints(points, 0, 1), rgba{c.R, c.G, c.B, 120})
-}
-
 func (r *Renderer) drawLine(x1, y1, x2, y2 int32, c rgba) {
 	dx := absInt32(x2 - x1)
 	sy := int32(-1)
@@ -788,6 +812,50 @@ func offsetPoints(points []point, dx, dy int32) []point {
 		out[i] = point{X: p.X + dx, Y: p.Y + dy}
 	}
 	return out
+}
+
+// quadBezierPoints samples a quadratic Bezier curve into discrete points.
+func quadBezierPoints(p0, p1, p2 point, segments int) []point {
+	if segments < 2 {
+		segments = 2
+	}
+	pts := make([]point, 0, segments+1)
+	for i := 0; i <= segments; i++ {
+		t := float64(i) / float64(segments)
+		u := 1 - t
+		x := u*u*float64(p0.X) + 2*u*t*float64(p1.X) + t*t*float64(p2.X)
+		y := u*u*float64(p0.Y) + 2*u*t*float64(p1.Y) + t*t*float64(p2.Y)
+		pts = append(pts, point{X: int32(math.Round(x)), Y: int32(math.Round(y))})
+	}
+	return pts
+}
+
+// drawBezierThick draws a thick curve by stamping a filled circle at each sample point.
+func (r *Renderer) drawBezierThick(pts []point, radius int32, c rgba) {
+	if radius < 1 {
+		radius = 1
+	}
+	for _, pt := range pts {
+		r.fillCircle(pt.X, pt.Y, radius, c)
+	}
+}
+
+// drawThickLine draws a thick line between two points using filled circles.
+func (r *Renderer) drawThickLine(x1, y1, x2, y2, radius int32, c rgba) {
+	pts := quadBezierPoints(
+		point{x1, y1},
+		point{(x1 + x2) / 2, (y1 + y2) / 2},
+		point{x2, y2},
+		12,
+	)
+	r.drawBezierThick(pts, radius, c)
+}
+
+func max32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func rectInset(w, h, inset int32) rect {

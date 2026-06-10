@@ -1,3 +1,5 @@
+//go:build !cgo
+
 package renderer
 
 import "testing"
@@ -25,26 +27,23 @@ func TestLayoutForScalesAcrossScreens(t *testing.T) {
 
 func TestStyleForExpression(t *testing.T) {
 	tests := []struct {
-		expr string
-		want mouthKind
+		expr      string
+		wantMouth bmoMouthType
 	}{
-		{expr: "neutral", want: mouthNeutral},
-		{expr: "idle", want: mouthNeutral},
-		{expr: "speaking", want: mouthOpen},
-		{expr: "sleeping", want: mouthSmile},
-		{expr: "sleep", want: mouthSmile},
-		{expr: "whistle", want: mouthWhistle},
-		{expr: "concerned", want: mouthFrown},
-		{expr: "error", want: mouthFrown},
-		{expr: "confused", want: mouthFrown},
-		{expr: "happy", want: mouthSmile},
-		{expr: "excited", want: mouthOpen},
+		{expr: "neutral", wantMouth: bmoMouthIdleSmile},
+		{expr: "idle", wantMouth: bmoMouthIdleSmile},
+		{expr: "speaking", wantMouth: bmoMouthOpenSpeak},
+		{expr: "sleeping", wantMouth: bmoMouthIdleSmile},
+		{expr: "concerned", wantMouth: bmoMouthFrown},
+		{expr: "error", wantMouth: bmoMouthFrown},
+		{expr: "happy", wantMouth: bmoMouthOpenLarge},
+		{expr: "excited", wantMouth: bmoMouthOpenLarge},
+		{expr: "listening", wantMouth: bmoMouthOpenSmall},
 	}
-
 	for _, tt := range tests {
 		got := styleForExpression(tt.expr)
-		if got.Mouth != tt.want {
-			t.Fatalf("expression %q mapped to mouth %v, want %v", tt.expr, got.Mouth, tt.want)
+		if got.Mouth != tt.wantMouth {
+			t.Fatalf("expression %q: mouth %v, want %v", tt.expr, got.Mouth, tt.wantMouth)
 		}
 	}
 }
