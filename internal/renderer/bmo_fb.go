@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -147,19 +147,20 @@ func NewFullscreen(title string) (*Renderer, error) {
 		return nil, fmt.Errorf("open framebuffer %s: %w", path, err)
 	}
 
-	w, h := fbSize(1280, 720)
-	if fw, fh, err := fbVirtualSize(); err == nil && fw > 0 && fh > 0 {
-		w, h = fw, fh
-	}
-	format, err := fbPixelFormat(path)
+	info, err := fbScreenInfo(f)
 	if err != nil {
 		_ = f.Close()
-		return nil, err
+		return nil, fmt.Errorf("read framebuffer info: %w", err)
 	}
-	pixels := make([]uint32, int(w*h))
-	r := &Renderer{fb: f, fmt: format, pixels: pixels, W: w, H: h, stride: int(w), fbPath: path}
-	if format.BitsPerPixel == 0 {
-		r.fmt.BitsPerPixel = 32
+	pixels := make([]uint32, int(info.W*info.H))
+	r := &Renderer{
+		fb:     f,
+		fmt:    info.Format,
+		pixels: pixels,
+		W:      info.W,
+		H:      info.H,
+		stride: int(info.W),
+		fbPath: path,
 	}
 	return r, nil
 }
@@ -174,14 +175,7 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) SyncSize() {
-	if r == nil {
-		return
-	}
-	if w, h, err := fbVirtualSize(); err == nil && w > 0 && h > 0 && (w != r.W || h != r.H) {
-		r.W, r.H = w, h
-		r.stride = int(w)
-		r.pixels = make([]uint32, int(w*h))
-	}
+	// Physical display size does not change at runtime; nothing to do.
 }
 
 func (r *Renderer) Draw(frame FrameState) error {
@@ -836,64 +830,59 @@ func (r *Renderer) packRGBA(red, green, blue, alpha uint8) uint32 {
 	return value
 }
 
-func fbPixelFormat(path string) (fbFormat, error) {
-	format := fbFormat{BitsPerPixel: 32, RedOffset: 16, RedLength: 8, GreenOffset: 8, GreenLength: 8, BlueOffset: 0, BlueLength: 8, AlphaOffset: 24, AlphaLength: 8}
-	base := filepath.Dir(path)
-	if v, err := readInt(filepath.Join(base, "bits_per_pixel")); err == nil && v > 0 {
-		format.BitsPerPixel = v
-	}
-	if v, err := readInt(filepath.Join(base, "red", "offset")); err == nil {
-		format.RedOffset = v
-	}
-	if v, err := readInt(filepath.Join(base, "red", "length")); err == nil {
-		format.RedLength = v
-	}
-	if v, err := readInt(filepath.Join(base, "green", "offset")); err == nil {
-		format.GreenOffset = v
-	}
-	if v, err := readInt(filepath.Join(base, "green", "length")); err == nil {
-		format.GreenLength = v
-	}
-	if v, err := readInt(filepath.Join(base, "blue", "offset")); err == nil {
-		format.BlueOffset = v
-	}
-	if v, err := readInt(filepath.Join(base, "blue", "length")); err == nil {
-		format.BlueLength = v
-	}
-	if v, err := readInt(filepath.Join(base, "transp", "offset")); err == nil {
-		format.AlphaOffset = v
-	}
-	if v, err := readInt(filepath.Join(base, "transp", "length")); err == nil {
-		format.AlphaLength = v
-	}
-	if format.BitsPerPixel != 16 && format.BitsPerPixel != 32 {
-		format.BitsPerPixel = 32
-	}
-	return format, nil
+// fbioGetVScreenInfo is the Linux ioctl number for FBIOGET_VSCREENINFO.
+const fbioGetVScreenInfo = 0x4600
+
+type fbScreenInfoResult struct {
+	W, H   int32
+	Format fbFormat
 }
 
-func fbVirtualSize() (int32, int32, error) {
-	data, err := os.ReadFile("/sys/class/graphics/fb0/virtual_size")
-	if err != nil {
-		return 0, 0, err
+// fbScreenInfo queries the framebuffer device for its physical display
+// dimensions and pixel format using the FBIOGET_VSCREENINFO ioctl.
+// This is the only reliable way to get xres/yres (physical) as opposed to
+// xres_virtual/yres_virtual which may be a large multiple of the actual
+// screen height due to multi-page buffering.
+func fbScreenInfo(f *os.File) (fbScreenInfoResult, error) {
+	// fb_var_screeninfo is 160 bytes. The fields we care about:
+	//   [0:4]   xres          (physical width)
+	//   [4:8]   yres          (physical height)
+	//   [24:28] bits_per_pixel
+	//   [32:36] red.offset,   [36:40] red.length
+	//   [44:48] green.offset, [48:52] green.length
+	//   [56:60] blue.offset,  [60:64] blue.length
+	//   [68:72] transp.offset,[72:76] transp.length
+	var raw [160]byte
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fbioGetVScreenInfo, uintptr(unsafe.Pointer(&raw[0]))); errno != 0 {
+		return fbScreenInfoResult{}, errno
 	}
-	parts := strings.Split(strings.TrimSpace(string(data)), ",")
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid framebuffer size: %q", strings.TrimSpace(string(data)))
-	}
-	w, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil {
-		return 0, 0, err
-	}
-	h, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil {
-		return 0, 0, err
-	}
-	return int32(w), int32(h), nil
-}
+	u32 := func(off int) int { return int(*(*uint32)(unsafe.Pointer(&raw[off]))) }
 
-func fbSize(defaultW, defaultH int32) (int32, int32) {
-	return defaultW, defaultH
+	w := int32(u32(0))
+	h := int32(u32(4))
+	if w <= 0 || h <= 0 {
+		return fbScreenInfoResult{}, fmt.Errorf("ioctl returned invalid display size %dx%d", w, h)
+	}
+
+	bpp := u32(24)
+	if bpp != 16 && bpp != 32 {
+		bpp = 32
+	}
+	format := fbFormat{
+		BitsPerPixel: bpp,
+		RedOffset:    u32(32), RedLength: u32(36),
+		GreenOffset:  u32(44), GreenLength: u32(48),
+		BlueOffset:   u32(56), BlueLength: u32(60),
+		AlphaOffset:  u32(68), AlphaLength: u32(72),
+	}
+	// Fall back to sensible defaults if the kernel didn't fill in channel info.
+	if format.RedLength == 0 && format.GreenLength == 0 && format.BlueLength == 0 {
+		format.RedOffset, format.RedLength = 16, 8
+		format.GreenOffset, format.GreenLength = 8, 8
+		format.BlueOffset, format.BlueLength = 0, 8
+		format.AlphaOffset, format.AlphaLength = 24, 8
+	}
+	return fbScreenInfoResult{W: w, H: h, Format: format}, nil
 }
 
 func readInt(path string) (int, error) {
