@@ -22,7 +22,7 @@ const (
 	DefaultPersonality = "bmo"
 )
 
-var defaultPTTButtons = []string{"BTN_TL", "BTN_TR"}
+var defaultPTTButtons = []string{"BTN_SOUTH"}
 
 var supportedPTTButtons = []string{
 	"BTN_SOUTH",
@@ -69,12 +69,13 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		Version:      1,
-		Mode:         ModeIdle,
-		InputTrigger: InputTriggerPTT,
-		PTTButtons:   DefaultPTTButtons(),
-		LogLevel:     DefaultLogLevel,
-		Personality:  DefaultPersonality,
+		Version:       1,
+		SetupComplete: true,
+		Mode:          ModeIdle,
+		InputTrigger:  InputTriggerPTT,
+		PTTButtons:    DefaultPTTButtons(),
+		LogLevel:      DefaultLogLevel,
+		Personality:   DefaultPersonality,
 	}
 }
 

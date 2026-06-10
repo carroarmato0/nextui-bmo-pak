@@ -92,3 +92,17 @@ func TestValidateRejectsAIWithoutProviders(t *testing.T) {
 		t.Fatal("Validate() error = nil, want error")
 	}
 }
+
+func TestDefaultPTTButtonIsA(t *testing.T) {
+	cfg := Default()
+	if len(cfg.PTTButtons) != 1 || cfg.PTTButtons[0] != "BTN_SOUTH" {
+		t.Fatalf("expected PTTButtons=[BTN_SOUTH], got %v", cfg.PTTButtons)
+	}
+}
+
+func TestDefaultSetupComplete(t *testing.T) {
+	cfg := Default()
+	if !cfg.SetupComplete {
+		t.Fatal("expected SetupComplete=true in default config")
+	}
+}

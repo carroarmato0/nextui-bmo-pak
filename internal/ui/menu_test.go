@@ -16,32 +16,28 @@ func TestSetupMenuBuildsOverlayWithPTTChoices(t *testing.T) {
 	if len(overlay.Items) == 0 {
 		t.Fatal("Overlay().Items is empty")
 	}
-	var leftTrigger, rightTrigger *OverlayItem
+	var southButton *OverlayItem
 	for i := range overlay.Items {
 		switch overlay.Items[i].Code {
-		case "BTN_TL":
-			leftTrigger = &overlay.Items[i]
-		case "BTN_TR":
-			rightTrigger = &overlay.Items[i]
+		case "BTN_SOUTH":
+			southButton = &overlay.Items[i]
 		}
 	}
-	if leftTrigger == nil || !leftTrigger.Selected {
-		t.Fatalf("left trigger entry = %+v, want selected", leftTrigger)
-	}
-	if rightTrigger == nil || !rightTrigger.Selected {
-		t.Fatalf("right trigger entry = %+v, want selected", rightTrigger)
+	if southButton == nil || !southButton.Selected {
+		t.Fatalf("south button entry = %+v, want selected", southButton)
 	}
 }
 
 func TestSetupMenuToggleAndSave(t *testing.T) {
 	menu := NewSetupMenu(config.Default())
-	menu.Move(6)
+	// default is [BTN_SOUTH], toggle to [BTN_SOUTH, BTN_TL]
+	menu.Move(5)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
 	got := menu.Config().PTTButtons
-	if len(got) != 1 || got[0] != "BTN_TL" {
-		t.Fatalf("PTTButtons = %+v, want [BTN_TL]", got)
+	if len(got) != 2 || got[0] != "BTN_SOUTH" || got[1] != "BTN_TL" {
+		t.Fatalf("PTTButtons = %+v, want [BTN_SOUTH BTN_TL]", got)
 	}
 
 	saved, err := menu.Save()
@@ -51,8 +47,8 @@ func TestSetupMenuToggleAndSave(t *testing.T) {
 	if !saved.SetupComplete {
 		t.Fatal("Save() should mark setup complete")
 	}
-	if saved.PTTButtons[0] != "BTN_TL" {
-		t.Fatalf("saved PTTButtons = %+v", saved.PTTButtons)
+	if len(saved.PTTButtons) != 2 || saved.PTTButtons[0] != "BTN_SOUTH" || saved.PTTButtons[1] != "BTN_TL" {
+		t.Fatalf("saved PTTButtons = %+v, want [BTN_SOUTH BTN_TL]", saved.PTTButtons)
 	}
 }
 

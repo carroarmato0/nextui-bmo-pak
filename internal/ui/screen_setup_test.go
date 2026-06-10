@@ -7,12 +7,13 @@ import (
 )
 
 func TestInitialScreenForMissingFirstRunConfigIsSetup(t *testing.T) {
+	// Setup flow gating has been removed; InitialScreen always returns ScreenMain
 	cfg := config.Default()
 	cfg.SetupComplete = false
 
 	flow := NewSetupFlow(cfg)
-	if got := flow.InitialScreen(); got != ScreenSetup {
-		t.Fatalf("InitialScreen() = %q, want setup", got)
+	if got := flow.InitialScreen(); got != ScreenMain {
+		t.Fatalf("InitialScreen() = %q, want main", got)
 	}
 }
 
@@ -135,30 +136,40 @@ func TestPTTButtonChoicesExposeLabelsAndSelection(t *testing.T) {
 	if len(choices) == 0 {
 		t.Fatal("PTTButtonChoices() returned no options")
 	}
-	if choices[5].Code != "BTN_TL" || choices[5].Label != "Left trigger" {
-		t.Fatalf("unexpected TL option: %+v", choices[5])
+	// Default is now BTN_SOUTH (index 0)
+	if choices[0].Code != "BTN_SOUTH" || choices[0].Label != "South" {
+		t.Fatalf("unexpected SOUTH option: %+v", choices[0])
 	}
-	if !choices[5].Selected || !choices[6].Selected {
-		t.Fatalf("default buttons should be selected: %+v %+v", choices[5], choices[6])
+	if !choices[0].Selected {
+		t.Fatalf("BTN_SOUTH should be selected: %+v", choices[0])
 	}
 }
 
 func TestTogglePTTButtonUpdatesSelection(t *testing.T) {
 	screen := NewSetupScreen(config.Default())
 
+	// Default is [BTN_SOUTH], toggle BTN_TL2 to add it
 	if err := screen.TogglePTTButton("BTN_TL2"); err != nil {
 		t.Fatalf("TogglePTTButton() error = %v", err)
 	}
-	if got := screen.PTTButtons(); len(got) != 3 {
-		t.Fatalf("PTTButtons() = %+v, want 3 buttons", got)
+	if got := screen.PTTButtons(); len(got) != 2 {
+		t.Fatalf("PTTButtons() = %+v, want 2 buttons", got)
 	}
-	if err := screen.DisablePTTButton("BTN_TR"); err != nil {
+	// Now we have [BTN_SOUTH, BTN_TL2], disable BTN_SOUTH to leave [BTN_TL2]
+	if err := screen.DisablePTTButton("BTN_SOUTH"); err != nil {
 		t.Fatalf("DisablePTTButton() error = %v", err)
 	}
-	if got := screen.PTTButtons(); len(got) != 2 || got[0] != "BTN_TL" || got[1] != "BTN_TL2" {
-		t.Fatalf("PTTButtons() = %+v, want [BTN_TL BTN_TL2]", got)
+	if got := screen.PTTButtons(); len(got) != 1 || got[0] != "BTN_TL2" {
+		t.Fatalf("PTTButtons() = %+v, want [BTN_TL2]", got)
 	}
-	if summary := screen.PTTButtonSummary(); summary != "Left trigger, Left shoulder" {
+	if summary := screen.PTTButtonSummary(); summary != "Left shoulder" {
 		t.Fatalf("PTTButtonSummary() = %q", summary)
+	}
+}
+
+func TestInitialScreenAlwaysMain(t *testing.T) {
+	flow := NewSetupFlow(config.Config{})
+	if got := flow.InitialScreen(); got != ScreenMain {
+		t.Fatalf("InitialScreen = %q, want %q", got, ScreenMain)
 	}
 }

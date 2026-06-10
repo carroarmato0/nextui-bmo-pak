@@ -25,15 +25,6 @@ func NewSetupFlow(cfg config.Config) *SetupFlow {
 }
 
 func (f *SetupFlow) InitialScreen() ScreenID {
-	if f == nil {
-		return ScreenMain
-	}
-	if !f.cfg.SetupComplete {
-		return ScreenSetup
-	}
-	if f.cfg.UsesAI() && (!f.cfg.STT.IsConfigured() || !f.cfg.Chat.IsConfigured() || !f.cfg.TTS.IsConfigured()) {
-		return ScreenSetup
-	}
 	return ScreenMain
 }
 
