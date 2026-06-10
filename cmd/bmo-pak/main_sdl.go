@@ -102,8 +102,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 	if initialScreen == ui.ScreenSetup {
-		setActiveMenu(providerMenu)
-		logger.Infof("setup menu active: provider selection ready for first-run setup")
+		logger.Infof("setup flow required; press MENU to open settings, F1 for AI setup, F2 for PTT setup")
 	}
 
 	machine := assistant.NewMachine()
@@ -150,7 +149,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	defer screen.Close()
 
 	if initialScreen == ui.ScreenSetup {
-		logger.Warnf("setup flow required; rendering BMO with a concerned idle face until the setup screen loop lands")
+		logger.Warnf("setup flow required; rendering a concerned idle face until the user opens the menu shortcuts")
 	}
 
 	commitMenu := func(menu ui.Menu) error {
@@ -172,6 +171,37 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return nil
 	}
 
+	handleGlobalShortcut := func(ev sdl.Event) bool {
+		switch e := ev.(type) {
+		case *sdl.KeyboardEvent:
+			if e.Type != sdl.KEYDOWN {
+				return false
+			}
+			switch e.Keysym.Sym {
+			case sdl.K_MENU, sdl.K_HOME:
+				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+					setActiveMenu(nil)
+				} else {
+					setActiveMenu(settingsMenu)
+				}
+				return true
+			}
+		case *sdl.ControllerButtonEvent:
+			if e.Type != sdl.CONTROLLERBUTTONDOWN {
+				return false
+			}
+			switch e.Button {
+			case sdl.CONTROLLER_BUTTON_GUIDE, sdl.CONTROLLER_BUTTON_BACK:
+				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+					setActiveMenu(nil)
+				} else {
+					setActiveMenu(settingsMenu)
+				}
+				return true
+			}
+		}
+		return false
+	}
 	handleMenuEvent := func(ev sdl.Event) bool {
 		if activeMenu == nil {
 			return false
@@ -216,10 +246,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			case sdl.K_ESCAPE:
 				setActiveMenu(nil)
 			case sdl.K_F1:
-				if activeMenu != nil && activeMenu.Title() == "AI SETUP" {
+				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
 					setActiveMenu(nil)
 				} else {
-					setActiveMenu(providerMenu)
+					setActiveMenu(settingsMenu)
 				}
 			case sdl.K_F2:
 				if activeMenu != nil && activeMenu.Title() == "SETUP" {
@@ -228,10 +258,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					setActiveMenu(pttMenu)
 				}
 			case sdl.K_F3:
-				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+				if activeMenu != nil && activeMenu.Title() == "AI SETUP" {
 					setActiveMenu(nil)
 				} else {
-					setActiveMenu(settingsMenu)
+					setActiveMenu(providerMenu)
 				}
 			}
 			return true
@@ -300,6 +330,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			if handleGlobalShortcut(event) {
+				continue
+			}
 			if handleMenuEvent(event) {
 				continue
 			}

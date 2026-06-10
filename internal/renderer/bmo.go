@@ -78,7 +78,7 @@ func LayoutFor(w, h int32) Layout {
 	pupilH := clampInt32(eyeH/3, 18, eyeH/2)
 	mouthW := clampInt32(w/4, 80, 240)
 	mouthH := clampInt32(h/8, 28, 130)
-	clockSize := clampInt32(short/8, 34, 96)
+	clockSize := clampInt32(short/14, 22, 48)
 	cornerRadius := clampInt32(short/12, 18, 72)
 	return Layout{
 		W:            w,
@@ -98,7 +98,7 @@ func LayoutFor(w, h int32) Layout {
 		BrowW:        clampInt32(w/6, 40, 160),
 		BrowH:        clampInt32(h/36, 3, 16),
 		ClockSize:    clockSize,
-		ClockInset:   margin / 2,
+		ClockInset:   clampInt32(margin/3, 4, 12),
 		CornerRadius: cornerRadius,
 		GlowInset:    clampInt32(short/45, 4, 18),
 		MouthOpenH:   clampInt32(h/6, 24, 120),
@@ -592,13 +592,16 @@ func (r *Renderer) drawEye(x, y, w, h int32, open float64, c sdl.Color) {
 		visibleH = 4
 	}
 	cy := y - h/2 + visibleH/2
+	// Guarantee a clearly visible eye silhouette even on renderers that struggle with
+	// rounded primitives by painting a solid core first.
+	r.fillRectColor(x, cy-visibleH/2, w, visibleH, c)
 	r.fillRoundedRect(x, cy-visibleH/2, w, visibleH, visibleH/2, c)
 }
 
 func (r *Renderer) drawEyeClosed(x, y, w, h int32, c sdl.Color) {
 	cy := y - h/2 + h/2
-	r.drawLine(x+8, cy, x+w-8, cy, c)
-	r.drawLine(x+10, cy+1, x+w-10, cy+1, sdl.Color{R: c.R, G: c.G, B: c.B, A: 150})
+	r.fillRectColor(x+6, cy-2, w-12, 4, c)
+	r.fillRectColor(x+10, cy-1, w-20, 2, sdl.Color{R: c.R, G: c.G, B: c.B, A: 150})
 }
 
 func (r *Renderer) drawPupil(x, y, w, h int32, c sdl.Color) {
@@ -606,8 +609,8 @@ func (r *Renderer) drawPupil(x, y, w, h int32, c sdl.Color) {
 }
 
 func (r *Renderer) drawMouthLine(cx, cy, halfW int32, c sdl.Color) {
-	r.drawLine(cx-halfW, cy, cx+halfW, cy, c)
-	r.drawLine(cx-halfW+1, cy+1, cx+halfW-1, cy+1, sdl.Color{R: c.R, G: c.G, B: c.B, A: 120})
+	r.fillRectColor(cx-halfW, cy-2, halfW*2, 4, c)
+	r.fillRectColor(cx-halfW+2, cy-1, halfW*2-4, 2, sdl.Color{R: c.R, G: c.G, B: c.B, A: 120})
 }
 
 func (r *Renderer) drawMouthWhistle(cx, cy, radius int32, c sdl.Color) {
