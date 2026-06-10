@@ -161,7 +161,7 @@ func (r *NavReader) run(ctx context.Context, f *os.File) {
 // navActionForKey maps a Linux EV_KEY button code to a NavAction on press.
 func navActionForKey(code uint16) (NavAction, bool) {
 	switch code {
-	case 305: // BTN_EAST / B
+	case 304: // BTN_SOUTH / physical B — cancel/exit
 		return NavCancel, true
 	case 315: // BTN_START
 		return NavSave, true

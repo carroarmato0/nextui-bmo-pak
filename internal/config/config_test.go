@@ -95,7 +95,7 @@ func TestValidateRejectsAIWithoutProviders(t *testing.T) {
 
 func TestDefaultPTTButtonIsA(t *testing.T) {
 	cfg := Default()
-	if len(cfg.PTTButtons) != 1 || cfg.PTTButtons[0] != "BTN_SOUTH" {
+	if len(cfg.PTTButtons) != 1 || cfg.PTTButtons[0] != "BTN_EAST" {
 		t.Fatalf("expected PTTButtons=[BTN_SOUTH], got %v", cfg.PTTButtons)
 	}
 }

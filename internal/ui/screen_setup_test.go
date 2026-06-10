@@ -136,27 +136,34 @@ func TestPTTButtonChoicesExposeLabelsAndSelection(t *testing.T) {
 	if len(choices) == 0 {
 		t.Fatal("PTTButtonChoices() returned no options")
 	}
-	// Default is now BTN_SOUTH (index 0)
-	if choices[0].Code != "BTN_SOUTH" || choices[0].Label != "South" {
-		t.Fatalf("unexpected SOUTH option: %+v", choices[0])
+	// Default is now BTN_EAST (physical A button on TrimUI)
+	eastIdx := -1
+	for i, c := range choices {
+		if c.Code == "BTN_EAST" {
+			eastIdx = i
+			break
+		}
 	}
-	if !choices[0].Selected {
-		t.Fatalf("BTN_SOUTH should be selected: %+v", choices[0])
+	if eastIdx < 0 {
+		t.Fatal("BTN_EAST not found in choices")
+	}
+	if !choices[eastIdx].Selected {
+		t.Fatalf("BTN_EAST should be selected: %+v", choices[eastIdx])
 	}
 }
 
 func TestTogglePTTButtonUpdatesSelection(t *testing.T) {
 	screen := NewSetupScreen(config.Default())
 
-	// Default is [BTN_SOUTH], toggle BTN_TL2 to add it
+	// Default is [BTN_EAST], toggle BTN_TL2 to add it
 	if err := screen.TogglePTTButton("BTN_TL2"); err != nil {
 		t.Fatalf("TogglePTTButton() error = %v", err)
 	}
 	if got := screen.PTTButtons(); len(got) != 2 {
 		t.Fatalf("PTTButtons() = %+v, want 2 buttons", got)
 	}
-	// Now we have [BTN_SOUTH, BTN_TL2], disable BTN_SOUTH to leave [BTN_TL2]
-	if err := screen.DisablePTTButton("BTN_SOUTH"); err != nil {
+	// Now we have [BTN_EAST, BTN_TL2], disable BTN_EAST to leave [BTN_TL2]
+	if err := screen.DisablePTTButton("BTN_EAST"); err != nil {
 		t.Fatalf("DisablePTTButton() error = %v", err)
 	}
 	if got := screen.PTTButtons(); len(got) != 1 || got[0] != "BTN_TL2" {

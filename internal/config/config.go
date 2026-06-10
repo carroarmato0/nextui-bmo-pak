@@ -22,7 +22,7 @@ const (
 	DefaultPersonality = "bmo"
 )
 
-var defaultPTTButtons = []string{"BTN_SOUTH"}
+var defaultPTTButtons = []string{"BTN_EAST"} // physical A button on TrimUI
 
 var supportedPTTButtons = []string{
 	"BTN_SOUTH",

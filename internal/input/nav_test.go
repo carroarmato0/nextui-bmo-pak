@@ -8,15 +8,15 @@ func TestNavActionForKey(t *testing.T) {
 		want NavAction
 		ok   bool
 	}{
-		{305, NavCancel, true},
-		{314, 0, false}, // SELECT — unmapped to avoid accidental exits
+		{304, NavCancel, true}, // BTN_SOUTH = physical B — cancel/exit
+		{305, 0, false},        // BTN_EAST = physical A — PTT only, no nav
+		{314, 0, false},        // SELECT — unmapped
 		{315, NavSave, true},
 		{316, NavMenu, true},
 		{btnDpadUp, NavUp, true},
 		{btnDpadDown, NavDown, true},
 		{btnDpadLeft, NavLeft, true},
 		{btnDpadRight, NavRight, true},
-		{304, 0, false}, // A button — PTT only, no nav
 		{307, 0, false}, // Y — no longer mapped
 		{308, 0, false}, // X — no longer mapped
 		{310, 0, false}, // L shoulder — no longer mapped
