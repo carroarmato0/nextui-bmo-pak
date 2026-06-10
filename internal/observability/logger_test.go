@@ -56,3 +56,23 @@ func TestLoggerHonorsLevel(t *testing.T) {
 		t.Fatalf("info message missing: %q", got)
 	}
 }
+
+func TestSetLevel(t *testing.T) {
+	var buf bytes.Buffer
+	l, err := NewLogger(filepath.Join(t.TempDir(), "test.log"), LevelInfo, &buf)
+	if err != nil {
+		t.Fatalf("NewLogger: %v", err)
+	}
+	defer l.Close()
+
+	l.Debugf("should be hidden")
+	if strings.Contains(buf.String(), "should be hidden") {
+		t.Fatal("debug message printed at info level")
+	}
+
+	l.SetLevel(LevelDebug)
+	l.Debugf("should be visible")
+	if !strings.Contains(buf.String(), "should be visible") {
+		t.Fatal("debug message not printed after SetLevel(LevelDebug)")
+	}
+}

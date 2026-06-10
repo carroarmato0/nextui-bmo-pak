@@ -75,6 +75,15 @@ func (l *Logger) RegisterSecret(value string) {
 	l.secrets = append(l.secrets, value)
 }
 
+func (l *Logger) SetLevel(level Level) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.level = level
+	l.mu.Unlock()
+}
+
 func (l *Logger) Debugf(format string, args ...any) { l.logf(LevelDebug, format, args...) }
 func (l *Logger) Infof(format string, args ...any)  { l.logf(LevelInfo, format, args...) }
 func (l *Logger) Warnf(format string, args ...any)  { l.logf(LevelWarn, format, args...) }
