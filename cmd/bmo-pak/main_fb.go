@@ -381,7 +381,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		if err := screen.Draw(frame); err != nil {
 			return fmt.Errorf("draw frame: %w", err)
 		}
-		time.Sleep(16 * time.Millisecond)
+		time.Sleep(frameSleep(snap.Current, activeMenu != nil))
 	}
 
 	logger.Infof("BMO shutting down")
@@ -407,6 +407,24 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 		Subtitle: append([]string(nil), src.Subtitle...),
 		Items:    items,
 		Footer:   src.Footer,
+	}
+}
+
+// frameSleep returns how long to sleep after drawing a frame.
+// Active and menu states use 30fps for smooth feedback; idle uses 15fps
+// (animations are time-based so they look the same at any frame rate);
+// sleeping uses 5fps since the scene is nearly static.
+func frameSleep(state assistant.State, menuOpen bool) time.Duration {
+	if menuOpen {
+		return 33 * time.Millisecond // 30fps — responsive to button input
+	}
+	switch state {
+	case assistant.StateListening, assistant.StateThinking, assistant.StateSpeaking:
+		return 33 * time.Millisecond // 30fps — mouth animation needs decent sample rate
+	case assistant.StateSleeping:
+		return 200 * time.Millisecond // 5fps — nearly static, save power
+	default:
+		return 66 * time.Millisecond // 15fps — plenty for gentle idle animations
 	}
 }
 
