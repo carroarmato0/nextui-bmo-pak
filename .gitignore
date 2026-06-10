@@ -1,0 +1,22 @@
+# Build artifacts
+bin/
+dist/
+*.pak
+*.pak.zip
+coverage.out
+*.prof
+*.pprof
+*.trace
+
+# Graphify outputs (generated knowledge graph and caches)
+graphify-out/
+
+# Local debugging / profiling markers
+.profile-flags
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

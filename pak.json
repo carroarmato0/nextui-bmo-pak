@@ -1,0 +1,13 @@
+{
+  "name": "BMO",
+  "version": "v0.1.0",
+  "type": "TOOL",
+  "description": "Fullscreen BMO-inspired AI assistant and desk companion.",
+  "author": "Carroarmato0",
+  "release_filename": "BMO.pak.zip",
+  "screenshots": [],
+  "platforms": ["tg5040", "tg5050"],
+  "changelog": {
+    "v0.1.0": "Initial BMO Pak scaffold."
+  }
+}
