@@ -126,6 +126,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	logger.Debugf("assistant snapshot: %+v", machine.Snapshot())
 
 	hardwareProfile := hardware.Detect(platform)
+	logger.Infof("hardware: %s", hardwareProfile.Summary())
+	logger.Infof("hardware availability: framebuffer=%t input=%t audio=%t",
+		hardwareProfile.FramebufferAvailable(), hardwareProfile.InputAvailable(), hardwareProfile.AudioAvailable())
 
 	var audioSession *audio.Session
 	var audioRouter *audio.CaptureRouter
@@ -134,6 +137,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() {
+		logger.Debugf("audio devices: capture=%s playback=%s alsa=%s",
+			hardwareProfile.AudioCapture, hardwareProfile.AudioPlayback, hardwareProfile.AudioALSAName)
 		audioCfg := audio.DefaultConfig(hardwareProfile)
 		audioSession = audio.NewSession(audioCfg)
 		audioRouter = audio.NewCaptureRouter(audioSession, audio.BytesPerSecond(audioCfg.SampleRate, audioCfg.Channels, audio.BytesPerSampleS16LE)/2)

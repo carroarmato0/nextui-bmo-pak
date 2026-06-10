@@ -77,6 +77,7 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 				machine.Transition(assistant.EventListen)
 				buffer.Begin()
 				logger.Debugf("PTT pressed: %s (%d)", ev.Button, ev.Code)
+				logger.Infof("PTT recording started")
 				continue
 			}
 
@@ -85,6 +86,7 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 				machine.Transition(assistant.EventRest)
 			}
 			logger.Debugf("PTT released: %s (%d)", ev.Button, ev.Code)
+			logger.Infof("PTT recording stopped: %d bytes captured", len(payload))
 			if len(payload) == 0 {
 				continue
 			}

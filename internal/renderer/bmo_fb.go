@@ -342,12 +342,14 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 	// Eyes
 	switch style.Eye {
 	case bmoEyeDot:
-		dotR := max32(4, int32(iw*0.032))
-		r.fillCircle(lx, ey, dotR, dark)
+		// Reference: 2.9% wide × 7.2% tall — a narrow vertical pill, not a circle.
+		pw := max32(5, int32(iw*0.029))
+		ph := max32(10, int32(ih*0.072))
+		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
 		if style.RightEyeUp {
-			r.fillCircle(rx, iy+int32(ih*0.348), dotR, dark)
+			r.fillRoundedRect(rx-pw/2, iy+int32(ih*0.348)-ph/2, pw, ph, pw/2, dark)
 		} else {
-			r.fillCircle(rx, ey, dotR, dark)
+			r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
 		}
 
 	case bmoEyePill:
@@ -422,7 +424,7 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 	tongue := rgba{0x16, 0xae, 0x81, 255}
 	trx := int32(float64(mw/2) * 0.69)
 	try := int32(float64(mh) * 0.16)
-	tcy := mty + tth + int32(float64(mh-tth)*0.67)
+	_ = mty + tth + int32(float64(mh-tth)*0.67) // tcy no longer used; tongue is at bottom
 
 	switch style.Mouth {
 	case bmoMouthIdleSmile:
@@ -435,9 +437,12 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 
 	case bmoMouthOpenLarge:
 		r.fillRoundedRect(mx, mty, mw, mh, mr, dark)
-		r.fillRectColor(mx+mr/2, mty+3, mw-mr, tth-3, teeth)
+		// Teeth: rounded rect matching mouth's top corner curve for seamless blending.
+		r.fillRoundedRect(mx+3, mty+3, mw-6, tth, mr-3, teeth)
+		// Interior green fills below teeth.
 		r.fillRoundedRect(mx+3, mty+tth, mw-6, mh-tth-3, mr-2, interior)
-		r.fillEllipse(cx-trx, tcy-try, trx*2, try*2, tongue)
+		// Tongue sits at the bottom of the mouth following its lower curve.
+		r.fillEllipse(cx-trx, mty+mh-try*2-3, trx*2, try*2, tongue)
 
 	case bmoMouthOpenSpeak:
 		smx := ix + int32(iw*0.341)
@@ -453,13 +458,13 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 		}
 		smr := int32(float64(smh) * 0.48)
 		stth := int32(float64(smh) * 0.28)
-		stcy := smty + stth + int32(float64(smh-stth)*0.67)
+		_ = smty + stth + int32(float64(smh-stth)*0.67) // stcy no longer used; tongue at bottom
 		strx := int32(float64(smw/2) * 0.69)
 		stry := int32(float64(smh) * 0.16)
 		r.fillRoundedRect(smx, smty, smw, smh, smr, dark)
-		r.fillRectColor(smx+smr/2, smty+3, smw-smr, stth-3, teeth)
+		r.fillRoundedRect(smx+3, smty+3, smw-6, stth, smr-3, teeth)
 		r.fillRoundedRect(smx+3, smty+stth, smw-6, smh-stth-3, smr-2, interior)
-		r.fillEllipse(cx-strx, stcy-stry, strx*2, stry*2, tongue)
+		r.fillEllipse(cx-strx, smty+smh-stry*2-3, strx*2, stry*2, tongue)
 
 	case bmoMouthOpenSmall:
 		soRX := max32(8, int32(iw*0.074))
@@ -475,7 +480,7 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 }
 
 func (r *Renderer) drawCornerClock(layout Layout, frame FrameState, style expressionStyle) {
-	show := frame.QuotaExhausted || style.Sleepy
+	show := frame.QuotaExhausted // clock only appears when AI quota is exhausted
 	if !show {
 		return
 	}

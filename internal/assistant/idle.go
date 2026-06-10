@@ -49,18 +49,24 @@ func (s *IdleScheduler) Next(idleFor time.Duration) IdleStep {
 	s.interruptLat = false
 	s.last = picked
 	s.cycle++
+	// Blinks are always brief regardless of which pool they came from.
+	if picked == ExpressionBlink {
+		hold = 400 * time.Millisecond
+	}
 	return IdleStep{Expression: picked, HoldFor: hold}
 }
 
 func (s *IdleScheduler) poolFor(idleFor time.Duration) ([]Expression, time.Duration) {
 	switch {
 	case idleFor < 2*time.Second:
-		return []Expression{ExpressionBlink, ExpressionNeutral, ExpressionBlink, ExpressionBlink}, 350 * time.Millisecond
+		// Just after interaction: quick blinks, mostly neutral. Blink hold is
+		// overridden to 400ms in Next(); this 1.8s hold is for non-blink steps.
+		return []Expression{ExpressionBlink, ExpressionNeutral, ExpressionBlink, ExpressionBlink}, 1800 * time.Millisecond
 	case idleFor < 8*time.Second:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionNeutral, ExpressionSmile, ExpressionBlink, ExpressionBlink, ExpressionWhistle}, 500 * time.Millisecond
+		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionNeutral, ExpressionSmile, ExpressionBlink, ExpressionBlink, ExpressionWhistle}, 3000 * time.Millisecond
 	case idleFor < 25*time.Second:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionNeutral, ExpressionLaugh}, 900 * time.Millisecond
+		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionNeutral, ExpressionLaugh}, 4500 * time.Millisecond
 	default:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionLaugh, ExpressionSleeping, ExpressionBlink, ExpressionBlink}, 1200 * time.Millisecond
+		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionLaugh, ExpressionSleeping, ExpressionBlink, ExpressionBlink}, 6000 * time.Millisecond
 	}
 }
