@@ -199,15 +199,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return nil
 	}
 
+	running := true // declared here so handleNav can close over it
+
 	handleNav := func(action input.NavAction) {
-		// Global shortcuts — always processed.
-		switch action {
-		case input.NavMenu:
-			if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
-				setActiveMenu(nil)
-			} else {
-				setActiveMenu(settingsMenu)
-			}
+		// MENU (BTN_MODE) always exits to NextUI, regardless of menu state.
+		if action == input.NavMenu {
+			running = false
 			return
 		}
 
@@ -270,6 +267,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			} else {
 				setActiveMenu(settingsMenu)
 			}
+			return
 		case input.NavAISetup:
 			if activeMenu.Title() == "AI SETUP" {
 				setActiveMenu(nil)
@@ -294,7 +292,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	defer signal.Stop(stop)
 
 	logger.Infof("BMO ready; entering face loop")
-	running := true
 	for running {
 		select {
 		case <-stop:
@@ -416,15 +413,15 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 // sleeping uses 5fps since the scene is nearly static.
 func frameSleep(state assistant.State, menuOpen bool) time.Duration {
 	if menuOpen {
-		return 33 * time.Millisecond // 30fps — responsive to button input
+		return 50 * time.Millisecond // 20fps — responsive to button input
 	}
 	switch state {
 	case assistant.StateListening, assistant.StateThinking, assistant.StateSpeaking:
 		return 33 * time.Millisecond // 30fps — mouth animation needs decent sample rate
 	case assistant.StateSleeping:
-		return 200 * time.Millisecond // 5fps — nearly static, save power
+		return 500 * time.Millisecond // 2fps — nearly static, save power
 	default:
-		return 66 * time.Millisecond // 15fps — plenty for gentle idle animations
+		return 100 * time.Millisecond // 10fps — plenty for gentle idle animations
 	}
 }
 

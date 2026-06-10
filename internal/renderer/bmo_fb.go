@@ -660,10 +660,35 @@ func (r *Renderer) fillRectColor(x, y, w, h int32, c rgba) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	for yy := int32(0); yy < h; yy++ {
-		for xx := int32(0); xx < w; xx++ {
-			r.setPixel(x+xx, y+yy, c)
-		}
+	// Clamp to pixel buffer bounds once, avoiding per-pixel bounds checks.
+	if x < 0 {
+		w += x
+		x = 0
+	}
+	if y < 0 {
+		h += y
+		y = 0
+	}
+	if x+w > r.W {
+		w = r.W - x
+	}
+	if y+h > r.H {
+		h = r.H - y
+	}
+	if w <= 0 || h <= 0 {
+		return
+	}
+	px := r.packColor(c)
+	// Fill the first row via a range slice — Go eliminates bounds checks here.
+	off0 := int(y)*r.stride + int(x)
+	row0 := r.pixels[off0 : off0+int(w)]
+	for i := range row0 {
+		row0[i] = px
+	}
+	// Copy that row to the remaining rows; copy() compiles down to SIMD memcpy.
+	for yy := int32(1); yy < h; yy++ {
+		off := int(y+yy)*r.stride + int(x)
+		copy(r.pixels[off:], row0)
 	}
 }
 
