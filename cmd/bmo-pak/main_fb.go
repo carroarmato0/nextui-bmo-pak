@@ -199,54 +199,67 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	running := true // declared here so handleNav can close over it
 
+	settingsMenu.SetLogLevelCallback(func(level string) {
+		logger.SetLevel(observability.ParseLevel(level))
+		logger.Infof("log level changed to %s", level)
+	})
+
 	handleNav := func(action input.NavAction) {
-		// MENU (BTN_MODE) always exits to NextUI, regardless of menu state.
+		// MENU (BTN_MODE) always exits to NextUI.
 		if action == input.NavMenu {
 			running = false
 			return
 		}
 
-		// When no overlay is open, shortcut buttons open specific menus.
-		if activeMenu == nil {
-			switch action {
-			case input.NavSave:
+		// B always exits — whether menu is open or not.
+		if action == input.NavCancel {
+			running = false
+			return
+		}
+
+		// Start opens/closes the settings overlay.
+		if action == input.NavSave {
+			if activeMenu != nil {
+				if err := commitMenu(activeMenu); err != nil {
+					logger.Warnf("menu save: %v", err)
+				}
+				setActiveMenu(nil)
+			} else {
 				setActiveMenu(settingsMenu)
 			}
 			return
 		}
 
-		// If the active menu is in editing state, only confirm/cancel actions apply.
-		// Hardware has no keyboard so we immediately submit to preserve the existing value.
-		type editable interface {
-			IsEditing() bool
-			SubmitEdit() error
-			CancelEdit()
-		}
-		if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
-			switch action {
-			case input.NavSave:
-				if err := ed.SubmitEdit(); err != nil {
-					logger.Warnf("edit submit: %v", err)
-				}
-			case input.NavCancel:
-				ed.CancelEdit()
-			}
+		if activeMenu == nil {
 			return
 		}
 
+		// Within the overlay: up/down navigate, left/right cycle the focused item.
 		switch action {
-		case input.NavUp, input.NavLeft:
+		case input.NavUp:
 			activeMenu.Move(-1)
-		case input.NavDown, input.NavRight:
+		case input.NavDown:
 			activeMenu.Move(1)
-		case input.NavSave:
-			if err := commitMenu(activeMenu); err != nil {
-				logger.Warnf("menu save: %v", err)
-			} else {
-				setActiveMenu(nil)
+		case input.NavLeft, input.NavRight:
+			// Cancel any keyboard-edit state (no keyboard on hardware), then cycle.
+			type editable interface {
+				IsEditing() bool
+				CancelEdit()
 			}
-		case input.NavCancel:
-			setActiveMenu(nil)
+			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
+				ed.CancelEdit()
+			}
+			if err := activeMenu.ToggleFocused(); err != nil {
+				logger.Warnf("toggle focused: %v", err)
+			}
+			// Cancel if ToggleFocused entered edit mode (API key item).
+			type editCheck interface {
+				IsEditing() bool
+				CancelEdit()
+			}
+			if ed, ok := activeMenu.(editCheck); ok && ed.IsEditing() {
+				ed.CancelEdit()
+			}
 		}
 	}
 
