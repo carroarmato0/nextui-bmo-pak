@@ -23,6 +23,14 @@ type OverlayState struct {
 	Footer   string
 }
 
+type Menu interface {
+	Title() string
+	Move(delta int)
+	ToggleFocused() error
+	Save() (config.Config, error)
+	Overlay() OverlayState
+}
+
 type PTTMenu struct {
 	title string
 	cfg   config.Config

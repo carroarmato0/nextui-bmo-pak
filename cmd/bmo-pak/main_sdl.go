@@ -89,11 +89,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	initialScreen := flow.InitialScreen()
 	logger.Infof("initial screen: %s", initialScreen)
 
-	var activeMenu *ui.PTTMenu
-	settingsMenu := ui.NewSettingsMenu(cfg)
+	var activeMenu ui.Menu
+	providerMenu := ui.NewProviderMenu(cfg)
+	pttMenu := ui.NewSetupMenu(cfg)
 	if initialScreen == ui.ScreenSetup {
-		activeMenu = ui.NewSetupMenu(cfg)
-		logger.Infof("setup menu active: PTT mapping ready for first-run selection")
+		activeMenu = providerMenu
+		logger.Infof("setup menu active: provider selection ready for first-run setup")
 	}
 
 	machine := assistant.NewMachine()
@@ -143,7 +144,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Warnf("setup flow required; rendering BMO with a concerned idle face until the setup screen loop lands")
 	}
 
-	commitMenu := func(menu *ui.PTTMenu) error {
+	commitMenu := func(menu ui.Menu) error {
 		if menu == nil {
 			return nil
 		}
@@ -183,18 +184,22 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			case sdl.K_s:
 				if err := commitMenu(activeMenu); err != nil {
 					logger.Warnf("menu save failed: %v", err)
-				} else if activeMenu.Title() == "SETUP" {
+				} else {
 					activeMenu = nil
 				}
 			case sdl.K_ESCAPE:
-				if activeMenu.Title() != "SETUP" {
-					activeMenu = nil
-				}
+				activeMenu = nil
 			case sdl.K_F1:
-				if activeMenu.Title() == "SETTINGS" {
+				if activeMenu != nil && activeMenu.Title() == "AI SETUP" {
 					activeMenu = nil
 				} else {
-					activeMenu = settingsMenu
+					activeMenu = providerMenu
+				}
+			case sdl.K_F2:
+				if activeMenu != nil && activeMenu.Title() == "SETUP" {
+					activeMenu = nil
+				} else {
+					activeMenu = pttMenu
 				}
 			}
 			return true
@@ -214,19 +219,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			case sdl.CONTROLLER_BUTTON_START:
 				if err := commitMenu(activeMenu); err != nil {
 					logger.Warnf("menu save failed: %v", err)
-				} else if activeMenu.Title() == "SETUP" {
+				} else {
 					activeMenu = nil
 				}
 			case sdl.CONTROLLER_BUTTON_B:
-				if activeMenu.Title() != "SETUP" {
-					activeMenu = nil
-				}
+				activeMenu = nil
 			case sdl.CONTROLLER_BUTTON_Y:
-				if activeMenu.Title() == "SETTINGS" {
-					activeMenu = nil
-				} else {
-					activeMenu = settingsMenu
-				}
+				activeMenu = providerMenu
+			case sdl.CONTROLLER_BUTTON_X:
+				activeMenu = pttMenu
 			}
 			return true
 		}
@@ -264,7 +265,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					case sdl.K_ESCAPE:
 						running = false
 					case sdl.K_F1:
-						activeMenu = settingsMenu
+						activeMenu = providerMenu
 					}
 				}
 			case *sdl.WindowEvent:

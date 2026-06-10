@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 )
@@ -92,6 +93,40 @@ func (s *SettingsScreen) TogglePTTButton(code string) error {
 	}
 	s.cfg.PTTButtons = next
 	return nil
+}
+
+func (s *SettingsScreen) SetAPIKey(kind, key string) error {
+	if s == nil {
+		return fmt.Errorf("nil settings screen")
+	}
+	key = strings.TrimSpace(key)
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "stt":
+		s.cfg.STT.APIKey = key
+	case "chat":
+		s.cfg.Chat.APIKey = key
+	case "tts":
+		s.cfg.TTS.APIKey = key
+	default:
+		return fmt.Errorf("unknown provider kind %q", kind)
+	}
+	return nil
+}
+
+func (s *SettingsScreen) ProviderSummary(kind string) string {
+	if s == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "stt":
+		return providerSummaryLabel("STT", s.cfg.STT)
+	case "chat":
+		return providerSummaryLabel("CHAT", s.cfg.Chat)
+	case "tts":
+		return providerSummaryLabel("TTS", s.cfg.TTS)
+	default:
+		return ""
+	}
 }
 
 func (s *SettingsScreen) Config() config.Config {

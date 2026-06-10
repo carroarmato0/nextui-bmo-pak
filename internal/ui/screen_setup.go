@@ -152,6 +152,40 @@ func (s *SetupScreen) TogglePTTButton(code string) error {
 	return nil
 }
 
+func (s *SetupScreen) SetAPIKey(kind, key string) error {
+	if s == nil {
+		return fmt.Errorf("nil setup screen")
+	}
+	key = strings.TrimSpace(key)
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "stt":
+		s.cfg.STT.APIKey = key
+	case "chat":
+		s.cfg.Chat.APIKey = key
+	case "tts":
+		s.cfg.TTS.APIKey = key
+	default:
+		return fmt.Errorf("unknown provider kind %q", kind)
+	}
+	return nil
+}
+
+func (s *SetupScreen) ProviderSummary(kind string) string {
+	if s == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "stt":
+		return providerSummaryLabel("STT", s.cfg.STT)
+	case "chat":
+		return providerSummaryLabel("CHAT", s.cfg.Chat)
+	case "tts":
+		return providerSummaryLabel("TTS", s.cfg.TTS)
+	default:
+		return ""
+	}
+}
+
 func (s *SetupScreen) Save() error {
 	if s == nil {
 		return fmt.Errorf("nil setup screen")
