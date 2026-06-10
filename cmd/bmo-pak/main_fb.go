@@ -155,6 +155,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			chatClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.Chat.BaseURL, APIKey: cfg.Chat.APIKey}, http.DefaultClient)
 			ttsClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.TTS.BaseURL, APIKey: cfg.TTS.APIKey}, http.DefaultClient)
 			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, cfg.SystemPrompt, audioCfg.SampleRate, audioCfg.Channels)
+			audioPipeline.SetLogger(logger)
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
 	}
@@ -359,6 +360,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			overlay = convertOverlay(o)
 		}
 
+		var speakAmp float32
+		if audioPipeline != nil {
+			speakAmp = audioPipeline.CurrentAmplitude()
+		}
 		frame := renderer.FrameState{
 			Expression:      expr,
 			Now:             now,
@@ -370,6 +375,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			Listening:       snap.Current == assistant.StateListening,
 			Thinking:        snap.Current == assistant.StateThinking,
 			Overlay:         overlay,
+			SpeakAmplitude:  speakAmp,
 		}
 		if snap.Quota.Exhausted && frame.SleepUntil.IsZero() {
 			frame.SleepUntil = now.Add(45 * time.Minute)

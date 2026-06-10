@@ -25,6 +25,7 @@ type FrameState struct {
 	Thinking        bool
 	LastInteraction time.Time
 	Overlay         *OverlayState
+	SpeakAmplitude  float32 // RMS amplitude [0,1] during TTS playback; drives mouth height
 }
 
 type OverlayState struct {
@@ -405,7 +406,7 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 		r.drawThickLine(rix, byBase, rox, byRaised, browR, dark)
 	}
 
-	// Mouth
+	// Mouth — shared variables used by smile, frown, and open-mouth cases.
 	cx := ix + inner.W/2
 	slx := ix + int32(iw*0.381)
 	srx := ix + int32(iw*0.600)
@@ -413,18 +414,13 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 	sqy := iy + int32(ih*0.665)
 	fqy := iy + int32(ih*0.510)
 	mouthSW := max32(3, int32(ih*0.026))
-	mx := ix + int32(iw*0.292)
+	// Large-mouth geometry (used by bmoMouthOpenLarge).
 	mw := int32(iw * 0.416)
 	mty := iy + int32(ih*0.523)
 	mh := int32(ih * 0.277)
-	mr := int32(float64(mh) * 0.48)
-	tth := int32(float64(mh) * 0.28)
 	teeth := rgba{0xe4, 0xe4, 0xe4, 255}
 	interior := rgba{0x1a, 0x78, 0x48, 255}
 	tongue := rgba{0x16, 0xae, 0x81, 255}
-	trx := int32(float64(mw/2) * 0.69)
-	try := int32(float64(mh) * 0.16)
-	_ = mty + tth + int32(float64(mh-tth)*0.67) // tcy no longer used; tongue is at bottom
 
 	switch style.Mouth {
 	case bmoMouthIdleSmile:
@@ -436,35 +432,25 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 		r.drawBezierThick(frownPts, mouthSW, dark)
 
 	case bmoMouthOpenLarge:
-		r.fillRoundedRect(mx, mty, mw, mh, mr, dark)
-		// Teeth: rounded rect matching mouth's top corner curve for seamless blending.
-		r.fillRoundedRect(mx+3, mty+3, mw-6, tth, mr-3, teeth)
-		// Interior green fills below teeth.
-		r.fillRoundedRect(mx+3, mty+tth, mw-6, mh-tth-3, mr-2, interior)
-		// Tongue sits at the bottom of the mouth following its lower curve.
-		r.fillEllipse(cx-trx, mty+mh-try*2-3, trx*2, try*2, tongue)
+		r.drawMouthFilled(cx, mty, mw, mh, teeth, interior, tongue)
 
 	case bmoMouthOpenSpeak:
-		smx := ix + int32(iw*0.341)
 		smw := int32(iw * 0.318)
 		smty := iy + int32(ih*0.548)
 		smhBase := int32(ih * 0.213)
 		smh := smhBase
-		if style.Animated {
-			smh = int32(float64(smhBase) * (0.50 + 0.30*math.Sin(phase*8.0)))
-			if smh < smhBase/4 {
-				smh = smhBase / 4
+		if frame.SpeakAmplitude > 0 {
+			// Amplitude-driven: sqrt gives more visible response at low levels.
+			openFactor := math.Sqrt(float64(frame.SpeakAmplitude))
+			smh = max32(smhBase/8, int32(float64(smhBase)*openFactor))
+		} else if style.Animated {
+			// Fallback sin-wave when no amplitude data is available.
+			smh = int32(float64(smhBase) * (0.45 + 0.35*math.Sin(phase*8.0)))
+			if smh < smhBase/6 {
+				smh = smhBase / 6
 			}
 		}
-		smr := int32(float64(smh) * 0.48)
-		stth := int32(float64(smh) * 0.28)
-		_ = smty + stth + int32(float64(smh-stth)*0.67) // stcy no longer used; tongue at bottom
-		strx := int32(float64(smw/2) * 0.69)
-		stry := int32(float64(smh) * 0.16)
-		r.fillRoundedRect(smx, smty, smw, smh, smr, dark)
-		r.fillRoundedRect(smx+3, smty+3, smw-6, stth, smr-3, teeth)
-		r.fillRoundedRect(smx+3, smty+stth, smw-6, smh-stth-3, smr-2, interior)
-		r.fillEllipse(cx-strx, smty+smh-stry*2-3, strx*2, stry*2, tongue)
+		r.drawMouthFilled(cx, smty, smw, smh, teeth, interior, tongue)
 
 	case bmoMouthOpenSmall:
 		soRX := max32(8, int32(iw*0.074))
@@ -857,6 +843,46 @@ func (r *Renderer) drawThickLine(x1, y1, x2, y2, radius int32, c rgba) {
 		12,
 	)
 	r.drawBezierThick(pts, radius, c)
+}
+
+// drawMouthFilled draws an elliptical open mouth. It uses a per-scanline fill
+// so the teeth boundary follows the natural ellipse curve exactly — no clip-path
+// needed. Teeth fill the top 28%, interior fills the rest, tongue sits at the
+// bottom of the interior as a narrower lighter-green ellipse.
+func (r *Renderer) drawMouthFilled(cx, mty, mw, mh int32, teeth, interior, tongue rgba) {
+	if mw <= 0 || mh <= 0 {
+		return
+	}
+	// Dark outline: draw a marginally larger ellipse underneath.
+	border := max32(2, mw/90)
+	r.fillEllipse(cx-mw/2-border, mty-border, mw+2*border, mh+2*border, rgba{0x1a, 0x1a, 0x1a, 255})
+
+	// Per-scanline fill: teeth in the top 28%, dark green interior below.
+	mhf := float64(mh)
+	tth := int32(mhf * 0.28) // teeth height
+	for dy := int32(0); dy < mh; dy++ {
+		normY := (float64(dy) + 0.5 - mhf/2) / (mhf / 2)
+		if normY*normY >= 1.0 {
+			continue
+		}
+		xHalf := int32(math.Round(math.Sqrt(1.0-normY*normY) * float64(mw) / 2))
+		if xHalf <= 0 {
+			continue
+		}
+		c := interior
+		if dy < tth {
+			c = teeth
+		}
+		r.fillRectColor(cx-xHalf, mty+dy, xHalf*2, 1, c)
+	}
+
+	// Tongue: a narrower lighter ellipse in the lower half of the interior.
+	// It is fully contained within the mouth ellipse, so it naturally
+	// disappears behind the lower lip boundary — no overdraw needed.
+	trx := int32(float64(mw) * 0.28)
+	try := int32(float64(mh) * 0.13)
+	tcy := mty + tth + int32(float64(mh-tth)*0.62)
+	r.fillEllipse(cx-trx, tcy-try, trx*2, try*2, tongue)
 }
 
 func max32(a, b int32) int32 {

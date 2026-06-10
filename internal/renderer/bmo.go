@@ -23,6 +23,7 @@ type FrameState struct {
 	Thinking        bool
 	LastInteraction time.Time
 	Overlay         *OverlayState
+	SpeakAmplitude  float32
 }
 
 type OverlayState struct {
