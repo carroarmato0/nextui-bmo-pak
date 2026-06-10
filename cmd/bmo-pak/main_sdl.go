@@ -92,7 +92,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var activeMenu ui.Menu
 	providerMenu := ui.NewProviderMenu(cfg)
 	settingsMenu := ui.NewSettingsMenu(cfg)
-	pttMenu := ui.NewSetupMenu(cfg)
 	setActiveMenu := func(menu ui.Menu) {
 		activeMenu = menu
 		if activeMenu != nil {
@@ -102,7 +101,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 	if initialScreen == ui.ScreenSetup {
-		logger.Infof("setup flow required; press MENU to open settings, F1 for AI setup, F2 for PTT setup")
+		logger.Infof("setup flow required; press MENU to exit to NextUI, Start to open settings, Y for AI setup")
 	}
 
 	machine := assistant.NewMachine()
@@ -251,12 +250,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				} else {
 					setActiveMenu(settingsMenu)
 				}
-			case sdl.K_F2:
-				if activeMenu != nil && activeMenu.Title() == "SETUP" {
-					setActiveMenu(nil)
-				} else {
-					setActiveMenu(pttMenu)
-				}
 			case sdl.K_F3:
 				if activeMenu != nil && activeMenu.Title() == "AI SETUP" {
 					setActiveMenu(nil)
@@ -301,8 +294,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				setActiveMenu(nil)
 			case sdl.CONTROLLER_BUTTON_Y:
 				setActiveMenu(providerMenu)
-			case sdl.CONTROLLER_BUTTON_X:
-				setActiveMenu(pttMenu)
 			case sdl.CONTROLLER_BUTTON_LEFTSHOULDER, sdl.CONTROLLER_BUTTON_RIGHTSHOULDER:
 				setActiveMenu(settingsMenu)
 			}
@@ -346,8 +337,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 						running = false
 					case sdl.K_F1:
 						setActiveMenu(providerMenu)
-					case sdl.K_F2:
-						setActiveMenu(pttMenu)
 					}
 				}
 			case *sdl.TextInputEvent:

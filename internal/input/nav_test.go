@@ -8,12 +8,7 @@ func TestNavActionForKey(t *testing.T) {
 		want NavAction
 		ok   bool
 	}{
-		{304, NavConfirm, true},
 		{305, NavCancel, true},
-		{307, NavAISetup, true},
-		{308, NavPTTSetup, true},
-		{310, NavSettings, true},
-		{311, NavSettings, true},
 		{314, NavCancel, true},
 		{315, NavSave, true},
 		{316, NavMenu, true},
@@ -21,9 +16,12 @@ func TestNavActionForKey(t *testing.T) {
 		{btnDpadDown, NavDown, true},
 		{btnDpadLeft, NavLeft, true},
 		{btnDpadRight, NavRight, true},
+		{304, 0, false}, // A button — PTT only, no nav
+		{307, 0, false}, // Y — no longer mapped
+		{308, 0, false}, // X — no longer mapped
+		{310, 0, false}, // L shoulder — no longer mapped
 		{0, 0, false},
 		{99, 0, false},
-		{303, 0, false},
 	}
 	for _, tc := range cases {
 		got, ok := navActionForKey(tc.code)

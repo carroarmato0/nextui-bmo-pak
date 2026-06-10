@@ -111,13 +111,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	logger.Infof("initial screen: %s", initialScreen)
 
 	var activeMenu ui.Menu
-	providerMenu := ui.NewProviderMenu(cfg)
 	settingsMenu := ui.NewSettingsMenu(cfg)
-	pttMenu := ui.NewSetupMenu(cfg)
 	setActiveMenu := func(menu ui.Menu) { activeMenu = menu }
 
 	if initialScreen == ui.ScreenSetup {
-		logger.Infof("setup flow required; press MENU to open settings, L/R for settings, Y for AI setup, X for PTT setup")
+		logger.Infof("setup flow required; press MENU to exit to NextUI, Start to open settings, Y for AI setup")
 	}
 
 	machine := assistant.NewMachine()
@@ -211,12 +209,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// When no overlay is open, shortcut buttons open specific menus.
 		if activeMenu == nil {
 			switch action {
-			case input.NavSettings:
+			case input.NavSave:
 				setActiveMenu(settingsMenu)
-			case input.NavAISetup:
-				setActiveMenu(providerMenu)
-			case input.NavPTTSetup:
-				setActiveMenu(pttMenu)
 			}
 			return
 		}
@@ -230,7 +224,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 		if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
 			switch action {
-			case input.NavConfirm, input.NavSave:
+			case input.NavSave:
 				if err := ed.SubmitEdit(); err != nil {
 					logger.Warnf("edit submit: %v", err)
 				}
@@ -245,14 +239,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			activeMenu.Move(-1)
 		case input.NavDown, input.NavRight:
 			activeMenu.Move(1)
-		case input.NavConfirm:
-			if err := activeMenu.ToggleFocused(); err != nil {
-				logger.Warnf("toggle focused: %v", err)
-			}
-			// Cancel any edit state that was inadvertently triggered (no keyboard on hardware).
-			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
-				ed.CancelEdit()
-			}
 		case input.NavSave:
 			if err := commitMenu(activeMenu); err != nil {
 				logger.Warnf("menu save: %v", err)
@@ -261,25 +247,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 		case input.NavCancel:
 			setActiveMenu(nil)
-		case input.NavSettings:
-			if activeMenu.Title() == "SETTINGS" {
-				setActiveMenu(nil)
-			} else {
-				setActiveMenu(settingsMenu)
-			}
-			return
-		case input.NavAISetup:
-			if activeMenu.Title() == "AI SETUP" {
-				setActiveMenu(nil)
-			} else {
-				setActiveMenu(providerMenu)
-			}
-		case input.NavPTTSetup:
-			if activeMenu.Title() == "SETUP" {
-				setActiveMenu(nil)
-			} else {
-				setActiveMenu(pttMenu)
-			}
 		}
 	}
 

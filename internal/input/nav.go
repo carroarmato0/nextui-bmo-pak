@@ -15,17 +15,13 @@ import (
 type NavAction uint8
 
 const (
-	NavUp       NavAction = iota // D-pad up
-	NavDown                       // D-pad down
-	NavLeft                       // D-pad left
-	NavRight                      // D-pad right
-	NavConfirm                    // A/South — toggle or select focused item
-	NavCancel                     // B/East or Select — close overlay or cancel
-	NavSave                       // Start — save and close overlay
-	NavMenu                       // Mode/Guide — toggle main settings overlay
-	NavAISetup                    // Y/North — open AI provider overlay
-	NavPTTSetup                   // X/West — open PTT button overlay
-	NavSettings                   // L/R shoulder — open general settings overlay
+	NavUp     NavAction = iota // D-pad up
+	NavDown                     // D-pad down
+	NavLeft                     // D-pad left
+	NavRight                    // D-pad right
+	NavCancel                   // B/East or Select — close overlay or exit
+	NavSave                     // Start — save / open settings
+	NavMenu                     // Mode/Guide — exit to NextUI
 )
 
 const (
@@ -165,18 +161,8 @@ func (r *NavReader) run(ctx context.Context, f *os.File) {
 // navActionForKey maps a Linux EV_KEY button code to a NavAction on press.
 func navActionForKey(code uint16) (NavAction, bool) {
 	switch code {
-	case 304: // BTN_SOUTH / A
-		return NavConfirm, true
 	case 305: // BTN_EAST / B
 		return NavCancel, true
-	case 307: // BTN_NORTH / Y
-		return NavAISetup, true
-	case 308: // BTN_WEST / X
-		return NavPTTSetup, true
-	case 310: // BTN_TL / left shoulder
-		return NavSettings, true
-	case 311: // BTN_TR / right shoulder
-		return NavSettings, true
 	case 314: // BTN_SELECT
 		return NavCancel, true
 	case 315: // BTN_START
