@@ -193,12 +193,15 @@ func (r *Renderer) Draw(frame FrameState) error {
 		phase = float64(frame.Now.UnixNano()) / 1e9
 	}
 
-	r.fillRectColor(0, 0, r.W, r.H, rgba{22, 108, 121, 255})
-	r.drawBackdrop(layout, phase)
-	r.drawFace(layout, style, frame, phase)
-	r.drawCornerClock(layout, frame, style)
+	r.fillRectColor(0, 0, r.W, r.H, rgba{0x4e, 0xcb, 0xa8, 255}) // body teal
 	if frame.Overlay != nil && frame.Overlay.Visible {
+		// Hide the face while the settings overlay is open so eye arcs
+		// cannot bleed outside the panel regardless of the current expression.
 		r.drawOverlay(layout, *frame.Overlay)
+	} else {
+		r.drawBackdrop(layout, phase)
+		r.drawFace(layout, style, frame, phase)
+		r.drawCornerClock(layout, frame, style)
 	}
 	return r.present()
 }
@@ -364,7 +367,7 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 
 	case bmoEyeArc:
 		// ∩ upward arc: endpoints y=41.9%, control y=32.3%, half-width=18.8%
-		ahw := int32(iw * 0.188)
+		ahw := int32(iw * 0.094) // center-to-endpoint, not full span
 		aey := iy + int32(ih*0.419)
 		aqy := iy + int32(ih*0.323)
 		thk := max32(3, int32(iw*0.025))
@@ -612,9 +615,9 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	top += 28
 	for _, line := range overlay.Subtitle {
 		r.drawText(left, top, 2, rgba{176, 213, 206, 255}, line)
-		top += 16
+		top += 20
 	}
-	top += 8
+	top += 12
 	for _, item := range overlay.Items {
 		boxColor := rgba{79, 139, 141, 255}
 		if item.Selected {
@@ -633,7 +636,7 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 			labelColor = rgba{255, 241, 145, 255}
 		}
 		r.drawText(left+20, top, 2, labelColor, item.Label)
-		top += 20
+		top += 26
 	}
 	if strings.TrimSpace(overlay.Footer) != "" {
 		r.drawText(left, panelY+panelH-28, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))

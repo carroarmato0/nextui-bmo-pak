@@ -211,9 +211,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
-		// B always exits — whether menu is open or not.
+		// B closes the settings overlay when open; exits to NextUI when no overlay is active.
 		if action == input.NavCancel {
-			running = false
+			if activeMenu != nil {
+				setActiveMenu(nil)
+			} else {
+				running = false
+			}
 			return
 		}
 
@@ -326,11 +330,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(assistant.ExpressionSleeping)
 		}
 		if activeMenu != nil {
-			if activeMenu.Title() == "SETTINGS" {
-				expr = string(assistant.ExpressionSmile)
-			} else {
-				expr = string(assistant.ExpressionConcerned)
-			}
+			expr = string(assistant.ExpressionNeutral)
 		}
 		machine.SetExpression(assistant.Expression(expr))
 

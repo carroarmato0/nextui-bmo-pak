@@ -163,8 +163,6 @@ func navActionForKey(code uint16) (NavAction, bool) {
 	switch code {
 	case 305: // BTN_EAST / B
 		return NavCancel, true
-	case 314: // BTN_SELECT
-		return NavCancel, true
 	case 315: // BTN_START
 		return NavSave, true
 	case 316: // BTN_MODE / menu button

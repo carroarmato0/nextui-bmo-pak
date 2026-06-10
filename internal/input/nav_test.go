@@ -9,7 +9,7 @@ func TestNavActionForKey(t *testing.T) {
 		ok   bool
 	}{
 		{305, NavCancel, true},
-		{314, NavCancel, true},
+		{314, 0, false}, // SELECT — unmapped to avoid accidental exits
 		{315, NavSave, true},
 		{316, NavMenu, true},
 		{btnDpadUp, NavUp, true},
