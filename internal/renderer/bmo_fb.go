@@ -609,15 +609,15 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	r.fillRoundedRect(panelX, panelY, panelW, panelH, clampInt32(layout.CornerRadius/2, 12, 48), rgba{10, 29, 39, 255})
 	r.fillRoundedRect(panelX+4, panelY+4, panelW-8, panelH-8, clampInt32(layout.CornerRadius/2, 10, 40), rgba{22, 53, 62, 255})
 
-	top := panelY + 18
-	left := panelX + 18
+	top := panelY + 22
+	left := panelX + 22
 	r.drawText(left, top, 4, rgba{214, 235, 227, 255}, overlay.Title)
-	top += 28
+	top += 40 // title is 28px (7 rows × 4px); 12px breathing room below
 	for _, line := range overlay.Subtitle {
 		r.drawText(left, top, 2, rgba{176, 213, 206, 255}, line)
-		top += 20
+		top += 24 // subtitle line is 14px (7 rows × 2px); 10px gap between lines
 	}
-	top += 12
+	top += 18
 	for _, item := range overlay.Items {
 		boxColor := rgba{79, 139, 141, 255}
 		if item.Selected {

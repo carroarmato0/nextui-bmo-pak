@@ -222,11 +222,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 
 		// Start opens/closes the settings overlay.
+		// Values are already auto-saved on change, so just close.
 		if action == input.NavSave {
 			if activeMenu != nil {
-				if err := commitMenu(activeMenu); err != nil {
-					logger.Warnf("menu save: %v", err)
-				}
 				setActiveMenu(nil)
 			} else {
 				setActiveMenu(settingsMenu)
@@ -254,15 +252,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				ed.CancelEdit()
 			}
 			if err := activeMenu.ToggleFocused(); err != nil {
-				logger.Warnf("toggle focused: %v", err)
+				logger.Debugf("toggle focused: %v", err)
 			}
 			// Cancel if ToggleFocused entered edit mode (API key item).
-			type editCheck interface {
-				IsEditing() bool
-				CancelEdit()
-			}
-			if ed, ok := activeMenu.(editCheck); ok && ed.IsEditing() {
+			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
 				ed.CancelEdit()
+			}
+			// Auto-persist after every value cycle. Validation failures
+			// (e.g. AI mode without providers) are silently dropped.
+			if err := commitMenu(activeMenu); err != nil {
+				logger.Debugf("auto-save: %v", err)
 			}
 		}
 	}

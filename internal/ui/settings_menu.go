@@ -131,8 +131,8 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
 			Focused:  m.focus == 4 && !m.editing},
 	}
-	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE VALUE"}
-	footer := "START TO SAVE  B TO CLOSE"
+	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}
+	footer := "START OR B TO CLOSE"
 	if m.editing {
 		cur := strings.ToUpper(strings.TrimSpace(m.editingKind))
 		subtitle = []string{"EDITING " + cur + " API KEY", "START TO SAVE  B TO CANCEL"}
