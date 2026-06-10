@@ -90,13 +90,16 @@ func (l *Logger) Warnf(format string, args ...any)  { l.logf(LevelWarn, format, 
 func (l *Logger) Errorf(format string, args ...any) { l.logf(LevelError, format, args...) }
 
 func (l *Logger) logf(level Level, format string, args ...any) {
-	if l == nil || level < l.level {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if level < l.level {
 		return
 	}
 
 	msg := fmt.Sprintf(format, args...)
-	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	for _, secret := range l.secrets {
 		if secret != "" {
