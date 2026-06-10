@@ -40,7 +40,14 @@ func TestProviderMenuCyclesProfilesAndSaves(t *testing.T) {
 		t.Fatalf("STT.Model = %q", got)
 	}
 
-
+	menu.Move(1)
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() error = %v", err)
+	}
+	menu.InsertText("secret-stt")
+	if err := menu.SubmitEdit(); err != nil {
+		t.Fatalf("SubmitEdit() error = %v", err)
+	}
 	menu.Move(1)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
@@ -49,18 +56,24 @@ func TestProviderMenuCyclesProfilesAndSaves(t *testing.T) {
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
-	if err := menu.SetAPIKey("stt", "secret"); err != nil {
-		t.Fatalf("SetAPIKey() error = %v", err)
+	menu.InsertText("secret-chat")
+	if err := menu.SubmitEdit(); err != nil {
+		t.Fatalf("SubmitEdit() error = %v", err)
 	}
-	if err := menu.SetAPIKey("chat", "secret-chat"); err != nil {
-		t.Fatalf("SetAPIKey() error = %v", err)
+	menu.Move(1)
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() error = %v", err)
 	}
-	if err := menu.SetAPIKey("tts", "secret-tts"); err != nil {
-		t.Fatalf("SetAPIKey() error = %v", err)
+	menu.Move(1)
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() error = %v", err)
 	}
-
-	if got := menu.Overlay().Items[1].Label; got == "STT: NOT SET" {
-		t.Fatal("expected STT label to reflect API key presence")
+	menu.InsertText("secret-tts")
+	if err := menu.SubmitEdit(); err != nil {
+		t.Fatalf("SubmitEdit() error = %v", err)
+	}
+	if got := menu.Overlay().Items[2].Label; got == "STT: KEY MISSING" {
+		t.Fatal("expected STT key label to reflect API key presence")
 	}
 
 	saved, err := menu.Save()
@@ -69,6 +82,38 @@ func TestProviderMenuCyclesProfilesAndSaves(t *testing.T) {
 	}
 	if !saved.SetupComplete {
 		t.Fatal("Save() should mark setup complete")
+	}
+}
+
+func TestProviderMenuAPIKeyEditingFlow(t *testing.T) {
+	menu := NewProviderMenu(config.Default())
+	menu.Move(2)
+	if got := menu.Overlay().Items[2].Code; got != "stt_key" {
+		t.Fatalf("focus item code = %q, want stt_key", got)
+	}
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() enter edit error = %v", err)
+	}
+	if !menu.IsEditing() {
+		t.Fatal("expected menu to enter edit mode")
+	}
+	if menu.EditingKind() != "stt" {
+		t.Fatalf("EditingKind() = %q, want stt", menu.EditingKind())
+	}
+	menu.InsertText("sk-test")
+	menu.Backspace()
+	menu.InsertText("3")
+	if got := menu.EditBuffer(); got != "sk-tes3" {
+		t.Fatalf("EditBuffer() = %q, want sk-tes3", got)
+	}
+	if err := menu.SubmitEdit(); err != nil {
+		t.Fatalf("SubmitEdit() error = %v", err)
+	}
+	if menu.IsEditing() {
+		t.Fatal("expected edit mode to end after submit")
+	}
+	if got := menu.Config().STT.APIKey; got != "sk-tes3" {
+		t.Fatalf("STT.APIKey = %q, want sk-tes3", got)
 	}
 }
 

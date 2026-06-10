@@ -92,8 +92,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var activeMenu ui.Menu
 	providerMenu := ui.NewProviderMenu(cfg)
 	pttMenu := ui.NewSetupMenu(cfg)
+	setActiveMenu := func(menu ui.Menu) {
+		activeMenu = menu
+		if activeMenu != nil {
+			sdl.StartTextInput()
+		} else {
+			sdl.StopTextInput()
+		}
+	}
 	if initialScreen == ui.ScreenSetup {
-		activeMenu = providerMenu
+		setActiveMenu(providerMenu)
 		logger.Infof("setup menu active: provider selection ready for first-run setup")
 	}
 
@@ -172,6 +180,19 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if e.Type != sdl.KEYDOWN {
 				return true
 			}
+			if editor, ok := activeMenu.(interface{ IsEditing() bool; InsertText(string); Backspace(); CancelEdit(); SubmitEdit() error }); ok && editor.IsEditing() {
+				switch e.Keysym.Sym {
+				case sdl.K_RETURN, sdl.K_KP_ENTER:
+					if err := editor.SubmitEdit(); err != nil {
+						logger.Warnf("api key edit rejected: %v", err)
+					}
+				case sdl.K_ESCAPE:
+					editor.CancelEdit()
+				case sdl.K_BACKSPACE:
+					editor.Backspace()
+				}
+				return true
+			}
 			switch e.Keysym.Sym {
 			case sdl.K_UP, sdl.K_LEFT:
 				activeMenu.Move(-1)
@@ -181,30 +202,47 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if err := activeMenu.ToggleFocused(); err != nil {
 					logger.Warnf("ptt toggle rejected: %v", err)
 				}
+			case sdl.K_e:
+				if err := activeMenu.ToggleFocused(); err != nil {
+					logger.Warnf("api key edit rejected: %v", err)
+				}
 			case sdl.K_s:
 				if err := commitMenu(activeMenu); err != nil {
 					logger.Warnf("menu save failed: %v", err)
 				} else {
-					activeMenu = nil
+					setActiveMenu(nil)
 				}
 			case sdl.K_ESCAPE:
-				activeMenu = nil
+				setActiveMenu(nil)
 			case sdl.K_F1:
 				if activeMenu != nil && activeMenu.Title() == "AI SETUP" {
-					activeMenu = nil
+					setActiveMenu(nil)
 				} else {
-					activeMenu = providerMenu
+					setActiveMenu(providerMenu)
 				}
 			case sdl.K_F2:
 				if activeMenu != nil && activeMenu.Title() == "SETUP" {
-					activeMenu = nil
+					setActiveMenu(nil)
 				} else {
-					activeMenu = pttMenu
+					setActiveMenu(pttMenu)
 				}
 			}
 			return true
 		case *sdl.ControllerButtonEvent:
 			if e.Type != sdl.CONTROLLERBUTTONDOWN {
+				return true
+			}
+			if editor, ok := activeMenu.(interface{ IsEditing() bool; SubmitEdit() error; CancelEdit(); Backspace() }); ok && editor.IsEditing() {
+				switch e.Button {
+				case sdl.CONTROLLER_BUTTON_A, sdl.CONTROLLER_BUTTON_START:
+					if err := editor.SubmitEdit(); err != nil {
+						logger.Warnf("api key edit rejected: %v", err)
+					}
+				case sdl.CONTROLLER_BUTTON_B:
+					editor.CancelEdit()
+				case sdl.CONTROLLER_BUTTON_DPAD_LEFT, sdl.CONTROLLER_BUTTON_DPAD_UP:
+					editor.Backspace()
+				}
 				return true
 			}
 			switch e.Button {
@@ -220,14 +258,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if err := commitMenu(activeMenu); err != nil {
 					logger.Warnf("menu save failed: %v", err)
 				} else {
-					activeMenu = nil
+					setActiveMenu(nil)
 				}
 			case sdl.CONTROLLER_BUTTON_B:
-				activeMenu = nil
+				setActiveMenu(nil)
 			case sdl.CONTROLLER_BUTTON_Y:
-				activeMenu = providerMenu
+				setActiveMenu(providerMenu)
 			case sdl.CONTROLLER_BUTTON_X:
-				activeMenu = pttMenu
+				setActiveMenu(pttMenu)
 			}
 			return true
 		}
@@ -265,8 +303,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					case sdl.K_ESCAPE:
 						running = false
 					case sdl.K_F1:
-						activeMenu = providerMenu
+						setActiveMenu(providerMenu)
+					case sdl.K_F2:
+						setActiveMenu(pttMenu)
 					}
+				}
+			case *sdl.TextInputEvent:
+				if editor, ok := activeMenu.(interface{ IsEditing() bool; InsertText(string) }); ok && editor.IsEditing() {
+					editor.InsertText(strings.TrimRight(string(ev.Text[:]), string(rune(0))))
 				}
 			case *sdl.WindowEvent:
 				if ev.Event == sdl.WINDOWEVENT_SIZE_CHANGED || ev.Event == sdl.WINDOWEVENT_RESIZED {

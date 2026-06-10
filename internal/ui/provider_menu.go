@@ -8,9 +8,12 @@ import (
 )
 
 type ProviderMenu struct {
-	title string
-	cfg   config.Config
-	focus int
+	title       string
+	cfg         config.Config
+	focus       int
+	editing     bool
+	editingKind string
+	draft       string
 }
 
 func NewProviderMenu(cfg config.Config) *ProviderMenu {
@@ -29,10 +32,14 @@ func (m *ProviderMenu) Title() string {
 }
 
 func (m *ProviderMenu) Move(delta int) {
-	if m == nil {
+	if m == nil || m.editing {
 		return
 	}
-	count := 4
+	count := m.itemCount()
+	if count == 0 {
+		m.focus = 0
+		return
+	}
 	m.focus = (m.focus + delta) % count
 	if m.focus < 0 {
 		m.focus += count
@@ -42,6 +49,9 @@ func (m *ProviderMenu) Move(delta int) {
 func (m *ProviderMenu) ToggleFocused() error {
 	if m == nil {
 		return fmt.Errorf("nil provider menu")
+	}
+	if m.editing {
+		return m.SubmitEdit()
 	}
 	switch m.focus {
 	case 0:
@@ -58,9 +68,15 @@ func (m *ProviderMenu) ToggleFocused() error {
 	case 1:
 		m.cfg.STT = cycleProviderPreset(m.cfg.STT, []providerPreset{{Name: "openai-compatible", Model: "whisper-1"}, {Name: "local", Model: "whisper.cpp"}, {Name: "custom", Model: ""}})
 	case 2:
-		m.cfg.Chat = cycleProviderPreset(m.cfg.Chat, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini"}, {Name: "local", Model: "llama-3.2-3b-instruct"}, {Name: "custom", Model: ""}})
+		return m.BeginAPIKeyEdit("stt")
 	case 3:
+		m.cfg.Chat = cycleProviderPreset(m.cfg.Chat, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini"}, {Name: "local", Model: "llama-3.2-3b-instruct"}, {Name: "custom", Model: ""}})
+	case 4:
+		return m.BeginAPIKeyEdit("chat")
+	case 5:
 		m.cfg.TTS = cycleProviderPreset(m.cfg.TTS, []providerPreset{{Name: "openai-compatible", Model: "tts-1", Voice: "alloy"}, {Name: "local", Model: "piper"}, {Name: "custom", Model: ""}})
+	case 6:
+		return m.BeginAPIKeyEdit("tts")
 	default:
 		return fmt.Errorf("unsupported focus")
 	}
@@ -70,6 +86,11 @@ func (m *ProviderMenu) ToggleFocused() error {
 func (m *ProviderMenu) Save() (config.Config, error) {
 	if m == nil {
 		return config.Config{}, fmt.Errorf("nil provider menu")
+	}
+	if m.editing {
+		if err := m.SubmitEdit(); err != nil {
+			return config.Config{}, err
+		}
 	}
 	cfg := m.cfg
 	cfg.Normalize()
@@ -86,18 +107,22 @@ func (m *ProviderMenu) Overlay() OverlayState {
 		return OverlayState{}
 	}
 	items := []OverlayItem{
-		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode), Selected: true, Focused: m.focus == 0},
-		{Code: "stt", Label: providerSummaryLabel("STT", m.cfg.STT), Selected: m.cfg.STT.IsConfigured(), Focused: m.focus == 1},
-		{Code: "chat", Label: providerSummaryLabel("CHAT", m.cfg.Chat), Selected: m.cfg.Chat.IsConfigured(), Focused: m.focus == 2},
-		{Code: "tts", Label: providerSummaryLabel("TTS", m.cfg.TTS), Selected: m.cfg.TTS.IsConfigured(), Focused: m.focus == 3},
+		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode), Selected: true, Focused: m.focus == 0 && !m.editing},
+		{Code: "stt_provider", Label: providerSummaryLabel("STT", m.cfg.STT), Selected: m.cfg.STT.IsConfigured(), Focused: m.focus == 1 && !m.editing},
+		{Code: "stt_key", Label: providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == "stt", m.draft), Selected: strings.TrimSpace(m.cfg.STT.APIKey) != "", Focused: m.focus == 2 && !m.editing},
+		{Code: "chat_provider", Label: providerSummaryLabel("CHAT", m.cfg.Chat), Selected: m.cfg.Chat.IsConfigured(), Focused: m.focus == 3 && !m.editing},
+		{Code: "chat_key", Label: providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == "chat", m.draft), Selected: strings.TrimSpace(m.cfg.Chat.APIKey) != "", Focused: m.focus == 4 && !m.editing},
+		{Code: "tts_provider", Label: providerSummaryLabel("TTS", m.cfg.TTS), Selected: m.cfg.TTS.IsConfigured(), Focused: m.focus == 5 && !m.editing},
+		{Code: "tts_key", Label: providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft), Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "", Focused: m.focus == 6 && !m.editing},
 	}
-	return OverlayState{
-		Visible:  true,
-		Title:    m.title,
-		Subtitle: []string{"SELECT AI PROVIDERS", "ENTER TO CYCLE PROFILE"},
-		Items:    items,
-		Footer:   "SPACE TO TOGGLE MODE/PROFILE • START TO SAVE",
+	subtitle := []string{"SELECT AI PROVIDERS OR API KEYS", "ENTER TO TOGGLE/CYCLE, E TO EDIT KEY"}
+	footer := "SPACE/A TO TOGGLE, ENTER TO EDIT KEY, START TO SAVE"
+	if m.editing {
+		cur := strings.ToUpper(strings.TrimSpace(m.editingKind))
+		subtitle = []string{"EDITING " + cur + " API KEY", "ENTER TO SAVE, ESC TO CANCEL, BACKSPACE TO DELETE"}
+		footer = "TYPE THE KEY NOW"
 	}
+	return OverlayState{Visible: true, Title: m.title, Subtitle: subtitle, Items: items, Footer: footer}
 }
 
 func (m *ProviderMenu) Config() config.Config {
@@ -123,6 +148,95 @@ func (m *ProviderMenu) SetAPIKey(kind, key string) error {
 		return fmt.Errorf("unknown provider kind %q", kind)
 	}
 	return nil
+}
+
+func (m *ProviderMenu) IsEditing() bool {
+	return m != nil && m.editing
+}
+
+func (m *ProviderMenu) EditingKind() string {
+	if m == nil {
+		return ""
+	}
+	return m.editingKind
+}
+
+func (m *ProviderMenu) EditBuffer() string {
+	if m == nil {
+		return ""
+	}
+	return m.draft
+}
+
+func (m *ProviderMenu) BeginAPIKeyEdit(kind string) error {
+	if m == nil {
+		return fmt.Errorf("nil provider menu")
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	switch kind {
+	case "stt", "chat", "tts":
+	default:
+		return fmt.Errorf("unknown provider kind %q", kind)
+	}
+	m.editing = true
+	m.editingKind = kind
+	m.draft = m.currentAPIKey(kind)
+	return nil
+}
+
+func (m *ProviderMenu) InsertText(text string) {
+	if m == nil || !m.editing {
+		return
+	}
+	m.draft += text
+}
+
+func (m *ProviderMenu) Backspace() {
+	if m == nil || !m.editing || m.draft == "" {
+		return
+	}
+	r := []rune(m.draft)
+	m.draft = string(r[:len(r)-1])
+}
+
+func (m *ProviderMenu) SubmitEdit() error {
+	if m == nil {
+		return fmt.Errorf("nil provider menu")
+	}
+	if !m.editing {
+		return nil
+	}
+	if err := m.SetAPIKey(m.editingKind, m.draft); err != nil {
+		return err
+	}
+	m.editing = false
+	m.editingKind = ""
+	m.draft = ""
+	return nil
+}
+
+func (m *ProviderMenu) CancelEdit() {
+	if m == nil {
+		return
+	}
+	m.editing = false
+	m.editingKind = ""
+	m.draft = ""
+}
+
+func (m *ProviderMenu) itemCount() int { return 7 }
+
+func (m *ProviderMenu) currentAPIKey(kind string) string {
+	switch kind {
+	case "stt":
+		return m.cfg.STT.APIKey
+	case "chat":
+		return m.cfg.Chat.APIKey
+	case "tts":
+		return m.cfg.TTS.APIKey
+	default:
+		return ""
+	}
 }
 
 type providerPreset struct {
@@ -171,4 +285,14 @@ func providerSummaryLabel(kind string, p config.Provider) string {
 		parts = append(parts, "KEY SET")
 	}
 	return strings.Join(parts, " • ")
+}
+
+func providerKeyLabel(kind, key string, editing bool, draft string) string {
+	if editing {
+		return kind + ": KEY EDITING"
+	}
+	if strings.TrimSpace(key) == "" {
+		return kind + ": KEY MISSING"
+	}
+	return kind + ": KEY SET"
 }
