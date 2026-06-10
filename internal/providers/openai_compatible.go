@@ -231,7 +231,7 @@ func buildTranscriptionBody(req TranscriptionRequest) (io.Reader, string, error)
 			return nil, "", err
 		}
 	}
-	if err := writer.WriteField("response_format", req.Format); err != nil {
+	if err := writer.WriteField("response_format", "json"); err != nil {
 		return nil, "", err
 	}
 

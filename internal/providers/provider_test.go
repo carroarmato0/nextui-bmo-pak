@@ -106,7 +106,7 @@ func TestTranscribeReplyAndSpeak(t *testing.T) {
 				b, _ := io.ReadAll(part)
 				fields[part.FormName()] = string(b)
 			}
-			if fields["model"] != "whisper-1" || fields["response_format"] != "wav" {
+			if fields["model"] != "whisper-1" || fields["response_format"] != "json" {
 				t.Fatalf("unexpected transcription fields: %#v", fields)
 			}
 			w.Header().Set("Content-Type", "application/json")
