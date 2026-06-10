@@ -33,6 +33,24 @@ func main() {
 	}
 }
 
+// acquireLock tries to take an exclusive advisory lock on a file so that
+// only one instance of the pak runs at a time. It returns a release function.
+func acquireLock(path string) (release func(), ok bool) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return func() {}, true // can't create lock file — allow startup
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, false
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		_ = os.Remove(path)
+	}, true
+}
+
 func run(stdout io.Writer, stderr io.Writer) error {
 	_ = stderr
 
@@ -50,6 +68,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		return fmt.Errorf("create home directory: %w", err)
 	}
+
+	release, ok := acquireLock(filepath.Join(homeDir, ".lock"))
+	if !ok {
+		fmt.Fprintln(stdout, "BMO is already running")
+		return nil
+	}
+	defer release()
 
 	cfgPath := config.Path(homeDir)
 	cfg, err := config.Load(cfgPath)
