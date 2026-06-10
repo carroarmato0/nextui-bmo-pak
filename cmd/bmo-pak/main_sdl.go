@@ -89,6 +89,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	initialScreen := flow.InitialScreen()
 	logger.Infof("initial screen: %s", initialScreen)
 
+	var activeMenu *ui.PTTMenu
+	settingsMenu := ui.NewSettingsMenu(cfg)
+	if initialScreen == ui.ScreenSetup {
+		activeMenu = ui.NewSetupMenu(cfg)
+		logger.Infof("setup menu active: PTT mapping ready for first-run selection")
+	}
+
 	machine := assistant.NewMachine()
 	machine.SetMode(cfg.Mode)
 	machine.SetIdleSeed(time.Now().UnixNano())
@@ -136,6 +143,96 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Warnf("setup flow required; rendering BMO with a concerned idle face until the setup screen loop lands")
 	}
 
+	commitMenu := func(menu *ui.PTTMenu) error {
+		if menu == nil {
+			return nil
+		}
+		saved, err := menu.Save()
+		if err != nil {
+			return err
+		}
+		cfg = saved
+		if err := config.Save(cfgPath, cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+		for _, secret := range cfg.Secrets() {
+			logger.RegisterSecret(secret)
+		}
+		logger.Infof("saved %s menu with ptt buttons: %s", menu.Title(), strings.Join(cfg.PTTButtons, ", "))
+		return nil
+	}
+
+	handleMenuEvent := func(ev sdl.Event) bool {
+		if activeMenu == nil {
+			return false
+		}
+		switch e := ev.(type) {
+		case *sdl.KeyboardEvent:
+			if e.Type != sdl.KEYDOWN {
+				return true
+			}
+			switch e.Keysym.Sym {
+			case sdl.K_UP, sdl.K_LEFT:
+				activeMenu.Move(-1)
+			case sdl.K_DOWN, sdl.K_RIGHT:
+				activeMenu.Move(1)
+			case sdl.K_RETURN, sdl.K_SPACE:
+				if err := activeMenu.ToggleFocused(); err != nil {
+					logger.Warnf("ptt toggle rejected: %v", err)
+				}
+			case sdl.K_s:
+				if err := commitMenu(activeMenu); err != nil {
+					logger.Warnf("menu save failed: %v", err)
+				} else if activeMenu.Title() == "SETUP" {
+					activeMenu = nil
+				}
+			case sdl.K_ESCAPE:
+				if activeMenu.Title() != "SETUP" {
+					activeMenu = nil
+				}
+			case sdl.K_F1:
+				if activeMenu.Title() == "SETTINGS" {
+					activeMenu = nil
+				} else {
+					activeMenu = settingsMenu
+				}
+			}
+			return true
+		case *sdl.ControllerButtonEvent:
+			if e.Type != sdl.CONTROLLERBUTTONDOWN {
+				return true
+			}
+			switch e.Button {
+			case sdl.CONTROLLER_BUTTON_DPAD_UP, sdl.CONTROLLER_BUTTON_DPAD_LEFT:
+				activeMenu.Move(-1)
+			case sdl.CONTROLLER_BUTTON_DPAD_DOWN, sdl.CONTROLLER_BUTTON_DPAD_RIGHT:
+				activeMenu.Move(1)
+			case sdl.CONTROLLER_BUTTON_A:
+				if err := activeMenu.ToggleFocused(); err != nil {
+					logger.Warnf("ptt toggle rejected: %v", err)
+				}
+			case sdl.CONTROLLER_BUTTON_START:
+				if err := commitMenu(activeMenu); err != nil {
+					logger.Warnf("menu save failed: %v", err)
+				} else if activeMenu.Title() == "SETUP" {
+					activeMenu = nil
+				}
+			case sdl.CONTROLLER_BUTTON_B:
+				if activeMenu.Title() != "SETUP" {
+					activeMenu = nil
+				}
+			case sdl.CONTROLLER_BUTTON_Y:
+				if activeMenu.Title() == "SETTINGS" {
+					activeMenu = nil
+				} else {
+					activeMenu = settingsMenu
+				}
+			}
+			return true
+		}
+		return false
+	}
+
 	scheduler := assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
@@ -155,12 +252,20 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			if handleMenuEvent(event) {
+				continue
+			}
 			switch ev := event.(type) {
 			case *sdl.QuitEvent:
 				running = false
 			case *sdl.KeyboardEvent:
-				if ev.Type == sdl.KEYDOWN && ev.Keysym.Sym == sdl.K_ESCAPE {
-					running = false
+				if ev.Type == sdl.KEYDOWN {
+					switch ev.Keysym.Sym {
+					case sdl.K_ESCAPE:
+						running = false
+					case sdl.K_F1:
+						activeMenu = settingsMenu
+					}
 				}
 			case *sdl.WindowEvent:
 				if ev.Event == sdl.WINDOWEVENT_SIZE_CHANGED || ev.Event == sdl.WINDOWEVENT_RESIZED {
@@ -200,7 +305,20 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		if snap.Quota.Exhausted {
 			expr = string(assistant.ExpressionSleeping)
 		}
+		if activeMenu != nil {
+			if activeMenu.Title() == "SETTINGS" {
+				expr = string(assistant.ExpressionSmile)
+			} else {
+				expr = string(assistant.ExpressionConcerned)
+			}
+		}
 		machine.SetExpression(assistant.Expression(expr))
+
+		var overlay *renderer.OverlayState
+		if activeMenu != nil {
+			o := activeMenu.Overlay()
+			overlay = convertOverlay(o)
+		}
 
 		frame := renderer.FrameState{
 			Expression:      expr,
@@ -212,6 +330,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			Speaking:        snap.Current == assistant.StateSpeaking,
 			Listening:       snap.Current == assistant.StateListening,
 			Thinking:        snap.Current == assistant.StateThinking,
+			Overlay:         overlay,
 		}
 		if snap.Quota.Exhausted && frame.SleepUntil.IsZero() {
 			frame.SleepUntil = now.Add(45 * time.Minute)
@@ -224,6 +343,28 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	logger.Infof("BMO shutting down")
 	return nil
+}
+
+func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
+	if !src.Visible {
+		return nil
+	}
+	items := make([]renderer.OverlayItem, 0, len(src.Items))
+	for _, item := range src.Items {
+		items = append(items, renderer.OverlayItem{
+			Code:     item.Code,
+			Label:    item.Label,
+			Selected: item.Selected,
+			Focused:  item.Focused,
+		})
+	}
+	return &renderer.OverlayState{
+		Visible:  true,
+		Title:    src.Title,
+		Subtitle: append([]string(nil), src.Subtitle...),
+		Items:    items,
+		Footer:   src.Footer,
+	}
 }
 
 func mustHomeDir() string {
