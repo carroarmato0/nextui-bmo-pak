@@ -125,3 +125,40 @@ func TestSettingsScreenPTTButtonsMirrorSetupScreen(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }
+
+
+func TestPTTButtonChoicesExposeLabelsAndSelection(t *testing.T) {
+	flow := NewSetupFlow(config.Default())
+	screen := flow.SetupScreen()
+
+	choices := screen.PTTButtonChoices()
+	if len(choices) == 0 {
+		t.Fatal("PTTButtonChoices() returned no options")
+	}
+	if choices[5].Code != "BTN_TL" || choices[5].Label != "Left trigger" {
+		t.Fatalf("unexpected TL option: %+v", choices[5])
+	}
+	if !choices[5].Selected || !choices[6].Selected {
+		t.Fatalf("default buttons should be selected: %+v %+v", choices[5], choices[6])
+	}
+}
+
+func TestTogglePTTButtonUpdatesSelection(t *testing.T) {
+	screen := NewSetupScreen(config.Default())
+
+	if err := screen.TogglePTTButton("BTN_TL2"); err != nil {
+		t.Fatalf("TogglePTTButton() error = %v", err)
+	}
+	if got := screen.PTTButtons(); len(got) != 3 {
+		t.Fatalf("PTTButtons() = %+v, want 3 buttons", got)
+	}
+	if err := screen.DisablePTTButton("BTN_TR"); err != nil {
+		t.Fatalf("DisablePTTButton() error = %v", err)
+	}
+	if got := screen.PTTButtons(); len(got) != 2 || got[0] != "BTN_TL" || got[1] != "BTN_TL2" {
+		t.Fatalf("PTTButtons() = %+v, want [BTN_TL BTN_TL2]", got)
+	}
+	if summary := screen.PTTButtonSummary(); summary != "Left trigger, Left shoulder" {
+		t.Fatalf("PTTButtonSummary() = %q", summary)
+	}
+}

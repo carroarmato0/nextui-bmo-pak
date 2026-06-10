@@ -102,6 +102,56 @@ func (s *SetupScreen) ResetPTTButtons() {
 	s.cfg.PTTButtons = config.DefaultPTTButtons()
 }
 
+func (s *SetupScreen) PTTButtonChoices() []PTTButtonChoice {
+	if s == nil {
+		return buildPTTButtonChoices(config.DefaultPTTButtons())
+	}
+	return buildPTTButtonChoices(s.cfg.PTTButtons)
+}
+
+func (s *SetupScreen) PTTButtonSummary() string {
+	if s == nil {
+		return joinPTTButtonLabels(config.DefaultPTTButtons())
+	}
+	return joinPTTButtonLabels(s.cfg.PTTButtons)
+}
+
+func (s *SetupScreen) EnablePTTButton(code string) error {
+	if s == nil {
+		return fmt.Errorf("nil setup screen")
+	}
+	next, err := setPTTButtonState(s.cfg.PTTButtons, code, true)
+	if err != nil {
+		return err
+	}
+	s.cfg.PTTButtons = next
+	return nil
+}
+
+func (s *SetupScreen) DisablePTTButton(code string) error {
+	if s == nil {
+		return fmt.Errorf("nil setup screen")
+	}
+	next, err := setPTTButtonState(s.cfg.PTTButtons, code, false)
+	if err != nil {
+		return err
+	}
+	s.cfg.PTTButtons = next
+	return nil
+}
+
+func (s *SetupScreen) TogglePTTButton(code string) error {
+	if s == nil {
+		return fmt.Errorf("nil setup screen")
+	}
+	next, err := togglePTTButtonState(s.cfg.PTTButtons, code)
+	if err != nil {
+		return err
+	}
+	s.cfg.PTTButtons = next
+	return nil
+}
+
 func (s *SetupScreen) Save() error {
 	if s == nil {
 		return fmt.Errorf("nil setup screen")

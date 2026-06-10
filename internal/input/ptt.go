@@ -309,3 +309,38 @@ func ParseButtonCode(name string) (uint16, bool) {
 func NormalizeButtonName(name string) string {
 	return strings.ToUpper(strings.TrimSpace(name))
 }
+
+func ButtonLabel(name string) string {
+	switch NormalizeButtonName(name) {
+	case "BTN_SOUTH":
+		return "South"
+	case "BTN_EAST":
+		return "East"
+	case "BTN_C":
+		return "C"
+	case "BTN_NORTH":
+		return "North"
+	case "BTN_WEST":
+		return "West"
+	case "BTN_TL":
+		return "Left trigger"
+	case "BTN_TR":
+		return "Right trigger"
+	case "BTN_TL2":
+		return "Left shoulder"
+	case "BTN_TR2":
+		return "Right shoulder"
+	case "BTN_SELECT":
+		return "Select"
+	case "BTN_START":
+		return "Start"
+	case "BTN_MODE":
+		return "Mode"
+	case "BTN_THUMBL":
+		return "Left stick"
+	case "BTN_THUMBR":
+		return "Right stick"
+	default:
+		return NormalizeButtonName(name)
+	}
+}
