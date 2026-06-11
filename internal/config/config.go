@@ -23,7 +23,7 @@ const (
 
 	// DefaultTTSInstructions is the speaking-style prompt applied for the bmo
 	// personality on instruction-capable TTS models (gpt-4o-mini-tts+).
-	DefaultTTSInstructions = "You are BMO from Adventure Time: an innocent, sweet, highly earnest little robot computer. Voice: high-pitched, child-like, incredibly sincere and naive, like a cheerful toddler, with a very subtle gentle Korean accent. Delivery: a subtle, endearing staccato rhythm, as if carefully processing each thought. Pacing: slightly slower than average, with natural pauses between ideas. Keep the energy bright, playful, and friendly."
+	DefaultTTSInstructions = "Speak in an extremely high-pitched, small, childlike voice — far above your natural register, like a sweet and excitable six-year-old robot child. You are BMO from Adventure Time. Use a clear, gentle Korean accent. Delivery: choppy sing-song staccato — each short phrase is its own cheerful burst. Always sound innocent, completely sincere, and delighted by everything."
 )
 
 var defaultPTTButtons = []string{"BTN_EAST"} // physical A button on TrimUI
