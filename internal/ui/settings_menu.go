@@ -54,7 +54,7 @@ func (m *SettingsMenu) Move(delta int) {
 	if m == nil || m.editing {
 		return
 	}
-	const count = 6
+	const count = 12
 	m.focus = (m.focus + delta) % count
 	if m.focus < 0 {
 		m.focus += count
@@ -94,7 +94,28 @@ func (m *SettingsMenu) ToggleFocused() error {
 		return m.BeginAPIKeyEdit("chat")
 	case 4:
 		return m.BeginAPIKeyEdit("tts")
-	case 5: // restore persona/voice prompt files to built-in defaults
+	case 5:
+		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
+	case 6:
+		m.cfg.DeviceContext.Saves = !m.cfg.DeviceContext.Saves
+	case 7:
+		m.cfg.DeviceContext.PlayLog = !m.cfg.DeviceContext.PlayLog
+	case 8:
+		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
+	case 9:
+		m.cfg.DeviceContext.Achievements = !m.cfg.DeviceContext.Achievements
+	case 10: // proactive talk — cycle through supported levels
+		levels := config.SupportedProactiveTalkLevels()
+		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
+		next := levels[0]
+		for i, l := range levels {
+			if l == curr {
+				next = levels[(i+1)%len(levels)]
+				break
+			}
+		}
+		m.cfg.ProactiveTalk = next
+	case 11: // restore persona/voice prompt files to built-in defaults
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -144,8 +165,20 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft),
 			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
 			Focused:  m.focus == 4 && !m.editing},
+		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
+			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 5 && !m.editing},
+		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
+			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 6 && !m.editing},
+		{Code: "aware_playlog", Label: "AWARE PLAY LOG: " + onOff(m.cfg.DeviceContext.PlayLog),
+			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 7 && !m.editing},
+		{Code: "aware_system", Label: "AWARE SYSTEM: " + onOff(m.cfg.DeviceContext.System),
+			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 8 && !m.editing},
+		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
+			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 9 && !m.editing},
+		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
+			Selected: m.cfg.ProactiveTalk != config.ProactiveOff, Focused: m.focus == 10 && !m.editing},
 		{Code: "restore_defaults", Label: "RESTORE DEFAULTS",
-			Selected: true, Focused: m.focus == 5 && !m.editing},
+			Selected: true, Focused: m.focus == 11 && !m.editing},
 	}
 	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}
 	footer := "START OR B TO CLOSE"
@@ -271,4 +304,11 @@ func (m *SettingsMenu) currentAPIKey(kind string) string {
 	default:
 		return ""
 	}
+}
+
+func onOff(v bool) string {
+	if v {
+		return "ON"
+	}
+	return "OFF"
 }

@@ -142,8 +142,8 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	// Move to the restore item (position 5) and activate it.
-	menu.Move(5)
+	// Move to the restore item (position 11) and activate it.
+	menu.Move(11)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -174,5 +174,86 @@ func TestSettingsScreenProviderSummaries(t *testing.T) {
 	}
 	if got := len(screen.PTTButtons()); got != 2 {
 		t.Fatalf("PTTButtons() len = %d, want 2", got)
+	}
+}
+
+func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
+	cfg := config.Default()
+	m := NewSettingsMenu(cfg)
+	// Focus 5 = Awareness: Library (defaults on → toggles off).
+	m.Move(5)
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("toggle library: %v", err)
+	}
+	if m.Config().DeviceContext.Library {
+		t.Fatal("library toggle did not flip off")
+	}
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("toggle library back: %v", err)
+	}
+	if !m.Config().DeviceContext.Library {
+		t.Fatal("library toggle did not flip back on")
+	}
+	// Focus 9 = Awareness: Achievements.
+	m.Move(4)
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("toggle achievements: %v", err)
+	}
+	if m.Config().DeviceContext.Achievements {
+		t.Fatal("achievements toggle did not flip off")
+	}
+}
+
+func TestSettingsMenuCyclesProactiveTalk(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	m.Move(10)
+	want := []string{
+		config.ProactiveChatty, config.ProactiveRegular,
+		config.ProactiveOccasional, config.ProactiveRare, config.ProactiveOff,
+	}
+	for _, level := range want {
+		if err := m.ToggleFocused(); err != nil {
+			t.Fatalf("cycle proactive: %v", err)
+		}
+		if got := m.Config().ProactiveTalk; got != level {
+			t.Fatalf("proactive talk = %q, want %q", got, level)
+		}
+	}
+}
+
+func TestSettingsMenuRestoreDefaultsMovedToLastSlot(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	called := false
+	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
+	m.Move(11)
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("restore defaults: %v", err)
+	}
+	if !called {
+		t.Fatal("restore defaults callback not invoked at focus 11")
+	}
+}
+
+func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	overlay := m.Overlay()
+	if len(overlay.Items) != 12 {
+		t.Fatalf("expected 12 overlay items, got %d", len(overlay.Items))
+	}
+	labels := map[string]string{}
+	for _, item := range overlay.Items {
+		labels[item.Code] = item.Label
+	}
+	for code, want := range map[string]string{
+		"aware_library":      "AWARE LIBRARY: ON",
+		"aware_saves":        "AWARE SAVES: ON",
+		"aware_playlog":      "AWARE PLAY LOG: ON",
+		"aware_system":       "AWARE SYSTEM: ON",
+		"aware_achievements": "AWARE ACHIEVEMENTS: ON",
+		"proactive_talk":     "PROACTIVE TALK: OFF",
+	} {
+		if labels[code] != want {
+			t.Errorf("item %s label = %q, want %q", code, labels[code], want)
+		}
 	}
 }
