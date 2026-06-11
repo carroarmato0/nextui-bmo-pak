@@ -74,7 +74,7 @@ func (m *ProviderMenu) ToggleFocused() error {
 	case 4:
 		return m.BeginAPIKeyEdit("chat")
 	case 5:
-		m.cfg.TTS = cycleProviderPreset(m.cfg.TTS, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini-tts", Voice: "alloy"}, {Name: "openai-compatible", Model: "tts-1", Voice: "alloy"}, {Name: "local", Model: "piper"}, {Name: "custom", Model: ""}})
+		m.cfg.TTS = cycleProviderPreset(m.cfg.TTS, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini-tts", Voice: "nova"}, {Name: "openai-compatible", Model: "tts-1", Voice: "alloy"}, {Name: "local", Model: "piper"}, {Name: "custom", Model: ""}})
 	case 6:
 		return m.BeginAPIKeyEdit("tts")
 	default:
