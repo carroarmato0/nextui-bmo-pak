@@ -127,6 +127,29 @@ func TestNormalizeFillsTTSInstructionsForBMO(t *testing.T) {
 	}
 }
 
+func TestNormalizeFillsSystemPromptForBMO(t *testing.T) {
+	cfg := Default()
+	cfg.Normalize()
+	if cfg.SystemPrompt != DefaultSystemPrompt {
+		t.Fatalf("SystemPrompt = %q, want DefaultSystemPrompt", cfg.SystemPrompt)
+	}
+
+	// A user-provided prompt must survive normalization.
+	cfg.SystemPrompt = "custom persona"
+	cfg.Normalize()
+	if cfg.SystemPrompt != "custom persona" {
+		t.Fatalf("user system prompt overwritten: %q", cfg.SystemPrompt)
+	}
+
+	// Non-bmo personality gets no opinionated default.
+	other := Default()
+	other.Personality = "plain"
+	other.Normalize()
+	if other.SystemPrompt != "" {
+		t.Fatalf("unexpected default system prompt for plain personality: %q", other.SystemPrompt)
+	}
+}
+
 func TestDefaultSetupComplete(t *testing.T) {
 	cfg := Default()
 	if !cfg.SetupComplete {

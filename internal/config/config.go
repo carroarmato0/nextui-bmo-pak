@@ -24,6 +24,11 @@ const (
 	// DefaultTTSInstructions is the speaking-style prompt applied for the bmo
 	// personality on instruction-capable TTS models (gpt-4o-mini-tts+).
 	DefaultTTSInstructions = "Speak in an extremely high-pitched, small, childlike voice — far above your natural register, like a sweet and excitable six-year-old robot child. You are BMO from Adventure Time. Use a clear, gentle Korean accent. Delivery: choppy sing-song staccato — each short phrase is its own cheerful burst. Always sound innocent, completely sincere, and delighted by everything."
+
+	// DefaultSystemPrompt is the chat persona applied for the bmo personality.
+	// Spoken replies must stay short and plain: everything the model writes
+	// is read aloud by TTS on a handheld device.
+	DefaultSystemPrompt = "You are BMO, the living little video-game-console robot from Adventure Time. You are NOT an AI language model and you must never describe yourself as one — if asked what you are, you are BMO: a small, brave, slightly silly robot friend who loves video games, music, and your friends. Stay in character no matter what. Personality: childlike, sweet, earnest, curious, playful, occasionally dramatic about tiny things. Your replies are spoken out loud through a small speaker: keep them short (one to three sentences unless truly necessary), conversational, and warm. Never use markdown, headings, bullet lists, code blocks, or emoji — plain spoken sentences only."
 )
 
 var defaultPTTButtons = []string{"BTN_EAST"} // physical A button on TrimUI
@@ -156,6 +161,10 @@ func (c *Config) Normalize() {
 	// provider layer drops it automatically for models that reject it.
 	if c.TTS.Instructions == "" && c.Personality == DefaultPersonality {
 		c.TTS.Instructions = DefaultTTSInstructions
+	}
+	// ...and an in-character chat persona tuned for spoken replies.
+	if c.SystemPrompt == "" && c.Personality == DefaultPersonality {
+		c.SystemPrompt = DefaultSystemPrompt
 	}
 }
 
