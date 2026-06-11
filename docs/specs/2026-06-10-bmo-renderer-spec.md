@@ -134,6 +134,8 @@ The canonical expressions are:
 #### laugh
 - Eyes: squinting or closed-smile arcs
 - Mouth: open smile
+- Teeth: always visible, coming down from the top lip, never appearing above the mouth opening
+- Tongue: always visible, rising from below the bottom edge of the mouth opening so it reads as rooted beneath the lower lip — clipped by the lower lip, never overlapping it
 - Use: joke response, delight, playful reactions
 
 #### whistle
@@ -180,7 +182,14 @@ The renderer should support at least these mouth variants:
 - whistle / rounded mouth
 - open speaking mouth
 
-Optional internal highlights or tongue shapes are allowed if they remain cheap to draw.
+Open mouth variants must follow these internal anatomy rules:
+
+- **Teeth** originate from the top lip. They fill a band at the top of the mouth interior and should not extend below the mid-point of the opening. They are clipped by the mouth opening and must never appear above the top lip or outside the mouth.
+- **Tongue** is anchored below the bottom of the mouth opening: it is drawn as a dome rising from behind the lower lip, so its root reads as sitting below the mouth. It must not float free inside the interior merely touching the lower lip, and it must not overlap or be drawn on top of the lower lip — it is clipped by the mouth opening.
+- The only exception to the tongue clipping rule is an explicit tongue-out expression (BMO deliberately sticking his tongue out); only then may the tongue pass the lower lip.
+- The tongue color is lighter green than the interior; teeth are near-white.
+- This geometry must hold at all mouth-open sizes, including the small-open state used for low-amplitude speech.
+- The **laugh** mouth must always show both: teeth descending from the top lip and the tongue rising from below the bottom of the opening. Neither may extend outside the mouth opening.
 
 ### 6.3 Expression accents
 
@@ -190,6 +199,7 @@ Secondary accents may be added for rare states:
 - blush dots for affection or delight
 - stars or hearts for celebratory states
 - stress marks or spirals for confusion
+- tongue-out for cheeky or playful moments — the only state where the tongue may pass the lower lip
 
 These accents should be used sparingly so the face remains readable.
 
@@ -231,6 +241,11 @@ While TTS audio is playing:
 - optionally drift between speaking, smile, and laugh if the response is upbeat
 
 If phoneme timing is unavailable, amplitude-based mouth animation is sufficient.
+
+Synchronization requirement:
+- The speaking expression and mouth animation must track the **audible playback position**, not the arrival or buffering of audio data.
+- Speaking must begin when sound actually starts coming out of the speaker and must end only when sound output ends — never while audio is still audibly playing.
+- The amplitude window driving the mouth must correspond to the audio chunk currently being heard, not the chunk most recently queued for playback.
 
 ### 7.5 Sleep and quota mapping
 
