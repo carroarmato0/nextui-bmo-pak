@@ -2,8 +2,14 @@ package devctx
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 )
 
 // The rcheevos offline cache marks client-side pseudo-achievements (like
@@ -78,4 +84,172 @@ func difficultyTag(points int, rarity float64, achType string) string {
 	default:
 		return "solid"
 	}
+}
+
+// AchievementsCollector reads NextUI's local rcheevos offline cache. It
+// never touches the network and never reads RA credentials — the only
+// minuisettings.txt key consulted is raEnable, as a respect-the-user gate.
+type AchievementsCollector struct {
+	CacheDir     string     // .../.ra/offline/cache
+	SettingsPath string     // .../minuisettings.txt
+	Rng          *rand.Rand // for RandomPastUnlock; may be nil
+}
+
+func (AchievementsCollector) Key() string { return KeyAchievements }
+
+// raUnlock is one real, resolved unlock joined across the two cache files.
+type raUnlock struct {
+	game        string
+	title       string
+	description string
+	points      int
+	rarity      float64
+	achType     string
+	when        time.Time
+	unlockedIn  int // unlocks the player has in this game
+	totalIn     int // real achievements in this game
+}
+
+func (c AchievementsCollector) raEnabled() bool {
+	data, err := os.ReadFile(c.SettingsPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "raEnable=1" {
+			return true
+		}
+	}
+	return false
+}
+
+// load joins achievement sets with session unlocks per game hash and
+// returns all real unlocks, newest first.
+func (c AchievementsCollector) load() ([]raUnlock, error) {
+	setPaths, err := filepath.Glob(filepath.Join(c.CacheDir, "achievementsets_*.bin"))
+	if err != nil || len(setPaths) == 0 {
+		return nil, fmt.Errorf("no cached achievement sets in %s", c.CacheDir)
+	}
+	var out []raUnlock
+	for _, setPath := range setPaths {
+		hash := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(setPath), "achievementsets_"), ".bin")
+		payload, err := readCachePayload(setPath)
+		if err != nil {
+			continue
+		}
+		var game raGame
+		if err := json.Unmarshal(payload, &game); err != nil || strings.TrimSpace(game.Title) == "" {
+			continue
+		}
+		byID := map[int]raAchievement{}
+		for _, set := range game.Sets {
+			for _, a := range set.Achievements {
+				if a.ID >= syntheticAchievementIDFloor {
+					continue
+				}
+				byID[a.ID] = a
+			}
+		}
+		sessPayload, err := readCachePayload(filepath.Join(c.CacheDir, "startsession_"+hash+".bin"))
+		if err != nil {
+			continue
+		}
+		var sess raSession
+		if err := json.Unmarshal(sessPayload, &sess); err != nil {
+			continue
+		}
+		// Union softcore+hardcore stamps, dedupe by ID keeping latest.
+		stamps := map[int]int64{}
+		for _, u := range sess.Unlocks {
+			if u.ID < syntheticAchievementIDFloor && u.When > stamps[u.ID] {
+				stamps[u.ID] = u.When
+			}
+		}
+		for _, u := range sess.HardcoreUnlocks {
+			if u.ID < syntheticAchievementIDFloor && u.When > stamps[u.ID] {
+				stamps[u.ID] = u.When
+			}
+		}
+		var gameUnlocks []raUnlock
+		for id, when := range stamps {
+			a, ok := byID[id]
+			if !ok {
+				continue
+			}
+			gameUnlocks = append(gameUnlocks, raUnlock{
+				game:        game.Title,
+				title:       a.Title,
+				description: a.Description,
+				points:      a.Points,
+				rarity:      a.Rarity,
+				achType:     a.Type,
+				when:        time.Unix(when, 0).UTC(),
+			})
+		}
+		for i := range gameUnlocks {
+			gameUnlocks[i].unlockedIn = len(gameUnlocks)
+			gameUnlocks[i].totalIn = len(byID)
+		}
+		out = append(out, gameUnlocks...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].when.After(out[j].when) })
+	return out, nil
+}
+
+func (c AchievementsCollector) Collect(now time.Time) (Section, error) {
+	if !c.raEnabled() {
+		return Section{}, fmt.Errorf("retroachievements disabled in minuisettings")
+	}
+	unlocks, err := c.load()
+	if err != nil {
+		return Section{}, fmt.Errorf("achievements: %w", err)
+	}
+	if len(unlocks) == 0 {
+		return Section{}, fmt.Errorf("no achievements unlocked yet")
+	}
+	recent := unlocks
+	if len(recent) > 5 {
+		recent = recent[:5]
+	}
+	parts := make([]string, 0, len(recent))
+	for _, u := range recent {
+		p := fmt.Sprintf("%q in %s — %s (%s)", u.title, u.game, u.description, RelTime(u.when, now))
+		if tag := difficultyTag(u.points, u.rarity, u.achType); tag != "" {
+			p += " [" + tag + "]"
+		}
+		parts = append(parts, p)
+	}
+	// Per-game progress, ordered by most recent unlock, deduped.
+	seen := map[string]bool{}
+	var progress []string
+	for _, u := range unlocks {
+		if seen[u.game] {
+			continue
+		}
+		seen[u.game] = true
+		progress = append(progress, fmt.Sprintf("%s: %d of %d unlocked", u.game, u.unlockedIn, u.totalIn))
+	}
+	body := fmt.Sprintf("Recent unlocks: %s. Progress: %s.",
+		strings.Join(parts, "; "), strings.Join(progress, "; "))
+	return Section{Key: KeyAchievements, Title: "RETROACHIEVEMENTS", Body: body, Freshest: unlocks[0].when}, nil
+}
+
+// RandomPastUnlock returns a one-line description of a randomly chosen past
+// unlock for reminisce-style proactive remarks ("remember when..."), or
+// false when RA is disabled or nothing is unlocked.
+func (c AchievementsCollector) RandomPastUnlock(now time.Time) (string, bool) {
+	if c.Rng == nil || !c.raEnabled() {
+		return "", false
+	}
+	unlocks, err := c.load()
+	if err != nil || len(unlocks) == 0 {
+		return "", false
+	}
+	u := unlocks[c.Rng.Intn(len(unlocks))]
+	memory := fmt.Sprintf("the time the player unlocked %q in %s (%s), %s",
+		u.title, u.game, u.description, RelTime(u.when, now))
+	if tag := difficultyTag(u.points, u.rarity, u.achType); tag != "" {
+		memory += " — " + tag
+	}
+	return memory, true
 }
