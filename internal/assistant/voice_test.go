@@ -96,6 +96,27 @@ func TestVoicePipelineHappyPath(t *testing.T) {
 	}
 }
 
+func TestProcessBatchResamplesTTSToPlaybackRate(t *testing.T) {
+	m := NewMachine()
+	writer := &fakeWriter{}
+	// 250ms of 24kHz mono PCM, as returned by OpenAI's "pcm" speech format.
+	speech := make([]byte, 24000*2/4)
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: speech}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	// The same 250ms of audio at the 16kHz playback rate: anything else plays
+	// slow/deep (24k at 16k) or fast/squeaky.
+	want := 16000 * 2 / 4
+	if got := writer.totalBytes(); got != want {
+		t.Fatalf("wrote %d bytes, want %d (24kHz TTS must be resampled to the 16kHz playback rate)", got, want)
+	}
+}
+
 func TestPlayPacedTracksPlaybackClock(t *testing.T) {
 	writer := &fakeWriter{}
 	pipe := NewVoicePipeline(nil, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "", "", "", "", "", 16000, 1)

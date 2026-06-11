@@ -174,6 +174,12 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 			time.Since(totalStart).Milliseconds())
 	}
 
+	// OpenAI's "pcm" speech format is fixed at 24kHz mono S16LE; resample to
+	// the device playback rate so BMO's voice plays at natural speed and
+	// pitch. (Skipping this step is the planned "funny voice" easter egg:
+	// 24kHz played at 16kHz sounds ~1.5x slower and a third deeper.)
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+
 	return p.speak(ctx, speech)
 }
 
@@ -246,6 +252,11 @@ func (p *VoicePipeline) InterruptSpeech() bool {
 // speakChunkMs is the pacing granularity for TTS playback: PCM is written in
 // windows of this size and the mouth amplitude is updated per window.
 const speakChunkMs = 20
+
+// ttsPCMSampleRate is the sample rate of the raw "pcm" response format of the
+// OpenAI speech API (24kHz mono S16LE). Raw PCM carries no header, so the
+// rate cannot be detected from the payload.
+const ttsPCMSampleRate = 24000
 
 // playPaced streams pcm to the playback writer at real-time rate instead of
 // dumping it into the pipe at once. Dumping parks seconds of audio in the
