@@ -33,11 +33,12 @@ type VoicePipeline struct {
 	chat providers.ChatProvider
 	tts  providers.TTSProvider
 
-	sttModel     string
-	chatModel    string
-	ttsModel     string
-	ttsVoice     string
-	systemPrompt string
+	sttModel        string
+	chatModel       string
+	ttsModel        string
+	ttsVoice        string
+	ttsInstructions string
+	systemPrompt    string
 
 	sampleRate int
 	channels   int
@@ -81,6 +82,14 @@ func NewVoicePipeline(machine *Machine, writer AudioWriter, stt providers.STTPro
 func (p *VoicePipeline) SetLogger(l VoiceLogger) {
 	if p != nil {
 		p.logger = l
+	}
+}
+
+// SetTTSInstructions sets the speaking-style prompt forwarded to
+// instruction-capable TTS models.
+func (p *VoicePipeline) SetTTSInstructions(instructions string) {
+	if p != nil {
+		p.ttsInstructions = strings.TrimSpace(instructions)
 	}
 }
 
@@ -160,10 +169,11 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 
 	ttsStart := time.Now()
 	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
-		Model:  p.ttsModel,
-		Voice:  p.ttsVoice,
-		Input:  reply,
-		Format: "pcm",
+		Model:        p.ttsModel,
+		Voice:        p.ttsVoice,
+		Input:        reply,
+		Format:       "pcm",
+		Instructions: p.ttsInstructions,
 	})
 	if err != nil {
 		return p.fail(err, EventFail)

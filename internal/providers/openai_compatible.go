@@ -125,18 +125,24 @@ func (c *OpenAICompatibleClient) Speak(ctx context.Context, req SpeechRequest) (
 	}
 
 	payload := struct {
-		Model  string `json:"model"`
-		Voice  string `json:"voice"`
-		Input  string `json:"input"`
-		Format string `json:"response_format,omitempty"`
+		Model        string `json:"model"`
+		Voice        string `json:"voice"`
+		Input        string `json:"input"`
+		Format       string `json:"response_format,omitempty"`
+		Instructions string `json:"instructions,omitempty"`
 	}{
-		Model:  req.Model,
-		Voice:  req.Voice,
-		Input:  req.Input,
-		Format: req.Format,
+		Model:        req.Model,
+		Voice:        req.Voice,
+		Input:        req.Input,
+		Format:       req.Format,
+		Instructions: strings.TrimSpace(req.Instructions),
 	}
 	if payload.Format == "" {
 		payload.Format = "wav"
+	}
+	// The tts-1 family rejects the instructions parameter.
+	if strings.HasPrefix(payload.Model, "tts-1") {
+		payload.Instructions = ""
 	}
 
 	buf, err := json.Marshal(payload)

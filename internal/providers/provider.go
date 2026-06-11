@@ -85,6 +85,9 @@ type SpeechRequest struct {
 	Voice  string
 	Input  string
 	Format string
+	// Instructions steer the speaking style on instruction-capable TTS
+	// models (e.g. gpt-4o-mini-tts). Ignored by tts-1 family models.
+	Instructions string
 }
 
 type STTProvider interface {

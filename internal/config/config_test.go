@@ -100,6 +100,33 @@ func TestDefaultPTTButtonIsA(t *testing.T) {
 	}
 }
 
+func TestNormalizeFillsTTSInstructionsForBMO(t *testing.T) {
+	cfg := Default()
+	cfg.TTS.Model = "gpt-4o-mini-tts"
+	cfg.Normalize()
+	if cfg.TTS.Instructions == "" {
+		t.Fatal("expected default TTS instructions for bmo personality")
+	}
+	if cfg.TTS.Instructions != DefaultTTSInstructions {
+		t.Fatalf("instructions = %q, want DefaultTTSInstructions", cfg.TTS.Instructions)
+	}
+
+	// A user-provided instruction must survive normalization.
+	cfg.TTS.Instructions = "custom"
+	cfg.Normalize()
+	if cfg.TTS.Instructions != "custom" {
+		t.Fatalf("user instructions overwritten: %q", cfg.TTS.Instructions)
+	}
+
+	// Non-bmo personality gets no opinionated default.
+	other := Default()
+	other.Personality = "plain"
+	other.Normalize()
+	if other.TTS.Instructions != "" {
+		t.Fatalf("unexpected default instructions for plain personality: %q", other.TTS.Instructions)
+	}
+}
+
 func TestDefaultSetupComplete(t *testing.T) {
 	cfg := Default()
 	if !cfg.SetupComplete {

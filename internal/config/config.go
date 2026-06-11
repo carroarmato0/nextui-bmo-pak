@@ -20,6 +20,10 @@ const (
 
 	DefaultLogLevel    = "info"
 	DefaultPersonality = "bmo"
+
+	// DefaultTTSInstructions is the speaking-style prompt applied for the bmo
+	// personality on instruction-capable TTS models (gpt-4o-mini-tts+).
+	DefaultTTSInstructions = "Speak like BMO from Adventure Time: a cheerful, childlike little robot. Bright, playful, innocent and curious, with a light synthetic quality. Keep the energy high and friendly."
 )
 
 var defaultPTTButtons = []string{"BTN_EAST"} // physical A button on TrimUI
@@ -50,6 +54,9 @@ type Provider struct {
 	Voice   string `json:"voice,omitempty"`
 	BaseURL string `json:"base_url,omitempty"`
 	APIKey  string `json:"api_key,omitempty"`
+	// Instructions steer the speaking style on instruction-capable TTS
+	// models (gpt-4o-mini-tts and newer). Only meaningful for the TTS provider.
+	Instructions string `json:"instructions,omitempty"`
 }
 
 type Config struct {
@@ -144,6 +151,11 @@ func (c *Config) Normalize() {
 	}
 	if c.Personality == "" {
 		c.Personality = DefaultPersonality
+	}
+	// The bmo personality ships with an opinionated speaking style; the
+	// provider layer drops it automatically for models that reject it.
+	if c.TTS.Instructions == "" && c.Personality == DefaultPersonality {
+		c.TTS.Instructions = DefaultTTSInstructions
 	}
 }
 

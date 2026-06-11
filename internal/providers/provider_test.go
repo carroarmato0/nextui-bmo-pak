@@ -12,6 +12,53 @@ import (
 	"testing"
 )
 
+func TestSpeakInstructions(t *testing.T) {
+	tests := []struct {
+		name             string
+		model            string
+		instructions     string
+		wantInstructions string
+	}{
+		{name: "instruction-capable model sends instructions", model: "gpt-4o-mini-tts", instructions: "sound playful", wantInstructions: "sound playful"},
+		{name: "tts-1 drops instructions", model: "tts-1", instructions: "sound playful", wantInstructions: ""},
+		{name: "tts-1-hd drops instructions", model: "tts-1-hd", instructions: "sound playful", wantInstructions: ""},
+		{name: "empty instructions omitted", model: "gpt-4o-mini-tts", instructions: "", wantInstructions: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode speech payload: %v", err)
+				}
+				got, _ := payload["instructions"].(string)
+				if got != tt.wantInstructions {
+					t.Fatalf("instructions = %q, want %q", got, tt.wantInstructions)
+				}
+				if tt.wantInstructions == "" {
+					if _, present := payload["instructions"]; present {
+						t.Fatalf("instructions field present, want omitted")
+					}
+				}
+				_, _ = w.Write([]byte{0x01})
+			}))
+			defer server.Close()
+
+			client := NewOpenAICompatibleClient(Config{BaseURL: server.URL, APIKey: "secret"}, server.Client())
+			_, err := client.Speak(context.Background(), SpeechRequest{
+				Model:        tt.model,
+				Voice:        "alloy",
+				Input:        "hi",
+				Format:       "pcm",
+				Instructions: tt.instructions,
+			})
+			if err != nil {
+				t.Fatalf("Speak() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestCapabilityDetection(t *testing.T) {
 	client := NewOpenAICompatibleClient(Config{BaseURL: "https://example.invalid", APIKey: "secret"}, http.DefaultClient)
 
