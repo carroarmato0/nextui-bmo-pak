@@ -47,9 +47,10 @@ type fakeProvider struct {
 	transcript string
 	reply      string
 	speech     []byte
-	err        error
-	lastSpeech providers.SpeechRequest
-	lastChat   providers.ChatRequest
+	err            error
+	lastSpeech     providers.SpeechRequest
+	lastChat       providers.ChatRequest
+	lastTranscribe *providers.TranscriptionRequest
 }
 
 func (f *fakeProvider) Models(ctx context.Context) ([]string, error) { return nil, nil }
@@ -70,6 +71,7 @@ func (f *fakeProvider) Supports(cap providers.Capability) bool {
 	return false
 }
 func (f *fakeProvider) Transcribe(ctx context.Context, req providers.TranscriptionRequest) (string, error) {
+	f.lastTranscribe = &req
 	return f.transcript, f.err
 }
 func (f *fakeProvider) Reply(ctx context.Context, req providers.ChatRequest) (string, error) {
@@ -83,6 +85,7 @@ func (f *fakeProvider) Speak(ctx context.Context, req providers.SpeechRequest) (
 
 func TestVoicePipelineHappyPath(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi there"}
@@ -100,8 +103,39 @@ func TestVoicePipelineHappyPath(t *testing.T) {
 	}
 }
 
+func TestProcessBatchRefusesOutsideAIMode(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("idle")
+	writer := &fakeWriter{}
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "", 16000, 1)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() in idle mode error = %v, want silent no-op", err)
+	}
+	// No provider may have been called and no audio written.
+	if stt.lastTranscribe != nil {
+		t.Fatal("STT called in idle mode")
+	}
+	if chat.lastChat.Model != "" {
+		t.Fatal("chat called in idle mode")
+	}
+	if tts.lastSpeech.Model != "" {
+		t.Fatal("TTS called in idle mode")
+	}
+	if writer.totalBytes() != 0 {
+		t.Fatal("audio written in idle mode")
+	}
+	if got := m.State(); got != StateIdle {
+		t.Fatalf("state = %v, want untouched idle", got)
+	}
+}
+
 func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
@@ -138,6 +172,7 @@ func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
 
 func TestTTSInstructionsSourceReadPerUtterance(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
@@ -176,6 +211,7 @@ func TestTTSInstructionsSourceReadPerUtterance(t *testing.T) {
 
 func TestProcessBatchResamplesTTSToPlaybackRate(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	// 250ms of 24kHz mono PCM, as returned by OpenAI's "pcm" speech format.
 	speech := make([]byte, 24000*2/4)
@@ -247,6 +283,7 @@ func TestPlayPacedTracksPlaybackClock(t *testing.T) {
 
 func TestInterruptSpeechCutsPlaybackShort(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	// 2s of constant-amplitude speech at 16kHz mono.
 	speech := make([]byte, 16000*2*2)
@@ -317,6 +354,7 @@ func TestInterruptSpeechIdleReturnsFalse(t *testing.T) {
 
 func TestVoicePipelineIgnoresSilentAudio(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1)
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x00, 0x00, 0x00}); err != nil {
@@ -329,6 +367,7 @@ func TestVoicePipelineIgnoresSilentAudio(t *testing.T) {
 
 func TestVoicePipelineQuotaFailure(t *testing.T) {
 	m := NewMachine()
+	m.SetMode("ai")
 	writer := &fakeWriter{}
 	stt := &fakeProvider{err: errors.New("quota exceeded")}
 	pipe := NewVoicePipeline(m, writer, stt, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1)

@@ -152,6 +152,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	if p == nil {
 		return errors.New("nil voice pipeline")
 	}
+	// Outside AI mode no provider/API traffic may happen at all.
+	if !p.aiModeEnabled() {
+		return nil
+	}
 	if len(pcm) == 0 || !audio.PCMHasSignal(pcm, 0.01) {
 		return nil
 	}
@@ -388,6 +392,12 @@ func sleepUntil(ctx context.Context, t time.Time) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// aiModeEnabled reports whether AI processing is allowed. With no machine
+// attached (tests, headless tools) it defaults to allowed.
+func (p *VoicePipeline) aiModeEnabled() bool {
+	return p.machine == nil || p.machine.AIEnabled()
 }
 
 // rmsChunks splits pcm into chunkMs-millisecond windows and returns the RMS

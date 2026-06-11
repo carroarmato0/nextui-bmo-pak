@@ -135,6 +135,14 @@ func (m *Machine) State() State {
 	return m.state
 }
 
+// AIEnabled reports whether the assistant is in AI mode. Outside AI mode the
+// voice pipeline must not run and no provider/API traffic may happen.
+func (m *Machine) AIEnabled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mode == ModeAI
+}
+
 func (m *Machine) Snapshot() Snapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

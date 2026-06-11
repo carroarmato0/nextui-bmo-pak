@@ -211,6 +211,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 		cfg = saved
+		// Apply the (possibly changed) mode immediately: it gates the PTT
+		// watcher and the voice pipeline.
+		machine.SetMode(cfg.Mode)
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}

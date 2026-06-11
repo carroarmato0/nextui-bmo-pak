@@ -144,7 +144,7 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft),
 			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
 			Focused:  m.focus == 4 && !m.editing},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS (PERSONA + VOICE)",
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS",
 			Selected: true, Focused: m.focus == 5 && !m.editing},
 	}
 	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}

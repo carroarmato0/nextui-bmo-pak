@@ -33,6 +33,25 @@ func TestTransitionFlow(t *testing.T) {
 	}
 }
 
+func TestMachineAIEnabled(t *testing.T) {
+	m := NewMachine()
+	if m.AIEnabled() {
+		t.Fatal("AIEnabled() = true for default (idle) mode")
+	}
+	m.SetMode("ai")
+	if !m.AIEnabled() {
+		t.Fatal("AIEnabled() = false after SetMode(ai)")
+	}
+	m.SetMode("AI ") // normalization
+	if !m.AIEnabled() {
+		t.Fatal("AIEnabled() = false for unnormalized 'AI '")
+	}
+	m.SetMode("idle")
+	if m.AIEnabled() {
+		t.Fatal("AIEnabled() = true after SetMode(idle)")
+	}
+}
+
 func TestMachineSnapshotTracksMetadata(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")

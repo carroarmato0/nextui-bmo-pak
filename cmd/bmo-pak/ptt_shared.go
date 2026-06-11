@@ -87,6 +87,12 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 	go func() {
 		for ev := range watcher.Events() {
 			if ev.Held {
+				// Outside AI mode BMO does not react to push-to-talk at
+				// all: no listening state, no recording, no API traffic.
+				if !machine.AIEnabled() {
+					logger.Debugf("PTT ignored: AI mode disabled")
+					continue
+				}
 				// A while BMO is talking cuts the speech short; the call
 				// blocks until the machine is back in idle, so the regular
 				// PTT press path below behaves as if pressed from idle.
