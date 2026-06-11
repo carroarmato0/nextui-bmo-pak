@@ -41,6 +41,7 @@ const (
 
 	EventListen          Event = "listen"
 	EventThink           Event = "think"
+	EventRemark          Event = "remark"
 	EventSpeak           Event = "speak"
 	EventRest            Event = "rest"
 	EventWake            Event = "wake"
@@ -196,9 +197,14 @@ func transitionState(current State, event Event) (State, State) {
 			return current, StateListening
 		}
 	case EventThink:
-		// Listening → thinking is the PTT path; idle → thinking is a
-		// proactive remark (no user speech to listen to).
-		if current == StateListening || current == StateIdle {
+		if current == StateListening {
+			return current, StateThinking
+		}
+	case EventRemark:
+		// A proactive remark thinks straight from idle (no user speech to
+		// listen to). Deliberately illegal from listening so a remark can
+		// never hijack a PTT conversation that started a moment earlier.
+		if current == StateIdle {
 			return current, StateThinking
 		}
 	case EventSpeak:
@@ -223,6 +229,10 @@ func applyTransitionEffects(m *Machine, current State, next State, event Event) 
 		m.sleepReason = SleepReasonNone
 	case EventThink:
 		m.expression = ExpressionThinking
+	case EventRemark:
+		if next == StateThinking {
+			m.expression = ExpressionThinking
+		}
 	case EventSpeak:
 		m.expression = ExpressionSpeaking
 	case EventRest:

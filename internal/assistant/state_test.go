@@ -135,15 +135,39 @@ func TestMachineTransitionPreservesStateOnUnknownEvent(t *testing.T) {
 	}
 }
 
-func TestThinkFromIdleForProactiveRemarks(t *testing.T) {
-	if got := Transition(StateIdle, EventThink); got != StateThinking {
-		t.Fatalf("Transition(idle, think) = %v, want thinking", got)
+func TestRemarkFromIdleForProactiveRemarks(t *testing.T) {
+	if got := Transition(StateIdle, EventRemark); got != StateThinking {
+		t.Fatalf("Transition(idle, remark) = %q, want thinking", got)
 	}
-	// Sanity: still legal from listening, still ignored from sleeping.
-	if got := Transition(StateListening, EventThink); got != StateThinking {
-		t.Fatalf("Transition(listening, think) = %v, want thinking", got)
+	// A remark must never hijack a conversation that already started: the
+	// event is refused from listening (and everywhere else but idle).
+	if got := Transition(StateListening, EventRemark); got != StateListening {
+		t.Fatalf("Transition(listening, remark) = %q, want listening", got)
 	}
-	if got := Transition(StateSleeping, EventThink); got != StateSleeping {
-		t.Fatalf("Transition(sleeping, think) = %v, want sleeping", got)
+	if got := Transition(StateSleeping, EventRemark); got != StateSleeping {
+		t.Fatalf("Transition(sleeping, remark) = %q, want sleeping", got)
+	}
+	// EventThink stays PTT-only.
+	if got := Transition(StateIdle, EventThink); got != StateIdle {
+		t.Fatalf("Transition(idle, think) = %q, want idle", got)
+	}
+	// Machine-level: the remark transition drives the thinking expression.
+	m := NewMachine()
+	m.SetMode("ai")
+	if got := m.Transition(EventRemark); got != StateThinking {
+		t.Fatalf("machine remark transition = %q, want thinking", got)
+	}
+	if expr := m.Snapshot().Expression; expr != ExpressionThinking {
+		t.Fatalf("expression after remark = %q, want thinking", expr)
+	}
+	// A refused remark must not corrupt the expression either.
+	m2 := NewMachine()
+	m2.SetMode("ai")
+	m2.Transition(EventListen)
+	if got := m2.Transition(EventRemark); got != StateListening {
+		t.Fatalf("machine remark from listening = %q, want listening", got)
+	}
+	if expr := m2.Snapshot().Expression; expr != ExpressionListening {
+		t.Fatalf("expression after refused remark = %q, want listening", expr)
 	}
 }

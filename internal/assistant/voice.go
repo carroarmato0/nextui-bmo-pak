@@ -257,11 +257,13 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 	if nudge == "" {
 		return nil
 	}
-	if p.machine != nil && p.machine.State() != StateIdle {
-		return nil
-	}
 	if p.machine != nil {
-		p.machine.Transition(EventThink)
+		// EventRemark only succeeds from idle, so a PTT press racing this
+		// call cannot be hijacked: if EventListen landed first, the
+		// transition is refused and the remark is silently dropped.
+		if p.machine.Transition(EventRemark) != StateThinking {
+			return nil
+		}
 	}
 
 	chatStart := time.Now()
