@@ -134,3 +134,16 @@ func TestMachineTransitionPreservesStateOnUnknownEvent(t *testing.T) {
 		t.Fatalf("unknown event changed state = %q, want sleeping", got)
 	}
 }
+
+func TestThinkFromIdleForProactiveRemarks(t *testing.T) {
+	if got := Transition(StateIdle, EventThink); got != StateThinking {
+		t.Fatalf("Transition(idle, think) = %v, want thinking", got)
+	}
+	// Sanity: still legal from listening, still ignored from sleeping.
+	if got := Transition(StateListening, EventThink); got != StateThinking {
+		t.Fatalf("Transition(listening, think) = %v, want thinking", got)
+	}
+	if got := Transition(StateSleeping, EventThink); got != StateSleeping {
+		t.Fatalf("Transition(sleeping, think) = %v, want sleeping", got)
+	}
+}

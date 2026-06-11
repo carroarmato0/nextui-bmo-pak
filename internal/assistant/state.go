@@ -196,7 +196,9 @@ func transitionState(current State, event Event) (State, State) {
 			return current, StateListening
 		}
 	case EventThink:
-		if current == StateListening {
+		// Listening → thinking is the PTT path; idle → thinking is a
+		// proactive remark (no user speech to listen to).
+		if current == StateListening || current == StateIdle {
 			return current, StateThinking
 		}
 	case EventSpeak:
