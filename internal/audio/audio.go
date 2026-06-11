@@ -16,6 +16,12 @@ const (
 	DefaultSampleRate = 16000
 	DefaultChannels   = 1
 	DefaultFormat     = "S16_LE"
+
+	// PlaybackBufferMs bounds the ALSA playback buffer so the gap between
+	// writing PCM and hearing it stays small and known. The voice pipeline
+	// paces its writes with a prefill cushion of the same size so the mouth
+	// animation tracks the audible playback position.
+	PlaybackBufferMs = 200
 )
 
 type CmdRunner func(name string, args ...string) error
@@ -105,7 +111,8 @@ func (c Config) CaptureArgs() []string {
 
 func (c Config) PlaybackArgs() []string {
 	c = c.normalize()
-	return []string{"-q", "-D", c.PlaybackDevice, "-f", c.Format, "-c", fmt.Sprintf("%d", c.Channels), "-r", fmt.Sprintf("%d", c.SampleRate), "-t", "raw"}
+	return []string{"-q", "-D", c.PlaybackDevice, "-f", c.Format, "-c", fmt.Sprintf("%d", c.Channels), "-r", fmt.Sprintf("%d", c.SampleRate), "-t", "raw",
+		fmt.Sprintf("--buffer-time=%d", PlaybackBufferMs*1000)}
 }
 
 func NewSession(cfg Config) *Session {

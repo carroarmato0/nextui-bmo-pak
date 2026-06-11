@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,8 +43,15 @@ type VoicePipeline struct {
 	channels   int
 
 	// ampl holds float32 bits of the current RMS amplitude during TTS playback.
-	// 0 = silence, 1 = maximum loudness. Updated ~every 20ms by a background goroutine.
+	// 0 = silence, 1 = maximum loudness. Updated ~every 20ms during paced playback.
 	ampl atomic.Uint32
+
+	// playMu guards the interrupt handle for the in-progress TTS playback.
+	// playCancel cancels the paced playback; playDone is closed once the
+	// post-speech state transitions have run.
+	playMu     sync.Mutex
+	playCancel context.CancelFunc
+	playDone   chan struct{}
 }
 
 func NewVoicePipeline(machine *Machine, writer AudioWriter, stt providers.STTProvider, chat providers.ChatProvider, tts providers.TTSProvider, sttModel, chatModel, ttsModel, ttsVoice, systemPrompt string, sampleRate, channels int) *VoicePipeline {
@@ -150,10 +158,6 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.logger.Debugf("pipeline reply: %q", reply)
 	}
 
-	if p.machine != nil {
-		p.machine.Transition(EventSpeak)
-	}
-
 	ttsStart := time.Now()
 	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
 		Model:  p.ttsModel,
@@ -170,26 +174,46 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 			time.Since(totalStart).Milliseconds())
 	}
 
-	if len(speech) > 0 && p.writer != nil {
-		// Pre-compute amplitude envelope for mouth animation (RMS per 20ms window).
-		// OpenAI TTS PCM is 24 kHz; using p.sampleRate is approximate but close enough.
-		chunks := rmsChunks(speech, p.sampleRate, p.channels, 20)
-		go func() {
-			defer p.ampl.Store(0)
-			for _, amp := range chunks {
-				if ctx.Err() != nil {
-					return
-				}
-				p.ampl.Store(math.Float32bits(amp))
-				time.Sleep(20 * time.Millisecond)
-			}
-		}()
+	return p.speak(ctx, speech)
+}
 
-		if err := p.writer.WritePCM(speech); err != nil {
-			p.ampl.Store(0)
+// speak plays the synthesized speech and owns the post-speech state
+// transitions. It registers an interrupt handle so InterruptSpeech can cut
+// the playback short; the handle's waiters are released only after the
+// transitions have run, so an interrupter observes the machine back in idle.
+func (p *VoicePipeline) speak(ctx context.Context, speech []byte) error {
+	if len(speech) > 0 && p.writer != nil {
+		if p.machine != nil {
+			p.machine.Transition(EventSpeak)
+		}
+
+		playCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		p.playMu.Lock()
+		p.playCancel = cancel
+		p.playDone = done
+		p.playMu.Unlock()
+
+		release := func() {
+			p.playMu.Lock()
+			p.playCancel = nil
+			p.playDone = nil
+			p.playMu.Unlock()
+			cancel()
+			close(done)
+		}
+
+		// Stream the PCM at real-time pace so the speaking state and mouth
+		// amplitude track the audible playback position; returns once the
+		// audio has finished playing or the playback was interrupted.
+		err := p.playPaced(playCtx, speech)
+		// A user interrupt cancels only playCtx and counts as a normal end
+		// of speech; parent-context cancellation keeps the failure path.
+		if err != nil && !(errors.Is(err, context.Canceled) && ctx.Err() == nil) {
+			release()
 			return p.fail(err, EventFail)
 		}
-		p.ampl.Store(0)
+		defer release()
 	}
 
 	if p.machine != nil {
@@ -197,6 +221,106 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.machine.Transition(EventRest)
 	}
 	return nil
+}
+
+// InterruptSpeech cuts an in-progress TTS playback short. It returns false
+// immediately when nothing is playing. Otherwise it cancels the playback and
+// blocks until the pipeline has finished its post-speech state transitions
+// (speaking -> idle), so the caller can follow up immediately with e.g.
+// EventListen for push-to-talk.
+func (p *VoicePipeline) InterruptSpeech() bool {
+	if p == nil {
+		return false
+	}
+	p.playMu.Lock()
+	cancel, done := p.playCancel, p.playDone
+	p.playMu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	<-done
+	return true
+}
+
+// speakChunkMs is the pacing granularity for TTS playback: PCM is written in
+// windows of this size and the mouth amplitude is updated per window.
+const speakChunkMs = 20
+
+// playPaced streams pcm to the playback writer at real-time rate instead of
+// dumping it into the pipe at once. Dumping parks seconds of audio in the
+// pipe + ALSA buffers, which made the mouth animation and the speaking state
+// run ahead of the audible sound and end while sound was still playing.
+//
+// A cushion of audio.PlaybackBufferMs is written up front so the device never
+// starves (matching aplay's --buffer-time); after that, chunk i is written
+// when chunk i-lead becomes audible, and the amplitude is set for the audible
+// chunk. The call returns once the final chunk has finished playing, so the
+// caller can key the speaking state directly to actual sound output.
+func (p *VoicePipeline) playPaced(ctx context.Context, pcm []byte) error {
+	bytesPerChunk := p.sampleRate * p.channels * 2 /* 16-bit */ * speakChunkMs / 1000
+	if bytesPerChunk <= 0 {
+		return p.writer.WritePCM(pcm)
+	}
+	amps := rmsChunks(pcm, p.sampleRate, p.channels, speakChunkMs)
+	lead := audio.PlaybackBufferMs / speakChunkMs
+	chunkDur := time.Duration(speakChunkMs) * time.Millisecond
+	nChunks := (len(pcm) + bytesPerChunk - 1) / bytesPerChunk
+	defer p.ampl.Store(0)
+
+	setAmp := func(audible int) {
+		if audible >= 0 && audible < len(amps) {
+			p.ampl.Store(math.Float32bits(amps[audible]))
+		}
+	}
+
+	// t=0 is when the prefill has been written, which is when ALSA's buffer
+	// fills and playback starts: chunk j becomes audible at ~ t = j*chunkDur.
+	start := time.Now()
+	for i := 0; i < nChunks; i++ {
+		// Chunk i is written `lead` chunks before it is due to play; the
+		// first `lead` chunks form the instant prefill.
+		if err := sleepUntil(ctx, start.Add(time.Duration(i-lead)*chunkDur)); err != nil {
+			return err
+		}
+		end := (i + 1) * bytesPerChunk
+		if end > len(pcm) {
+			end = len(pcm)
+		}
+		if err := p.writer.WritePCM(pcm[i*bytesPerChunk : end]); err != nil {
+			return err
+		}
+		setAmp(i - lead)
+	}
+	// The last `lead` chunks are still draining out of the buffers: keep the
+	// amplitude envelope running until the final chunk has played out.
+	for j := nChunks - lead; j < nChunks; j++ {
+		if j < 0 {
+			continue
+		}
+		if err := sleepUntil(ctx, start.Add(time.Duration(j)*chunkDur)); err != nil {
+			return err
+		}
+		setAmp(j)
+	}
+	return sleepUntil(ctx, start.Add(time.Duration(nChunks)*chunkDur))
+}
+
+// sleepUntil blocks until t or until ctx is cancelled. Deadlines in the past
+// return immediately (with ctx.Err() if the context is already done).
+func sleepUntil(ctx context.Context, t time.Time) error {
+	d := time.Until(t)
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // rmsChunks splits pcm into chunkMs-millisecond windows and returns the RMS

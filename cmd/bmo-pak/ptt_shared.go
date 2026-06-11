@@ -66,6 +66,12 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 	go func() {
 		for ev := range watcher.Events() {
 			if ev.Held {
+				// A while BMO is talking cuts the speech short; the call
+				// blocks until the machine is back in idle, so the regular
+				// PTT press path below behaves as if pressed from idle.
+				if pipeline.InterruptSpeech() {
+					logger.Infof("speech interrupted by PTT press")
+				}
 				snap := machine.Snapshot()
 				if snap.Current == assistant.StateSleeping || snap.Current == assistant.StateError {
 					machine.Transition(assistant.EventWake)

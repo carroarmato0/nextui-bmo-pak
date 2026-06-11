@@ -217,10 +217,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
-		// B closes the settings overlay when open; exits to NextUI when no overlay is active.
+		// B closes the settings overlay when open; interrupts BMO mid-speech;
+		// exits to NextUI otherwise.
 		if action == input.NavCancel {
 			if activeMenu != nil {
 				setActiveMenu(nil)
+			} else if audioPipeline.InterruptSpeech() {
+				logger.Infof("speech interrupted by B press")
 			} else {
 				running = false
 			}

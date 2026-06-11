@@ -334,7 +334,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if ev.Type == sdl.KEYDOWN {
 					switch ev.Keysym.Sym {
 					case sdl.K_ESCAPE:
-						running = false
+						// ESC interrupts BMO mid-speech; exits otherwise.
+						if audioPipeline.InterruptSpeech() {
+							logger.Infof("speech interrupted by ESC press")
+						} else {
+							running = false
+						}
 					case sdl.K_F1:
 						setActiveMenu(providerMenu)
 					}
