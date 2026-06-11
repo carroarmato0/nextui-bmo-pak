@@ -157,7 +157,7 @@ func TestTranscribeReplyAndSpeak(t *testing.T) {
 				t.Fatalf("unexpected transcription fields: %#v", fields)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"text":"hello bmo"}`))
+			_, _ = w.Write([]byte(`{"text":"hello bmo","usage":{"input_tokens":14,"output_tokens":3,"total_tokens":17}}`))
 		case "/chat/completions":
 			var payload struct {
 				Model    string    `json:"model"`
@@ -170,7 +170,7 @@ func TestTranscribeReplyAndSpeak(t *testing.T) {
 				t.Fatalf("unexpected chat payload: %#v", payload)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"oh wow"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"oh wow"}}],"usage":{"prompt_tokens":612,"completion_tokens":43,"total_tokens":655}}`))
 		case "/audio/speech":
 			var payload struct {
 				Model  string `json:"model"`
@@ -192,23 +192,29 @@ func TestTranscribeReplyAndSpeak(t *testing.T) {
 	defer server.Close()
 
 	client := NewOpenAICompatibleClient(Config{BaseURL: server.URL, APIKey: "secret"}, server.Client())
-	text, err := client.Transcribe(context.Background(), TranscriptionRequest{Model: "whisper-1", Audio: []byte{0x00, 0x00, 0x01, 0x00}, SampleRate: 16000, Channels: 1})
+	transcription, err := client.Transcribe(context.Background(), TranscriptionRequest{Model: "whisper-1", Audio: []byte{0x00, 0x00, 0x01, 0x00}, SampleRate: 16000, Channels: 1})
 	if err != nil {
 		t.Fatalf("Transcribe() error = %v", err)
 	}
-	if text != "hello bmo" {
-		t.Fatalf("Transcribe() = %q, want hello bmo", text)
+	if transcription.Text != "hello bmo" {
+		t.Fatalf("Transcribe() = %q, want hello bmo", transcription.Text)
+	}
+	if transcription.Usage != (Usage{PromptTokens: 14, CompletionTokens: 3, TotalTokens: 17}) {
+		t.Fatalf("Transcribe() usage = %+v, want 14/3/17", transcription.Usage)
 	}
 
-	reply, err := client.Reply(context.Background(), ChatRequest{Model: "gpt-4o-mini", SystemPrompt: "be bmo", Messages: []Message{{Role: "user", Content: "hi"}}})
+	chat, err := client.Reply(context.Background(), ChatRequest{Model: "gpt-4o-mini", SystemPrompt: "be bmo", Messages: []Message{{Role: "user", Content: "hi"}}})
 	if err != nil {
 		t.Fatalf("Reply() error = %v", err)
 	}
-	if reply != "oh wow" {
-		t.Fatalf("Reply() = %q, want oh wow", reply)
+	if chat.Text != "oh wow" {
+		t.Fatalf("Reply() = %q, want oh wow", chat.Text)
+	}
+	if chat.Usage != (Usage{PromptTokens: 612, CompletionTokens: 43, TotalTokens: 655}) {
+		t.Fatalf("Reply() usage = %+v, want 612/43/655", chat.Usage)
 	}
 
-	speech, err := client.Speak(context.Background(), SpeechRequest{Model: "tts-1", Input: reply})
+	speech, err := client.Speak(context.Background(), SpeechRequest{Model: "tts-1", Input: chat.Text})
 	if err != nil {
 		t.Fatalf("Speak() error = %v", err)
 	}
@@ -227,5 +233,47 @@ func TestClassifyErrorFallback(t *testing.T) {
 	client := NewOpenAICompatibleClient(Config{}, http.DefaultClient)
 	if got := client.ClassifyError(errors.New("something else")); got != ErrorKindProvider {
 		t.Fatalf("fallback classification = %v, want provider", got)
+	}
+}
+
+func TestUsageParsingVariants(t *testing.T) {
+	// Providers differ: chat uses prompt/completion naming, newer audio
+	// models use input/output naming, whisper-1 reports nothing at all.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/audio/transcriptions":
+			_, _ = w.Write([]byte(`{"text":"no usage here"}`))
+		case "/chat/completions":
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hi"}}]}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompatibleClient(Config{BaseURL: server.URL}, server.Client())
+	transcription, err := client.Transcribe(context.Background(), TranscriptionRequest{Model: "whisper-1", Audio: []byte{0x00, 0x00}})
+	if err != nil {
+		t.Fatalf("Transcribe() error = %v", err)
+	}
+	if transcription.Usage != (Usage{}) {
+		t.Fatalf("expected zero usage when provider reports none, got %+v", transcription.Usage)
+	}
+	chat, err := client.Reply(context.Background(), ChatRequest{Model: "gpt-4o-mini", Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Reply() error = %v", err)
+	}
+	if chat.Usage != (Usage{}) {
+		t.Fatalf("expected zero usage when provider reports none, got %+v", chat.Usage)
+	}
+}
+
+func TestUsageReported(t *testing.T) {
+	if (Usage{}).Reported() {
+		t.Fatal("zero usage must not count as reported")
+	}
+	if !(Usage{PromptTokens: 1}).Reported() {
+		t.Fatal("non-zero usage must count as reported")
 	}
 }

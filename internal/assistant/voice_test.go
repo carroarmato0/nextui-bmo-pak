@@ -48,6 +48,8 @@ type fakeProvider struct {
 	transcript     string
 	reply          string
 	speech         []byte
+	sttUsage       providers.Usage
+	chatUsage      providers.Usage
 	err            error
 	lastSpeech     providers.SpeechRequest
 	lastChat       providers.ChatRequest
@@ -73,13 +75,13 @@ func (f *fakeProvider) Supports(cap providers.Capability) bool {
 	}
 	return false
 }
-func (f *fakeProvider) Transcribe(ctx context.Context, req providers.TranscriptionRequest) (string, error) {
+func (f *fakeProvider) Transcribe(ctx context.Context, req providers.TranscriptionRequest) (providers.TranscriptionResult, error) {
 	f.lastTranscribe = &req
-	return f.transcript, f.err
+	return providers.TranscriptionResult{Text: f.transcript, Usage: f.sttUsage}, f.err
 }
-func (f *fakeProvider) Reply(ctx context.Context, req providers.ChatRequest) (string, error) {
+func (f *fakeProvider) Reply(ctx context.Context, req providers.ChatRequest) (providers.ChatResult, error) {
 	f.lastChat = req
-	return f.reply, f.err
+	return providers.ChatResult{Text: f.reply, Usage: f.chatUsage}, f.err
 }
 func (f *fakeProvider) Speak(ctx context.Context, req providers.SpeechRequest) ([]byte, error) {
 	f.lastSpeech = req
@@ -459,5 +461,85 @@ func TestSpeakRemarkChatFailureEntersErrorState(t *testing.T) {
 	}
 	if got := m.State(); got != StateError {
 		t.Errorf("state = %v, want error", got)
+	}
+}
+
+// captureLogger records Infof lines so tests can assert log content.
+type captureLogger struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *captureLogger) Infof(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+}
+func (l *captureLogger) Debugf(format string, args ...any) {}
+
+func (l *captureLogger) joined() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.lines, "\n")
+}
+
+func TestPipelineLogsTokenUsage(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{
+		reply:     "oh wow",
+		chatUsage: providers.Usage{PromptTokens: 612, CompletionTokens: 43, TotalTokens: 655},
+	}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1)
+	logger := &captureLogger{}
+	pipe.SetLogger(logger)
+
+	// One second of loud-enough PCM so the signal gate passes.
+	pcm := make([]byte, 32000)
+	for i := 0; i < len(pcm); i += 2 {
+		pcm[i] = 0x00
+		pcm[i+1] = 0x40
+	}
+	if err := pipe.ProcessBatch(context.Background(), pcm); err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+
+	logs := logger.joined()
+	// whisper-1 reports no usage: STT line falls back to audio seconds.
+	if !strings.Contains(logs, "pipeline STT:") || !strings.Contains(logs, "tokens: n/a (1.0s audio)") {
+		t.Errorf("STT log missing usage fallback: %q", logs)
+	}
+	if !strings.Contains(logs, "tokens: 612 prompt + 43 completion") {
+		t.Errorf("chat log missing token usage: %q", logs)
+	}
+	// TTS billing unit is input characters ("oh wow" = 6).
+	if !strings.Contains(logs, "input: 6 chars") {
+		t.Errorf("TTS log missing input chars: %q", logs)
+	}
+}
+
+func TestRemarkLogsTokenUsage(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	chat := &fakeProvider{
+		reply:     "daebak!",
+		chatUsage: providers.Usage{PromptTokens: 705, CompletionTokens: 38, TotalTokens: 743},
+	}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	logger := &captureLogger{}
+	pipe.SetLogger(logger)
+
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	logs := logger.joined()
+	if !strings.Contains(logs, "remark Chat:") || !strings.Contains(logs, "tokens: 705 prompt + 38 completion") {
+		t.Errorf("remark chat log missing token usage: %q", logs)
+	}
+	if !strings.Contains(logs, "remark TTS:") || !strings.Contains(logs, "input: 7 chars") {
+		t.Errorf("remark TTS log missing input chars: %q", logs)
 	}
 }

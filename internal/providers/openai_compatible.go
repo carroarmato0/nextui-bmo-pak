@@ -15,54 +15,55 @@ import (
 
 const defaultTTSVoice = "alloy"
 
-func (c *OpenAICompatibleClient) Transcribe(ctx context.Context, req TranscriptionRequest) (string, error) {
+func (c *OpenAICompatibleClient) Transcribe(ctx context.Context, req TranscriptionRequest) (TranscriptionResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	req = normalizeTranscriptionRequest(c.cfg, req)
 	if strings.TrimSpace(c.cfg.BaseURL) == "" {
-		return "", fmt.Errorf("transcribe: base url is required")
+		return TranscriptionResult{}, fmt.Errorf("transcribe: base url is required")
 	}
 
 	body, contentType, err := buildTranscriptionBody(req)
 	if err != nil {
-		return "", err
+		return TranscriptionResult{}, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/audio/transcriptions", body)
 	if err != nil {
-		return "", err
+		return TranscriptionResult{}, err
 	}
 	httpReq.Header.Set("Content-Type", contentType)
 	c.applyAuth(httpReq)
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return "", err
+		return TranscriptionResult{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+		return TranscriptionResult{}, &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	var payload struct {
-		Text string `json:"text"`
+		Text  string    `json:"text"`
+		Usage *apiUsage `json:"usage"`
 	}
 	if err := jsonDecode(resp.Body, &payload); err != nil {
-		return "", err
+		return TranscriptionResult{}, err
 	}
-	return strings.TrimSpace(payload.Text), nil
+	return TranscriptionResult{Text: strings.TrimSpace(payload.Text), Usage: payload.Usage.toUsage()}, nil
 }
 
-func (c *OpenAICompatibleClient) Reply(ctx context.Context, req ChatRequest) (string, error) {
+func (c *OpenAICompatibleClient) Reply(ctx context.Context, req ChatRequest) (ChatResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	req = normalizeChatRequest(c.cfg, req)
 	if strings.TrimSpace(c.cfg.BaseURL) == "" {
-		return "", fmt.Errorf("reply: base url is required")
+		return ChatResult{}, fmt.Errorf("reply: base url is required")
 	}
 
 	payload := struct {
@@ -78,25 +79,25 @@ func (c *OpenAICompatibleClient) Reply(ctx context.Context, req ChatRequest) (st
 
 	buf, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/chat/completions", bytes.NewReader(buf))
 	if err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.applyAuth(httpReq)
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+		return ChatResult{}, &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	var result struct {
@@ -105,14 +106,15 @@ func (c *OpenAICompatibleClient) Reply(ctx context.Context, req ChatRequest) (st
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *apiUsage `json:"usage"`
 	}
 	if err := jsonDecode(resp.Body, &result); err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("reply: no choices returned")
+		return ChatResult{}, fmt.Errorf("reply: no choices returned")
 	}
-	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+	return ChatResult{Text: strings.TrimSpace(result.Choices[0].Message.Content), Usage: result.Usage.toUsage()}, nil
 }
 
 func (c *OpenAICompatibleClient) Speak(ctx context.Context, req SpeechRequest) ([]byte, error) {
@@ -283,4 +285,36 @@ func wavBytes(pcm []byte, sampleRate, channels int) []byte {
 	_ = binary.Write(buf, binary.LittleEndian, uint32(subchunk2Size))
 	buf.Write(pcm)
 	return buf.Bytes()
+}
+
+// apiUsage tolerates both usage namings in the wild: chat completions use
+// prompt_tokens/completion_tokens, newer audio endpoints (gpt-4o-transcribe)
+// use input_tokens/output_tokens. whisper-1 omits the object entirely.
+type apiUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+func (u *apiUsage) toUsage() Usage {
+	if u == nil {
+		return Usage{}
+	}
+	usage := Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+	}
+	if usage.PromptTokens == 0 {
+		usage.PromptTokens = u.InputTokens
+	}
+	if usage.CompletionTokens == 0 {
+		usage.CompletionTokens = u.OutputTokens
+	}
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	return usage
 }

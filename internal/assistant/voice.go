@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -166,7 +167,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	totalStart := time.Now()
 
 	sttStart := time.Now()
-	transcript, err := p.stt.Transcribe(ctx, providers.TranscriptionRequest{
+	transcription, err := p.stt.Transcribe(ctx, providers.TranscriptionRequest{
 		Model:      p.sttModel,
 		Audio:      pcm,
 		SampleRate: p.sampleRate,
@@ -177,9 +178,11 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.fail(err, EventFail)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline STT: %dms", time.Since(sttStart).Milliseconds())
+		p.logger.Infof("pipeline STT: %dms | tokens: %s (%.1fs audio)",
+			time.Since(sttStart).Milliseconds(), usageString(transcription.Usage),
+			audioSeconds(len(pcm), p.sampleRate, p.channels))
 	}
-	transcript = strings.TrimSpace(transcript)
+	transcript := strings.TrimSpace(transcription.Text)
 	if transcript == "" {
 		if p.machine != nil {
 			p.machine.Transition(EventRest)
@@ -195,7 +198,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	chatStart := time.Now()
-	reply, err := p.chat.Reply(ctx, providers.ChatRequest{
+	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: transcript}},
 		SystemPrompt: p.currentSystemPrompt(),
@@ -204,9 +207,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.fail(err, EventFail)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline Chat: %dms", time.Since(chatStart).Milliseconds())
+		p.logger.Infof("pipeline Chat: %dms | tokens: %s",
+			time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
 	}
-	reply = strings.TrimSpace(reply)
+	reply := strings.TrimSpace(chat.Text)
 	if reply == "" {
 		if p.machine != nil {
 			p.machine.Transition(EventRest)
@@ -229,8 +233,8 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.fail(err, EventFail)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline TTS: %dms (%d bytes) | total: %dms",
-			time.Since(ttsStart).Milliseconds(), len(speech),
+		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
+			time.Since(ttsStart).Milliseconds(), len(speech), len(reply),
 			time.Since(totalStart).Milliseconds())
 	}
 
@@ -267,7 +271,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 	}
 
 	chatStart := time.Now()
-	reply, err := p.chat.Reply(ctx, providers.ChatRequest{
+	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: nudge}},
 		SystemPrompt: p.currentSystemPrompt(),
@@ -276,9 +280,10 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 		return p.fail(err, EventFail)
 	}
 	if p.logger != nil {
-		p.logger.Infof("remark Chat: %dms", time.Since(chatStart).Milliseconds())
+		p.logger.Infof("remark Chat: %dms | tokens: %s",
+			time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
 	}
-	reply = strings.TrimSpace(reply)
+	reply := strings.TrimSpace(chat.Text)
 	if reply == "" {
 		if p.machine != nil {
 			p.machine.Transition(EventRest)
@@ -301,7 +306,8 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 		return p.fail(err, EventFail)
 	}
 	if p.logger != nil {
-		p.logger.Infof("remark TTS: %dms (%d bytes)", time.Since(ttsStart).Milliseconds(), len(speech))
+		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
+			time.Since(ttsStart).Milliseconds(), len(speech), len(reply))
 	}
 	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
 
@@ -512,4 +518,22 @@ func classifyQuota(provider any, err error) bool {
 		return false
 	}
 	return classifier.ClassifyError(err) == providers.ErrorKindQuota
+}
+
+// usageString renders provider token accounting for the pipeline log
+// lines; "n/a" when the provider reported nothing (e.g. whisper-1).
+func usageString(u providers.Usage) string {
+	if !u.Reported() {
+		return "n/a"
+	}
+	return fmt.Sprintf("%d prompt + %d completion", u.PromptTokens, u.CompletionTokens)
+}
+
+// audioSeconds converts a PCM S16LE byte count to seconds of audio, the
+// billing unit for STT models that do not report token usage.
+func audioSeconds(pcmBytes, sampleRate, channels int) float64 {
+	if sampleRate <= 0 || channels <= 0 {
+		return 0
+	}
+	return float64(pcmBytes) / float64(sampleRate*channels*2)
 }

@@ -66,6 +66,34 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// Usage reports tokens spent on one API call, as far as the provider
+// disclosed them. Zero-valued fields mean "not reported", not "free" —
+// e.g. whisper-1 returns no usage object at all.
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+// Reported tells whether the provider disclosed any usage numbers.
+func (u Usage) Reported() bool {
+	return u != Usage{}
+}
+
+// TranscriptionResult is the transcript plus whatever usage accounting the
+// STT endpoint disclosed.
+type TranscriptionResult struct {
+	Text  string
+	Usage Usage
+}
+
+// ChatResult is the assistant reply plus the chat endpoint's usage
+// accounting.
+type ChatResult struct {
+	Text  string
+	Usage Usage
+}
+
 type TranscriptionRequest struct {
 	Model      string
 	Audio      []byte
@@ -96,7 +124,7 @@ type STTProvider interface {
 	ErrorClassifier
 	Capabilities() []Capability
 	Supports(Capability) bool
-	Transcribe(ctx context.Context, req TranscriptionRequest) (string, error)
+	Transcribe(ctx context.Context, req TranscriptionRequest) (TranscriptionResult, error)
 }
 
 type ChatProvider interface {
@@ -105,7 +133,7 @@ type ChatProvider interface {
 	ErrorClassifier
 	Capabilities() []Capability
 	Supports(Capability) bool
-	Reply(ctx context.Context, req ChatRequest) (string, error)
+	Reply(ctx context.Context, req ChatRequest) (ChatResult, error)
 }
 
 type TTSProvider interface {
