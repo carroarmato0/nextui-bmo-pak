@@ -31,6 +31,21 @@ func restorePromptDefaults(personaPath, voicePath string) error {
 	return config.WritePromptFile(voicePath, config.DefaultTTSInstructions)
 }
 
+// systemPromptWithContext joins the persona prompt and the device-awareness
+// block; either may be empty.
+func systemPromptWithContext(persona, deviceCtx string) string {
+	persona = strings.TrimSpace(persona)
+	deviceCtx = strings.TrimSpace(deviceCtx)
+	switch {
+	case persona == "":
+		return deviceCtx
+	case deviceCtx == "":
+		return persona
+	default:
+		return persona + "\n\n" + deviceCtx
+	}
+}
+
 type pttLogger interface {
 	Infof(string, ...any)
 	Warnf(string, ...any)

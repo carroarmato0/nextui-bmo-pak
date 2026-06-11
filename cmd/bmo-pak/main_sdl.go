@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
 	"github.com/carroarmato0/nextui-bmo/internal/config"
+	"github.com/carroarmato0/nextui-bmo/internal/devctx"
 	"github.com/carroarmato0/nextui-bmo/internal/hardware"
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
@@ -132,6 +134,36 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	logger.Infof("initial state: %s", machine.State())
 	logger.Debugf("assistant snapshot: %+v", machine.Snapshot())
 
+	// Device awareness: read-only collectors feeding the DEVICE AWARENESS
+	// block of the system prompt. BMO_SDCARD_ROOT overrides the SD card
+	// location for desktop testing against pulled fixtures.
+	sdRoot := strings.TrimSpace(os.Getenv("BMO_SDCARD_ROOT"))
+	if sdRoot == "" {
+		sdRoot = "/mnt/SDCARD"
+	}
+	achievementsCollector := devctx.AchievementsCollector{
+		CacheDir:     filepath.Join(sdRoot, ".userdata", "shared", ".ra", "offline", "cache"),
+		SettingsPath: filepath.Join(sdRoot, ".userdata", "shared", "minuisettings.txt"),
+		Rng:          rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+	deviceCtx := devctx.NewBuilder([]devctx.Collector{
+		devctx.LibraryCollector{Root: filepath.Join(sdRoot, "Roms")},
+		devctx.SavesCollector{Root: filepath.Join(sdRoot, "Saves")},
+		devctx.PlayLogCollector{DBPath: filepath.Join(sdRoot, ".userdata", "shared", "game_logs.sqlite")},
+		devctx.SystemCollector{
+			Model:       hardwareProfile.DeviceTreeModel,
+			UptimePath:  "/proc/uptime",
+			MeminfoPath: "/proc/meminfo",
+			DiskPath:    sdRoot,
+			PowerDir:    "/sys/class/power_supply",
+		},
+		achievementsCollector,
+	}, 30*time.Second, time.Now().UnixNano())
+	deviceCtx.SetEnabled(cfg.DeviceContext)
+	deviceCtx.SetReminisce(achievementsCollector.RandomPastUnlock)
+	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
+	proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
+
 	var audioSession *audio.Session
 	var audioRouter *audio.CaptureRouter
 	var audioPipeline *assistant.VoicePipeline
@@ -159,7 +191,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			// Re-read both prompt files before each utterance so they can
 			// be tuned without restarting the pak.
 			audioPipeline.SetTTSInstructionsSource(func() string { return readPromptFile(voicePath) })
-			audioPipeline.SetSystemPromptSource(func() string { return readPromptFile(personaPath) })
+			audioPipeline.SetSystemPromptSource(func() string {
+				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot())
+			})
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
 	}
@@ -189,6 +223,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// Apply the (possibly changed) mode immediately: it gates the PTT
 		// watcher and the voice pipeline.
 		machine.SetMode(cfg.Mode)
+		// Apply awareness toggles and proactive level immediately too.
+		deviceCtx.SetEnabled(cfg.DeviceContext)
+		proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
@@ -239,7 +276,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if e.Type != sdl.KEYDOWN {
 				return true
 			}
-			if editor, ok := activeMenu.(interface{ IsEditing() bool; InsertText(string); Backspace(); CancelEdit(); SubmitEdit() error }); ok && editor.IsEditing() {
+			if editor, ok := activeMenu.(interface {
+				IsEditing() bool
+				InsertText(string)
+				Backspace()
+				CancelEdit()
+				SubmitEdit() error
+			}); ok && editor.IsEditing() {
 				switch e.Keysym.Sym {
 				case sdl.K_RETURN, sdl.K_KP_ENTER:
 					if err := editor.SubmitEdit(); err != nil {
@@ -291,7 +334,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if e.Type != sdl.CONTROLLERBUTTONDOWN {
 				return true
 			}
-			if editor, ok := activeMenu.(interface{ IsEditing() bool; SubmitEdit() error; CancelEdit(); Backspace() }); ok && editor.IsEditing() {
+			if editor, ok := activeMenu.(interface {
+				IsEditing() bool
+				SubmitEdit() error
+				CancelEdit()
+				Backspace()
+			}); ok && editor.IsEditing() {
 				switch e.Button {
 				case sdl.CONTROLLER_BUTTON_A, sdl.CONTROLLER_BUTTON_START:
 					if err := editor.SubmitEdit(); err != nil {
@@ -374,7 +422,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					}
 				}
 			case *sdl.TextInputEvent:
-				if editor, ok := activeMenu.(interface{ IsEditing() bool; InsertText(string) }); ok && editor.IsEditing() {
+				if editor, ok := activeMenu.(interface {
+					IsEditing() bool
+					InsertText(string)
+				}); ok && editor.IsEditing() {
 					editor.InsertText(strings.TrimRight(string(ev.Text[:]), string(rune(0))))
 				}
 			case *sdl.WindowEvent:
@@ -396,6 +447,17 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				nextIdleUpdate = now.Add(step.HoldFor)
 			}
 			expr = string(currentIdleExpression)
+			if audioPipeline != nil && proactive.Due(now) {
+				proactive.Reschedule(now)
+				if nudge, ok := deviceCtx.ProactiveNudge(); ok {
+					remarkPipeline := audioPipeline
+					go func() {
+						if err := remarkPipeline.SpeakRemark(ctx, nudge); err != nil {
+							logger.Warnf("proactive remark failed: %v", err)
+						}
+					}()
+				}
+			}
 		case assistant.StateListening:
 			expr = string(assistant.ExpressionListening)
 		case assistant.StateThinking:
