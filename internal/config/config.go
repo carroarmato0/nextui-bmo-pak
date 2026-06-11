@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/carroarmato0/nextui-bmo/internal/input"
 )
@@ -17,6 +18,15 @@ const (
 
 	InputTriggerPTT      = "ptt"
 	InputTriggerWakeWord = "wake_word"
+
+	// Proactive talk levels: how often BMO may make a spontaneous idle
+	// remark. Off is the default — it is the only feature that spends API
+	// money unprompted.
+	ProactiveOff        = "off"
+	ProactiveChatty     = "chatty"
+	ProactiveRegular    = "regular"
+	ProactiveOccasional = "occasional"
+	ProactiveRare       = "rare"
 
 	DefaultLogLevel    = "info"
 	DefaultPersonality = "bmo"
@@ -70,18 +80,35 @@ type Provider struct {
 	APIKey  string `json:"api_key,omitempty"`
 }
 
+// DeviceContext gates which read-only device facts are collected into the
+// chat system prompt's DEVICE AWARENESS block. All categories default to
+// enabled; they are harmless reads.
+type DeviceContext struct {
+	Library      bool `json:"library"`
+	Saves        bool `json:"saves"`
+	PlayLog      bool `json:"play_log"`
+	System       bool `json:"system"`
+	Achievements bool `json:"achievements"`
+}
+
+func DefaultDeviceContext() DeviceContext {
+	return DeviceContext{Library: true, Saves: true, PlayLog: true, System: true, Achievements: true}
+}
+
 type Config struct {
-	Version       int      `json:"version,omitempty"`
-	SetupComplete bool     `json:"setup_complete,omitempty"`
-	Mode          string   `json:"mode"`
-	InputTrigger  string   `json:"input_trigger,omitempty"`
-	STT           Provider `json:"stt"`
-	Chat          Provider `json:"chat"`
-	TTS           Provider `json:"tts"`
-	PTTButtons    []string `json:"ptt_buttons,omitempty"`
-	LogLevel      string   `json:"log_level"`
-	Personality   string   `json:"personality"`
-	ReducedMotion bool     `json:"reduced_motion"`
+	Version       int           `json:"version,omitempty"`
+	SetupComplete bool          `json:"setup_complete,omitempty"`
+	Mode          string        `json:"mode"`
+	InputTrigger  string        `json:"input_trigger,omitempty"`
+	STT           Provider      `json:"stt"`
+	Chat          Provider      `json:"chat"`
+	TTS           Provider      `json:"tts"`
+	PTTButtons    []string      `json:"ptt_buttons,omitempty"`
+	LogLevel      string        `json:"log_level"`
+	Personality   string        `json:"personality"`
+	ReducedMotion bool          `json:"reduced_motion"`
+	DeviceContext DeviceContext `json:"device_context"`
+	ProactiveTalk string        `json:"proactive_talk"`
 }
 
 func Default() Config {
@@ -93,6 +120,8 @@ func Default() Config {
 		PTTButtons:    DefaultPTTButtons(),
 		LogLevel:      DefaultLogLevel,
 		Personality:   DefaultPersonality,
+		DeviceContext: DefaultDeviceContext(),
+		ProactiveTalk: ProactiveOff,
 	}
 }
 
@@ -162,6 +191,10 @@ func (c *Config) Normalize() {
 	if c.Personality == "" {
 		c.Personality = DefaultPersonality
 	}
+	c.ProactiveTalk = strings.ToLower(strings.TrimSpace(c.ProactiveTalk))
+	if c.ProactiveTalk == "" {
+		c.ProactiveTalk = ProactiveOff
+	}
 }
 
 func (c Config) Validate() error {
@@ -176,6 +209,12 @@ func (c Config) Validate() error {
 	}
 	if err := ValidatePTTButtons(cfg.PTTButtons); err != nil {
 		return err
+	}
+
+	switch cfg.ProactiveTalk {
+	case ProactiveOff, ProactiveChatty, ProactiveRegular, ProactiveOccasional, ProactiveRare:
+	default:
+		return fmt.Errorf("%w: unknown proactive_talk %q", ErrInvalid, cfg.ProactiveTalk)
 	}
 
 	if cfg.Mode == ModeAI {
@@ -270,4 +309,27 @@ func (c Config) UsesAI() bool {
 
 func (p Provider) IsConfigured() bool {
 	return strings.TrimSpace(p.Name) != "" && strings.TrimSpace(p.Model) != ""
+}
+
+// SupportedProactiveTalkLevels returns the cycle order used by the settings
+// menu.
+func SupportedProactiveTalkLevels() []string {
+	return []string{ProactiveOff, ProactiveChatty, ProactiveRegular, ProactiveOccasional, ProactiveRare}
+}
+
+// ProactiveInterval returns the base interval between proactive remarks for
+// a level, or 0 when proactive talk is off (or the level is unknown).
+func ProactiveInterval(level string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case ProactiveChatty:
+		return 7 * time.Minute
+	case ProactiveRegular:
+		return 30 * time.Minute
+	case ProactiveOccasional:
+		return time.Hour
+	case ProactiveRare:
+		return 3 * time.Hour
+	default:
+		return 0
+	}
 }

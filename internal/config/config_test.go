@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -120,5 +121,71 @@ func TestDefaultSetupComplete(t *testing.T) {
 	cfg := Default()
 	if !cfg.SetupComplete {
 		t.Fatal("expected SetupComplete=true in default config")
+	}
+}
+
+func TestDefaultDeviceContextAllEnabled(t *testing.T) {
+	cfg := Default()
+	dc := cfg.DeviceContext
+	if !dc.Library || !dc.Saves || !dc.PlayLog || !dc.System || !dc.Achievements {
+		t.Fatalf("expected all device context categories enabled by default, got %+v", dc)
+	}
+	if cfg.ProactiveTalk != ProactiveOff {
+		t.Fatalf("expected proactive talk off by default, got %q", cfg.ProactiveTalk)
+	}
+}
+
+func TestLoadConfigWithoutDeviceContextDefaultsEnabled(t *testing.T) {
+	// Configs written before this feature have no device_context key; the
+	// Load-over-Default merge must leave every category enabled.
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"mode":"idle","log_level":"info","personality":"bmo","stt":{},"chat":{},"tts":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	dc := cfg.DeviceContext
+	if !dc.Library || !dc.Saves || !dc.PlayLog || !dc.System || !dc.Achievements {
+		t.Fatalf("expected legacy config to default all categories on, got %+v", dc)
+	}
+}
+
+func TestNormalizeProactiveTalk(t *testing.T) {
+	cfg := Config{ProactiveTalk: "  CHATTY "}
+	cfg.Normalize()
+	if cfg.ProactiveTalk != ProactiveChatty {
+		t.Fatalf("expected normalized chatty, got %q", cfg.ProactiveTalk)
+	}
+	cfg = Config{}
+	cfg.Normalize()
+	if cfg.ProactiveTalk != ProactiveOff {
+		t.Fatalf("expected empty level normalized to off, got %q", cfg.ProactiveTalk)
+	}
+}
+
+func TestValidateRejectsUnknownProactiveTalk(t *testing.T) {
+	cfg := Default()
+	cfg.ProactiveTalk = "constantly"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error for unknown proactive talk level")
+	}
+}
+
+func TestProactiveInterval(t *testing.T) {
+	cases := map[string]time.Duration{
+		ProactiveOff:        0,
+		ProactiveChatty:     7 * time.Minute,
+		ProactiveRegular:    30 * time.Minute,
+		ProactiveOccasional: time.Hour,
+		ProactiveRare:       3 * time.Hour,
+		"bogus":             0,
+		"":                  0,
+	}
+	for level, want := range cases {
+		if got := ProactiveInterval(level); got != want {
+			t.Errorf("ProactiveInterval(%q) = %v, want %v", level, got, want)
+		}
 	}
 }
