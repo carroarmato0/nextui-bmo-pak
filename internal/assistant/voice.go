@@ -243,6 +243,69 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	return p.speak(ctx, speech)
 }
 
+// SpeakRemark generates and speaks a spontaneous proactive remark. The
+// nudge is a stage direction sent as the user message (there is no real
+// user speech); the reply flows through the normal TTS → playback path, so
+// PTT interruption, amplitude-driven mouth, and state transitions all
+// behave exactly like a normal utterance. No-op outside AI mode or when
+// BMO is not idle — a remark must never barge into a conversation.
+func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
+	if p == nil || !p.aiModeEnabled() {
+		return nil
+	}
+	nudge = strings.TrimSpace(nudge)
+	if nudge == "" {
+		return nil
+	}
+	if p.machine != nil && p.machine.State() != StateIdle {
+		return nil
+	}
+	if p.machine != nil {
+		p.machine.Transition(EventThink)
+	}
+
+	chatStart := time.Now()
+	reply, err := p.chat.Reply(ctx, providers.ChatRequest{
+		Model:        p.chatModel,
+		Messages:     []providers.Message{{Role: "user", Content: nudge}},
+		SystemPrompt: p.currentSystemPrompt(),
+	})
+	if err != nil {
+		return p.fail(err, EventFail)
+	}
+	if p.logger != nil {
+		p.logger.Infof("remark Chat: %dms", time.Since(chatStart).Milliseconds())
+	}
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	if p.logger != nil {
+		p.logger.Debugf("remark reply: %q", reply)
+	}
+
+	ttsStart := time.Now()
+	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+		Model:        p.ttsModel,
+		Voice:        p.ttsVoice,
+		Input:        reply,
+		Format:       "pcm",
+		Instructions: p.currentTTSInstructions(),
+	})
+	if err != nil {
+		return p.fail(err, EventFail)
+	}
+	if p.logger != nil {
+		p.logger.Infof("remark TTS: %dms (%d bytes)", time.Since(ttsStart).Milliseconds(), len(speech))
+	}
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+
+	return p.speak(ctx, speech)
+}
+
 // speak plays the synthesized speech and owns the post-speech state
 // transitions. It registers an interrupt handle so InterruptSpeech can cut
 // the playback short; the handle's waiters are released only after the

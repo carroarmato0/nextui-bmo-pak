@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -44,9 +45,9 @@ func (f *fakeWriter) writeCount() int {
 }
 
 type fakeProvider struct {
-	transcript string
-	reply      string
-	speech     []byte
+	transcript     string
+	reply          string
+	speech         []byte
 	err            error
 	lastSpeech     providers.SpeechRequest
 	lastChat       providers.ChatRequest
@@ -55,13 +56,15 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Models(ctx context.Context) ([]string, error) { return nil, nil }
 func (f *fakeProvider) RequiresAuth() bool                           { return false }
-func (f *fakeProvider) ClassifyError(err error) providers.ErrorKind  {
+func (f *fakeProvider) ClassifyError(err error) providers.ErrorKind {
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "quota") {
 		return providers.ErrorKindQuota
 	}
 	return providers.ErrorKindProvider
 }
-func (f *fakeProvider) Capabilities() []providers.Capability         { return []providers.Capability{providers.CapabilitySTT, providers.CapabilityChat, providers.CapabilityTTS} }
+func (f *fakeProvider) Capabilities() []providers.Capability {
+	return []providers.Capability{providers.CapabilitySTT, providers.CapabilityChat, providers.CapabilityTTS}
+}
 func (f *fakeProvider) Supports(cap providers.Capability) bool {
 	for _, supported := range f.Capabilities() {
 		if supported == cap {
@@ -376,5 +379,85 @@ func TestVoicePipelineQuotaFailure(t *testing.T) {
 	}
 	if got := m.State(); got != StateSleeping {
 		t.Fatalf("state = %v, want sleeping on quota failure", got)
+	}
+}
+
+func TestSpeakRemarkHappyPath(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	writer := &fakeWriter{}
+	chat := &fakeProvider{reply: "You reached stage 7! Daebak!"}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1)
+	pipe.SetSystemPromptSource(func() string { return "persona plus device context" })
+
+	if err := pipe.SpeakRemark(context.Background(), "(BMO says something about achievements)"); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	if chat.lastChat.SystemPrompt != "persona plus device context" {
+		t.Errorf("system prompt = %q", chat.lastChat.SystemPrompt)
+	}
+	if len(chat.lastChat.Messages) != 1 || chat.lastChat.Messages[0].Content != "(BMO says something about achievements)" {
+		t.Errorf("nudge not sent as user message: %+v", chat.lastChat.Messages)
+	}
+	if tts.lastSpeech.Input != "You reached stage 7! Daebak!" {
+		t.Errorf("tts input = %q", tts.lastSpeech.Input)
+	}
+	if writer.totalBytes() == 0 {
+		t.Error("expected PCM written to playback")
+	}
+	if got := m.State(); got != StateIdle {
+		t.Errorf("state after remark = %v, want idle", got)
+	}
+}
+
+func TestSpeakRemarkSkippedOutsideAIMode(t *testing.T) {
+	m := NewMachine() // idle mode
+	chat := &fakeProvider{reply: "should never be called"}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	if chat.lastChat.Model != "" {
+		t.Error("chat provider must not be called outside AI mode")
+	}
+}
+
+func TestSpeakRemarkSkippedWhenNotIdle(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	m.Transition(EventListen) // user is mid-conversation
+	chat := &fakeProvider{reply: "should never be called"}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	if chat.lastChat.Model != "" {
+		t.Error("chat provider must not be called while not idle")
+	}
+}
+
+func TestSpeakRemarkEmptyReplyReturnsToIdle(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	if got := m.State(); got != StateIdle {
+		t.Errorf("state = %v, want idle", got)
+	}
+}
+
+func TestSpeakRemarkChatFailureEntersErrorState(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	chat := &fakeProvider{err: fmt.Errorf("boom")}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err == nil {
+		t.Fatal("expected error")
+	}
+	if got := m.State(); got != StateError {
+		t.Errorf("state = %v, want error", got)
 	}
 }
