@@ -157,6 +157,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, cfg.SystemPrompt, audioCfg.SampleRate, audioCfg.Channels)
 			audioPipeline.SetLogger(logger)
 			audioPipeline.SetTTSInstructions(cfg.TTS.Instructions)
+			// Re-read the speaking-style prompt from disk before each
+			// utterance so it can be tuned without restarting the pak.
+			audioPipeline.SetTTSInstructionsSource(func() string {
+				fresh, err := config.Load(cfgPath)
+				if err != nil {
+					return ""
+				}
+				return fresh.TTS.Instructions
+			})
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
 	}

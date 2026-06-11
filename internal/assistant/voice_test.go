@@ -48,6 +48,7 @@ type fakeProvider struct {
 	reply      string
 	speech     []byte
 	err        error
+	lastSpeech providers.SpeechRequest
 }
 
 func (f *fakeProvider) Models(ctx context.Context) ([]string, error) { return nil, nil }
@@ -74,6 +75,7 @@ func (f *fakeProvider) Reply(ctx context.Context, req providers.ChatRequest) (st
 	return f.reply, f.err
 }
 func (f *fakeProvider) Speak(ctx context.Context, req providers.SpeechRequest) ([]byte, error) {
+	f.lastSpeech = req
 	return f.speech, f.err
 }
 
@@ -93,6 +95,44 @@ func TestVoicePipelineHappyPath(t *testing.T) {
 	}
 	if len(writer.writes) != 1 {
 		t.Fatalf("writer writes = %d, want 1", len(writer.writes))
+	}
+}
+
+func TestTTSInstructionsSourceReadPerUtterance(t *testing.T) {
+	m := NewMachine()
+	writer := &fakeWriter{}
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini-tts", "tts", "nova", "", 16000, 1)
+	pipe.SetTTSInstructions("static fallback")
+
+	current := "take one"
+	pipe.SetTTSInstructionsSource(func() string { return current })
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := tts.lastSpeech.Instructions; got != "take one" {
+		t.Fatalf("first utterance instructions = %q, want %q", got, "take one")
+	}
+
+	// The source is consulted again for the next utterance — no restart needed.
+	current = "take two"
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := tts.lastSpeech.Instructions; got != "take two" {
+		t.Fatalf("second utterance instructions = %q, want %q", got, "take two")
+	}
+
+	// An empty source value falls back to the static instructions.
+	current = ""
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := tts.lastSpeech.Instructions; got != "static fallback" {
+		t.Fatalf("empty-source instructions = %q, want fallback", got)
 	}
 }
 

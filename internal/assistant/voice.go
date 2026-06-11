@@ -40,6 +40,12 @@ type VoicePipeline struct {
 	ttsInstructions string
 	systemPrompt    string
 
+	// ttsInstructionsSource, when set, is consulted before each utterance so
+	// instructions can be tuned at runtime (e.g. re-read from the config
+	// file) without restarting. An empty result falls back to the static
+	// ttsInstructions value.
+	ttsInstructionsSource func() string
+
 	sampleRate int
 	channels   int
 
@@ -91,6 +97,26 @@ func (p *VoicePipeline) SetTTSInstructions(instructions string) {
 	if p != nil {
 		p.ttsInstructions = strings.TrimSpace(instructions)
 	}
+}
+
+// SetTTSInstructionsSource installs a function consulted before each
+// utterance for the current speaking-style prompt, enabling on-the-fly
+// tuning. An empty result falls back to the static SetTTSInstructions value.
+func (p *VoicePipeline) SetTTSInstructionsSource(source func() string) {
+	if p != nil {
+		p.ttsInstructionsSource = source
+	}
+}
+
+// currentTTSInstructions resolves the speaking-style prompt for the next
+// utterance.
+func (p *VoicePipeline) currentTTSInstructions() string {
+	if p.ttsInstructionsSource != nil {
+		if instructions := strings.TrimSpace(p.ttsInstructionsSource()); instructions != "" {
+			return instructions
+		}
+	}
+	return p.ttsInstructions
 }
 
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio currently
@@ -173,7 +199,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Voice:        p.ttsVoice,
 		Input:        reply,
 		Format:       "pcm",
-		Instructions: p.ttsInstructions,
+		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
 		return p.fail(err, EventFail)
