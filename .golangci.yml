@@ -1,0 +1,18 @@
+version: "2"
+
+linters:
+  # 'default: none' replaces the old 'disable-all: true'
+  default: none
+  enable:
+    - unused
+    - ineffassign
+    - dupl
+    - goconst
+    - gocognit
+    - staticcheck
+    - unparam
+    
+  # 'linters-settings' was moved inside the 'linters' block in v2
+  settings:
+    dupl:
+      threshold: 100
