@@ -53,7 +53,8 @@ func (b *Builder) SetEnabled(dc config.DeviceContext) {
 }
 
 // SetReminisce installs the reminisce source used by ProactiveNudge
-// (wired to AchievementsCollector.RandomPastUnlock).
+// (wired to AchievementsCollector.RandomPastUnlock). fn is invoked while
+// the Builder's lock is held; it must not call any Builder method.
 func (b *Builder) SetReminisce(fn func(time.Time) (string, bool)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
