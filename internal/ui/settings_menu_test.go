@@ -121,6 +121,43 @@ func TestSettingsMenuModeToggles(t *testing.T) {
 	}
 }
 
+func TestSettingsMenuRestoreDefaults(t *testing.T) {
+	menu := NewSettingsMenu(config.Default())
+
+	restored := 0
+	menu.SetRestoreDefaultsCallback(func() error {
+		restored++
+		return nil
+	})
+
+	// The item must be present in the overlay.
+	overlay := menu.Overlay()
+	found := false
+	for _, item := range overlay.Items {
+		if item.Code == "restore_defaults" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("restore_defaults item missing from overlay")
+	}
+
+	// Move to the restore item (position 5) and activate it.
+	menu.Move(5)
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() error = %v", err)
+	}
+	if restored != 1 {
+		t.Fatalf("restore callback fired %d times, want 1", restored)
+	}
+
+	// Without a callback the item is inert but not an error.
+	menu.SetRestoreDefaultsCallback(nil)
+	if err := menu.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused() without callback error = %v", err)
+	}
+}
+
 func TestSettingsScreenProviderSummaries(t *testing.T) {
 	screen := NewSettingsScreen(config.Default())
 	if got := screen.ProviderSummary("stt"); got != "STT: NOT SET" {

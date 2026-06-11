@@ -90,6 +90,19 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("validate config: %w", err)
 	}
 
+	// Persona and voice prompts live in plain-text sidecar files: created
+	// with defaults when missing or blank, never overwritten otherwise.
+	personaPath := config.PersonaPath(homeDir)
+	voicePath := config.VoicePath(homeDir)
+	personaPrompt, err := config.EnsurePromptFile(personaPath, config.DefaultSystemPrompt)
+	if err != nil {
+		return fmt.Errorf("ensure persona file: %w", err)
+	}
+	voicePrompt, err := config.EnsurePromptFile(voicePath, config.DefaultTTSInstructions)
+	if err != nil {
+		return fmt.Errorf("ensure voice file: %w", err)
+	}
+
 	logPath := filepath.Join(dataRoot, "logs", "BMO.txt")
 	logger, err := observability.NewLogger(logPath, observability.ParseLevel(cfg.LogLevel), stdout)
 	if err != nil {
@@ -154,18 +167,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			sttClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.STT.BaseURL, APIKey: cfg.STT.APIKey}, http.DefaultClient)
 			chatClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.Chat.BaseURL, APIKey: cfg.Chat.APIKey}, http.DefaultClient)
 			ttsClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.TTS.BaseURL, APIKey: cfg.TTS.APIKey}, http.DefaultClient)
-			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, cfg.SystemPrompt, audioCfg.SampleRate, audioCfg.Channels)
+			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels)
 			audioPipeline.SetLogger(logger)
-			audioPipeline.SetTTSInstructions(cfg.TTS.Instructions)
-			// Re-read the speaking-style prompt from disk before each
-			// utterance so it can be tuned without restarting the pak.
-			audioPipeline.SetTTSInstructionsSource(func() string {
-				fresh, err := config.Load(cfgPath)
-				if err != nil {
-					return ""
-				}
-				return fresh.TTS.Instructions
-			})
+			audioPipeline.SetTTSInstructions(voicePrompt)
+			// Re-read both prompt files before each utterance so they can
+			// be tuned without restarting the pak.
+			audioPipeline.SetTTSInstructionsSource(func() string { return readPromptFile(voicePath) })
+			audioPipeline.SetSystemPromptSource(func() string { return readPromptFile(personaPath) })
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
 	}
@@ -218,6 +226,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	settingsMenu.SetLogLevelCallback(func(level string) {
 		logger.SetLevel(observability.ParseLevel(level))
 		logger.Infof("log level changed to %s", level)
+	})
+
+	settingsMenu.SetRestoreDefaultsCallback(func() error {
+		if err := restorePromptDefaults(personaPath, voicePath); err != nil {
+			logger.Warnf("restore prompt defaults: %v", err)
+			return err
+		}
+		logger.Infof("persona and voice prompts restored to defaults")
+		return nil
 	})
 
 	handleNav := func(action input.NavAction) {

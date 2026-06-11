@@ -17,6 +17,7 @@ type SettingsMenu struct {
 	editingKind      string
 	draft            string
 	onLogLevelChange func(string)
+	onRestore        func() error
 }
 
 func NewSettingsMenu(cfg config.Config) *SettingsMenu {
@@ -33,6 +34,15 @@ func (m *SettingsMenu) SetLogLevelCallback(fn func(string)) {
 	}
 }
 
+// SetRestoreDefaultsCallback registers the action run when the RESTORE
+// DEFAULTS item is activated (rewrites the persona/voice prompt files with
+// their built-in defaults).
+func (m *SettingsMenu) SetRestoreDefaultsCallback(fn func() error) {
+	if m != nil {
+		m.onRestore = fn
+	}
+}
+
 func (m *SettingsMenu) Title() string {
 	if m == nil || strings.TrimSpace(m.title) == "" {
 		return "SETTINGS"
@@ -44,7 +54,7 @@ func (m *SettingsMenu) Move(delta int) {
 	if m == nil || m.editing {
 		return
 	}
-	const count = 5
+	const count = 6
 	m.focus = (m.focus + delta) % count
 	if m.focus < 0 {
 		m.focus += count
@@ -84,6 +94,10 @@ func (m *SettingsMenu) ToggleFocused() error {
 		return m.BeginAPIKeyEdit("chat")
 	case 4:
 		return m.BeginAPIKeyEdit("tts")
+	case 5: // restore persona/voice prompt files to built-in defaults
+		if m.onRestore != nil {
+			return m.onRestore()
+		}
 	default:
 		return fmt.Errorf("unsupported focus %d", m.focus)
 	}
@@ -130,6 +144,8 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft),
 			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
 			Focused:  m.focus == 4 && !m.editing},
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS (PERSONA + VOICE)",
+			Selected: true, Focused: m.focus == 5 && !m.editing},
 	}
 	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}
 	footer := "START OR B TO CLOSE"

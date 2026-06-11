@@ -49,6 +49,7 @@ type fakeProvider struct {
 	speech     []byte
 	err        error
 	lastSpeech providers.SpeechRequest
+	lastChat   providers.ChatRequest
 }
 
 func (f *fakeProvider) Models(ctx context.Context) ([]string, error) { return nil, nil }
@@ -72,6 +73,7 @@ func (f *fakeProvider) Transcribe(ctx context.Context, req providers.Transcripti
 	return f.transcript, f.err
 }
 func (f *fakeProvider) Reply(ctx context.Context, req providers.ChatRequest) (string, error) {
+	f.lastChat = req
 	return f.reply, f.err
 }
 func (f *fakeProvider) Speak(ctx context.Context, req providers.SpeechRequest) ([]byte, error) {
@@ -95,6 +97,42 @@ func TestVoicePipelineHappyPath(t *testing.T) {
 	}
 	if len(writer.writes) != 1 {
 		t.Fatalf("writer writes = %d, want 1", len(writer.writes))
+	}
+}
+
+func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
+	m := NewMachine()
+	writer := &fakeWriter{}
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "static persona", 16000, 1)
+
+	current := "persona one"
+	pipe.SetSystemPromptSource(func() string { return current })
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := chat.lastChat.SystemPrompt; got != "persona one" {
+		t.Fatalf("first utterance system prompt = %q, want %q", got, "persona one")
+	}
+
+	current = "persona two"
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := chat.lastChat.SystemPrompt; got != "persona two" {
+		t.Fatalf("second utterance system prompt = %q, want %q", got, "persona two")
+	}
+
+	// An empty source value falls back to the static prompt.
+	current = ""
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := chat.lastChat.SystemPrompt; got != "static persona" {
+		t.Fatalf("empty-source system prompt = %q, want fallback", got)
 	}
 }
 

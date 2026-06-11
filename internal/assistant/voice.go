@@ -40,11 +40,12 @@ type VoicePipeline struct {
 	ttsInstructions string
 	systemPrompt    string
 
-	// ttsInstructionsSource, when set, is consulted before each utterance so
-	// instructions can be tuned at runtime (e.g. re-read from the config
-	// file) without restarting. An empty result falls back to the static
-	// ttsInstructions value.
+	// ttsInstructionsSource and systemPromptSource, when set, are consulted
+	// before each utterance so the prompts can be tuned at runtime (e.g.
+	// re-read from their files) without restarting. An empty result falls
+	// back to the corresponding static value.
 	ttsInstructionsSource func() string
+	systemPromptSource    func() string
 
 	sampleRate int
 	channels   int
@@ -119,6 +120,25 @@ func (p *VoicePipeline) currentTTSInstructions() string {
 	return p.ttsInstructions
 }
 
+// SetSystemPromptSource installs a function consulted before each utterance
+// for the current chat persona, enabling on-the-fly tuning. An empty result
+// falls back to the static constructor value.
+func (p *VoicePipeline) SetSystemPromptSource(source func() string) {
+	if p != nil {
+		p.systemPromptSource = source
+	}
+}
+
+// currentSystemPrompt resolves the chat persona for the next utterance.
+func (p *VoicePipeline) currentSystemPrompt() string {
+	if p.systemPromptSource != nil {
+		if prompt := strings.TrimSpace(p.systemPromptSource()); prompt != "" {
+			return prompt
+		}
+	}
+	return p.systemPrompt
+}
+
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio currently
 // being played back by WritePCM. Returns 0 when not playing.
 func (p *VoicePipeline) CurrentAmplitude() float32 {
@@ -174,7 +194,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	reply, err := p.chat.Reply(ctx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: transcript}},
-		SystemPrompt: p.systemPrompt,
+		SystemPrompt: p.currentSystemPrompt(),
 	})
 	if err != nil {
 		return p.fail(err, EventFail)

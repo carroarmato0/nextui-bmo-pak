@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
@@ -9,6 +11,25 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/hardware"
 	"github.com/carroarmato0/nextui-bmo/internal/input"
 )
+
+// readPromptFile returns the trimmed content of a prompt file, or "" on any
+// error so the pipeline falls back to the content loaded at startup.
+func readPromptFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// restorePromptDefaults rewrites both prompt files with their built-in
+// defaults; wired to the settings menu RESTORE DEFAULTS item.
+func restorePromptDefaults(personaPath, voicePath string) error {
+	if err := config.WritePromptFile(personaPath, config.DefaultSystemPrompt); err != nil {
+		return err
+	}
+	return config.WritePromptFile(voicePath, config.DefaultTTSInstructions)
+}
 
 type pttLogger interface {
 	Infof(string, ...any)

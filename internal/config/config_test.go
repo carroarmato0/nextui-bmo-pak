@@ -18,7 +18,6 @@ func TestRoundTrip(t *testing.T) {
 	want.Chat = Provider{Name: "openai-compatible", Model: "gpt-4o-mini", APIKey: "secret-chat"}
 	want.TTS = Provider{Name: "openai-compatible", Model: "tts-1", Voice: "alloy", APIKey: "secret-tts"}
 	want.PTTButtons = []string{"BTN_TL2", "BTN_TR2"}
-	want.SystemPrompt = "hello"
 
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -100,53 +99,20 @@ func TestDefaultPTTButtonIsA(t *testing.T) {
 	}
 }
 
-func TestNormalizeFillsTTSInstructionsForBMO(t *testing.T) {
-	cfg := Default()
-	cfg.TTS.Model = "gpt-4o-mini-tts"
-	cfg.Normalize()
-	if cfg.TTS.Instructions == "" {
-		t.Fatal("expected default TTS instructions for bmo personality")
+func TestLoadIgnoresRemovedPromptKeys(t *testing.T) {
+	// Configs written before prompts moved to persona.txt/voice.txt may still
+	// carry system_prompt and tts.instructions; they must load cleanly.
+	path := filepath.Join(t.TempDir(), "config.json")
+	legacy := `{"version":1,"mode":"ai","system_prompt":"old persona","tts":{"name":"openai-compatible","model":"gpt-4o-mini-tts","voice":"nova","instructions":"old instructions"},"log_level":"info","personality":"bmo","reduced_motion":false}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if cfg.TTS.Instructions != DefaultTTSInstructions {
-		t.Fatalf("instructions = %q, want DefaultTTSInstructions", cfg.TTS.Instructions)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
 	}
-
-	// A user-provided instruction must survive normalization.
-	cfg.TTS.Instructions = "custom"
-	cfg.Normalize()
-	if cfg.TTS.Instructions != "custom" {
-		t.Fatalf("user instructions overwritten: %q", cfg.TTS.Instructions)
-	}
-
-	// Non-bmo personality gets no opinionated default.
-	other := Default()
-	other.Personality = "plain"
-	other.Normalize()
-	if other.TTS.Instructions != "" {
-		t.Fatalf("unexpected default instructions for plain personality: %q", other.TTS.Instructions)
-	}
-}
-
-func TestNormalizeFillsSystemPromptForBMO(t *testing.T) {
-	cfg := Default()
-	cfg.Normalize()
-	if cfg.SystemPrompt != DefaultSystemPrompt {
-		t.Fatalf("SystemPrompt = %q, want DefaultSystemPrompt", cfg.SystemPrompt)
-	}
-
-	// A user-provided prompt must survive normalization.
-	cfg.SystemPrompt = "custom persona"
-	cfg.Normalize()
-	if cfg.SystemPrompt != "custom persona" {
-		t.Fatalf("user system prompt overwritten: %q", cfg.SystemPrompt)
-	}
-
-	// Non-bmo personality gets no opinionated default.
-	other := Default()
-	other.Personality = "plain"
-	other.Normalize()
-	if other.SystemPrompt != "" {
-		t.Fatalf("unexpected default system prompt for plain personality: %q", other.SystemPrompt)
+	if cfg.TTS.Model != "gpt-4o-mini-tts" || cfg.TTS.Voice != "nova" {
+		t.Fatalf("legacy config fields lost: %#v", cfg.TTS)
 	}
 }
 
