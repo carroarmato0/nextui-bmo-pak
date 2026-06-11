@@ -845,48 +845,80 @@ func (r *Renderer) drawThickLine(x1, y1, x2, y2, radius int32, c rgba) {
 	r.drawBezierThick(pts, radius, c)
 }
 
-// drawMouthFilled draws an elliptical open mouth. It uses a per-scanline fill
-// so the teeth boundary follows the natural ellipse curve exactly — no clip-path
-// needed. Teeth fill the top 28%, interior fills the rest, tongue sits at the
-// bottom of the interior as a narrower lighter-green ellipse.
+// drawMouthFilled draws a rounded-rectangle open mouth (flat centre, rounded corners).
+// Teeth fill the top 28%, interior fills the rest, tongue sits in the lower interior.
 func (r *Renderer) drawMouthFilled(cx, mty, mw, mh int32, teeth, interior, tongue rgba) {
 	if mw <= 0 || mh <= 0 {
 		return
 	}
-	// Dark outline: draw a marginally larger ellipse underneath.
+	// Dark outline: slightly larger rounded rect underneath.
 	border := max32(2, mw/90)
-	r.fillEllipse(cx-mw/2-border, mty-border, mw+2*border, mh+2*border, rgba{0x1a, 0x1a, 0x1a, 255})
+	mr := int32(float64(mh) * 0.42) // corner radius
+	r.fillRoundedRect(cx-mw/2-border, mty-border, mw+2*border, mh+2*border, mr+border, rgba{0x1a, 0x1a, 0x1a, 255})
 
-	// Per-scanline fill: teeth in the top 28%, dark green interior below.
-	mhf := float64(mh)
-	tth := int32(mhf * 0.28) // teeth height
+	// Per-scanline fill with rounded-rect clip.
+	// Corners are rounded; the centre section is full width.
+	tth := int32(float64(mh) * 0.28) // teeth height
+	// Tongue: ellipse centred on the bottom edge of the opening so the visible
+	// dome reads as rising from behind the lower lip. It is rendered inside
+	// this scanline loop so the opening clips it — it never overlaps the lip
+	// or escapes the mouth (spec §6.2).
+	_, tgy, tgw, tgh := tongueGeometry(cx, mty, mw, mh)
+	tcy := float64(tgy) + float64(tgh)/2
+	trx := float64(tgw) / 2
+	try := float64(tgh) / 2
 	for dy := int32(0); dy < mh; dy++ {
-		normY := (float64(dy) + 0.5 - mhf/2) / (mhf / 2)
-		if normY*normY >= 1.0 {
-			continue
+		var xOff int32
+		if dy < mr {
+			yInCorner := float64(mr - dy)
+			xOff = int32(float64(mr) - math.Sqrt(float64(mr)*float64(mr)-yInCorner*yInCorner))
+		} else if dy >= mh-mr {
+			yInCorner := float64(dy - (mh - mr))
+			xOff = int32(float64(mr) - math.Sqrt(float64(mr)*float64(mr)-yInCorner*yInCorner))
 		}
-		xHalf := int32(math.Round(math.Sqrt(1.0-normY*normY) * float64(mw) / 2))
-		if xHalf <= 0 {
+		lineW := mw - 2*xOff
+		if lineW <= 0 {
 			continue
 		}
 		c := interior
 		if dy < tth {
 			c = teeth
 		}
-		r.fillRectColor(cx-xHalf, mty+dy, xHalf*2, 1, c)
+		r.fillRectColor(cx-mw/2+xOff, mty+dy, lineW, 1, c)
+		// Tongue segment on this scanline, clipped to the opening width.
+		ny := (float64(mty+dy) - tcy) / try
+		if ny*ny < 1 {
+			halfW := int32(trx * math.Sqrt(1-ny*ny))
+			lx := max32(cx-halfW, cx-mw/2+xOff)
+			rxEnd := min32(cx+halfW, cx-mw/2+xOff+lineW)
+			if rxEnd > lx {
+				r.fillRectColor(lx, mty+dy, rxEnd-lx, 1, tongue)
+			}
+		}
 	}
+}
 
-	// Tongue: a narrower lighter ellipse in the lower half of the interior.
-	// It is fully contained within the mouth ellipse, so it naturally
-	// disappears behind the lower lip boundary — no overdraw needed.
-	trx := int32(float64(mw) * 0.28)
-	try := int32(float64(mh) * 0.13)
-	tcy := mty + tth + int32(float64(mh-tth)*0.62)
-	r.fillEllipse(cx-trx, tcy-try, trx*2, try*2, tongue)
+// tongueGeometry returns the tongue ellipse bounds for a mouth at (cx, mty)
+// of size mw x mh. The ellipse is centred on the mouth's bottom edge so its
+// root sits below the opening and only the upper dome is visible once the
+// scanline clip is applied — the tongue rises from behind the lower lip and
+// never overlaps it (spec §6.2).
+func tongueGeometry(cx, mty, mw, mh int32) (x, y, w, h int32) {
+	trx := max32(4, int32(float64(mw)*0.28))
+	try := max32(2, int32(float64(mh)*0.18))
+	tcy := mty + mh
+	return cx - trx, tcy - try, trx * 2, try * 2
 }
 
 func max32(a, b int32) int32 {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func min32(a, b int32) int32 {
+	if a < b {
 		return a
 	}
 	return b

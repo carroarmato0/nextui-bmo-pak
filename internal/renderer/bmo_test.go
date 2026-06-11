@@ -48,6 +48,36 @@ func TestStyleForExpression(t *testing.T) {
 	}
 }
 
+func TestTongueAnchoredBelowMouthOpening(t *testing.T) {
+	// Spec §6.2: the tongue is a dome rising from behind the lower lip — its
+	// ellipse root sits at/below the bottom edge of the opening, its visible
+	// top is inside the interior below the teeth band. Rendering clips it to
+	// the opening so it never overlaps the lower lip.
+	sizes := []struct {
+		name   string
+		mw, mh int32
+	}{
+		{name: "open-large", mw: 84, mh: 43},
+		{name: "speak-base", mw: 64, mh: 33},
+		{name: "speak-low-amplitude", mw: 64, mh: 4},
+	}
+	for _, tt := range sizes {
+		mty := int32(100)
+		_, ty, _, th := tongueGeometry(120, mty, tt.mw, tt.mh)
+		mouthBottom := mty + tt.mh
+		if ty+th < mouthBottom {
+			t.Fatalf("%s: tongue root %d must reach the mouth bottom %d so it reads as coming from below", tt.name, ty+th, mouthBottom)
+		}
+		if ty >= mouthBottom {
+			t.Fatalf("%s: tongue top %d is fully below the mouth (bottom %d) — nothing visible", tt.name, ty, mouthBottom)
+		}
+		teethBottom := mty + int32(float64(tt.mh)*0.28)
+		if ty < teethBottom {
+			t.Fatalf("%s: tongue top %d overlaps the teeth band ending at %d", tt.name, ty, teethBottom)
+		}
+	}
+}
+
 func TestNormalizeExpressionAliases(t *testing.T) {
 	tests := []struct {
 		expr string
