@@ -8,7 +8,11 @@ import (
 
 // proactiveMinQuiet is how long BMO stays silent after any interaction
 // before a proactive remark may fire — remarks must feel spontaneous, not
-// like he is butting back into a conversation that just ended.
+// like he is butting back into a conversation that just ended. Note that
+// every machine transition (including a finished proactive remark) updates
+// LastInteraction, so a remark intentionally pushes the next one out by at
+// least this window on top of the jittered interval — do not "fix" this
+// into a self-retriggering loop.
 const proactiveMinQuiet = 2 * time.Minute
 
 // ProactiveScheduler decides WHEN BMO may make a spontaneous remark. It is
