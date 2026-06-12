@@ -2,7 +2,7 @@ package face
 
 import "embed"
 
-//go:embed assets
+//go:embed assets/*.svg
 var embedded embed.FS
 
 // defaultBytes returns the embedded SVG bytes for the given canonical

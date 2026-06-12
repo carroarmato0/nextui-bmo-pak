@@ -35,6 +35,7 @@ func TestEmbeddedFacesGeometry(t *testing.T) {
 		ExprThinking: {
 			{63, 78, dark[0], dark[1], dark[2], "left dot eye"},
 			{182, 74, dark[0], dark[1], dark[2], "right dot eye (raised)"},
+			{182, 56, dark[0], dark[1], dark[2], "raised brow"},
 		},
 		ExprConcerned: {
 			{63, 82, dark[0], dark[1], dark[2], "left lowered eye"},
