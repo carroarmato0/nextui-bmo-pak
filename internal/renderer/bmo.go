@@ -239,6 +239,11 @@ const (
 	mouthLine
 )
 
+const (
+	exprNeutral  = "neutral"
+	exprSleeping = "sleeping"
+)
+
 func styleForExpression(expr string) expressionStyle {
 	switch normalizeExpression(expr) {
 	case "blink":
@@ -249,7 +254,7 @@ func styleForExpression(expr string) expressionStyle {
 		return expressionStyle{EyeOpen: 0.85, Mouth: mouthLine, BrowTilt: -0.6, PupilScale: 0.9}
 	case "speaking":
 		return expressionStyle{EyeOpen: 0.95, Mouth: mouthOpen, Talky: true, PupilScale: 1.0}
-	case "sleeping":
+	case exprSleeping:
 		return expressionStyle{EyeOpen: 0.02, Mouth: mouthSmile, Sleepy: true}
 	case "concerned":
 		return expressionStyle{EyeOpen: 0.82, Mouth: mouthFrown, BrowTilt: 0.8, Frown: true}
@@ -268,10 +273,10 @@ func styleForExpression(expr string) expressionStyle {
 
 func normalizeExpression(expr string) string {
 	switch strings.ToLower(strings.TrimSpace(expr)) {
-	case "idle", "neutral":
-		return "neutral"
-	case "asleep", "sleep", "sleeping":
-		return "sleeping"
+	case "idle", exprNeutral:
+		return exprNeutral
+	case "asleep", "sleep", exprSleeping:
+		return exprSleeping
 	case "error", "confused", "angry", "sad":
 		return "concerned"
 	case "happy":
@@ -400,7 +405,7 @@ func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameSta
 	}
 
 	// Gentle breathing bob for idle/speaking states.
-	if style.Talky || expr == "neutral" {
+	if style.Talky || expr == exprNeutral {
 		bob := int32(math.Sin(phase*1.3) * 2)
 		r.drawMouthLine(centerX, mouthY+bob, layout.MouthLineW, sdl.Color{R: 7, G: 34, B: 46, A: 120})
 	}

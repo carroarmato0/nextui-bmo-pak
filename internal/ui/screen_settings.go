@@ -101,11 +101,11 @@ func (s *SettingsScreen) SetAPIKey(kind, key string) error {
 	}
 	key = strings.TrimSpace(key)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "stt":
+	case providerKindSTT:
 		s.cfg.STT.APIKey = key
-	case "chat":
+	case providerKindChat:
 		s.cfg.Chat.APIKey = key
-	case "tts":
+	case providerKindTTS:
 		s.cfg.TTS.APIKey = key
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
@@ -118,11 +118,11 @@ func (s *SettingsScreen) ProviderSummary(kind string) string {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "stt":
+	case providerKindSTT:
 		return providerSummaryLabel("STT", s.cfg.STT)
-	case "chat":
+	case providerKindChat:
 		return providerSummaryLabel("CHAT", s.cfg.Chat)
-	case "tts":
+	case providerKindTTS:
 		return providerSummaryLabel("TTS", s.cfg.TTS)
 	default:
 		return ""

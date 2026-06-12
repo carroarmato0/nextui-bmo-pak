@@ -276,7 +276,7 @@ func styleForExpression(expr string) expressionStyle {
 		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthIdleSmile, Brow: bmoBrowRaisedRight, RightEyeUp: true}
 	case "speaking":
 		return expressionStyle{Eye: bmoEyePill, Mouth: bmoMouthOpenSpeak, Animated: true}
-	case "sleeping":
+	case exprSleeping:
 		return expressionStyle{Eye: bmoEyeFlat, Mouth: bmoMouthIdleSmile, Sleepy: true}
 	case "concerned":
 		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthFrown, Brow: bmoBrowWorried}
@@ -291,10 +291,10 @@ func styleForExpression(expr string) expressionStyle {
 
 func normalizeExpression(expr string) string {
 	switch strings.ToLower(strings.TrimSpace(expr)) {
-	case "idle", "neutral":
-		return "neutral"
-	case "asleep", "sleep", "sleeping":
-		return "sleeping"
+	case "idle", exprNeutral:
+		return exprNeutral
+	case "asleep", "sleep", exprSleeping:
+		return exprSleeping
 	case "error", "confused", "angry", "sad":
 		return "concerned"
 	case "happy":

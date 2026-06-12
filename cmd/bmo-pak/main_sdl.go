@@ -29,6 +29,8 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+const menuTitleSettings = "SETTINGS"
+
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
 		log.Fatal(err)
@@ -265,7 +267,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 			switch e.Keysym.Sym {
 			case sdl.K_MENU, sdl.K_HOME:
-				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+				if activeMenu != nil && activeMenu.Title() == menuTitleSettings {
 					setActiveMenu(nil)
 				} else {
 					setActiveMenu(settingsMenu)
@@ -278,7 +280,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 			switch e.Button {
 			case sdl.CONTROLLER_BUTTON_GUIDE, sdl.CONTROLLER_BUTTON_BACK:
-				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+				if activeMenu != nil && activeMenu.Title() == menuTitleSettings {
 					setActiveMenu(nil)
 				} else {
 					setActiveMenu(settingsMenu)
@@ -338,7 +340,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			case sdl.K_ESCAPE:
 				setActiveMenu(nil)
 			case sdl.K_F1:
-				if activeMenu != nil && activeMenu.Title() == "SETTINGS" {
+				if activeMenu != nil && activeMenu.Title() == menuTitleSettings {
 					setActiveMenu(nil)
 				} else {
 					setActiveMenu(settingsMenu)
@@ -510,7 +512,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(assistant.ExpressionSleeping)
 		}
 		if activeMenu != nil {
-			if activeMenu.Title() == "SETTINGS" {
+			if activeMenu.Title() == menuTitleSettings {
 				expr = string(assistant.ExpressionSmile)
 			} else {
 				expr = string(assistant.ExpressionConcerned)

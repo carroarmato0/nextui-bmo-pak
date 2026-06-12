@@ -16,3 +16,40 @@ linters:
   settings:
     dupl:
       threshold: 100
+
+  exclusions:
+    rules:
+      # NavReader.Start and Watcher.Start share the same mutex-guarded device-open
+      # pattern for two distinct hardware device types. Abstracting requires generics
+      # or embedding that exceeds the benefit for just two concrete types.
+      - path: "internal/input/(nav|ptt)\\.go"
+        linters: [dupl]
+
+      # QF1001 (De Morgan's law) would reduce readability; both conditions were
+      # written as intentional logical units and the parenthesised form communicates
+      # intent more clearly than the mechanically simplified form.
+      - linters: [staticcheck]
+        text: "QF1001"
+
+      # Test functions are expected to be comprehensive; gocognit complexity from
+      # branch coverage does not indicate poor structure. goconst literals in
+      # assertions are intentional — constants would obscure what value is verified.
+      - path: "_test\\.go"
+        linters: [gocognit, goconst]
+
+      # startPushToTalk wires a multi-stage PTT pipeline; complexity is inherent to
+      # the domain setup, not poor structure.
+      - path: "cmd/bmo-pak/ptt_shared\\.go"
+        linters: [gocognit]
+
+      # AchievementsCollector.load parses a structured RetroAchievements payload with
+      # many optional fields; complexity is data-driven.
+      - path: "internal/devctx/achievements\\.go"
+        linters: [gocognit]
+
+      # run() accumulates environment setup, named closure event-handlers, and the
+      # main SDL loop in a single function. A proper fix requires extracting closures
+      # into an appState struct — a separate architectural refactoring task.
+      - path: "cmd/bmo-pak/main_sdl\\.go"
+        text: "cognitive complexity.*of func `run`"
+        linters: [gocognit]

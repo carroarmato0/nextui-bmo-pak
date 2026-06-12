@@ -89,11 +89,11 @@ func (m *SettingsMenu) ToggleFocused() error {
 			m.cfg.Mode = config.ModeIdle
 		}
 	case 2:
-		return m.BeginAPIKeyEdit("stt")
+		return m.BeginAPIKeyEdit(providerKindSTT)
 	case 3:
-		return m.BeginAPIKeyEdit("chat")
+		return m.BeginAPIKeyEdit(providerKindChat)
 	case 4:
-		return m.BeginAPIKeyEdit("tts")
+		return m.BeginAPIKeyEdit(providerKindTTS)
 	case 5:
 		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 6:
@@ -154,15 +154,15 @@ func (m *SettingsMenu) Overlay() OverlayState {
 		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
 			Selected: true, Focused: m.focus == 1 && !m.editing},
 		{Code: "stt_key",
-			Label:    providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == "stt", m.draft),
+			Label:    providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == providerKindSTT),
 			Selected: strings.TrimSpace(m.cfg.STT.APIKey) != "",
 			Focused:  m.focus == 2 && !m.editing},
 		{Code: "chat_key",
-			Label:    providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == "chat", m.draft),
+			Label:    providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == providerKindChat),
 			Selected: strings.TrimSpace(m.cfg.Chat.APIKey) != "",
 			Focused:  m.focus == 3 && !m.editing},
 		{Code: "tts_key",
-			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft),
+			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == providerKindTTS),
 			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
 			Focused:  m.focus == 4 && !m.editing},
 		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
@@ -202,11 +202,11 @@ func (m *SettingsMenu) SetProvider(kind string, provider config.Provider) {
 		return
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "stt":
+	case providerKindSTT:
 		m.cfg.STT = provider
-	case "chat":
+	case providerKindChat:
 		m.cfg.Chat = provider
-	case "tts":
+	case providerKindTTS:
 		m.cfg.TTS = provider
 	}
 }
@@ -217,11 +217,11 @@ func (m *SettingsMenu) SetAPIKey(kind, key string) error {
 	}
 	key = strings.TrimSpace(key)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "stt":
+	case providerKindSTT:
 		m.cfg.STT.APIKey = key
-	case "chat":
+	case providerKindChat:
 		m.cfg.Chat.APIKey = key
-	case "tts":
+	case providerKindTTS:
 		m.cfg.TTS.APIKey = key
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
@@ -248,7 +248,7 @@ func (m *SettingsMenu) BeginAPIKeyEdit(kind string) error {
 	}
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	switch kind {
-	case "stt", "chat", "tts":
+	case providerKindSTT, providerKindChat, providerKindTTS:
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
 	}
@@ -295,11 +295,11 @@ func (m *SettingsMenu) CancelEdit() {
 }
 func (m *SettingsMenu) currentAPIKey(kind string) string {
 	switch kind {
-	case "stt":
+	case providerKindSTT:
 		return m.cfg.STT.APIKey
-	case "chat":
+	case providerKindChat:
 		return m.cfg.Chat.APIKey
-	case "tts":
+	case providerKindTTS:
 		return m.cfg.TTS.APIKey
 	default:
 		return ""

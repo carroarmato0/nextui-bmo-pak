@@ -175,7 +175,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Format:     "wav",
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline STT: %dms | tokens: %s (%.1fs audio)",
@@ -204,7 +204,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		SystemPrompt: p.currentSystemPrompt(),
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline Chat: %dms | tokens: %s",
@@ -230,7 +230,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
@@ -285,7 +285,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		SystemPrompt: systemPrompt,
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark Chat: %dms | tokens: %s",
@@ -311,7 +311,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
@@ -355,7 +355,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err, EventFail)
+		return p.fail(err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
@@ -403,7 +403,7 @@ func (p *VoicePipeline) speak(ctx context.Context, speech []byte) error {
 		// of speech; parent-context cancellation keeps the failure path.
 		if err != nil && !(errors.Is(err, context.Canceled) && ctx.Err() == nil) {
 			release()
-			return p.fail(err, EventFail)
+			return p.fail(err)
 		}
 		defer release()
 	}
@@ -556,13 +556,13 @@ func rmsChunks(pcm []byte, sampleRate, channels, chunkMs int) []float32 {
 	return out
 }
 
-func (p *VoicePipeline) fail(err error, event Event) error {
+func (p *VoicePipeline) fail(err error) error {
 	if p != nil && p.machine != nil {
 		if classifyQuota(p.stt, err) || classifyQuota(p.chat, err) || classifyQuota(p.tts, err) {
 			p.machine.Transition(EventQuotaExhausted)
 			return err
 		}
-		p.machine.Transition(event)
+		p.machine.Transition(EventFail)
 	}
 	return err
 }

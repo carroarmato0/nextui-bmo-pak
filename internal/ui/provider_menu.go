@@ -7,6 +7,12 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 )
 
+const (
+	providerKindSTT  = "stt"
+	providerKindChat = "chat"
+	providerKindTTS  = "tts"
+)
+
 type ProviderMenu struct {
 	title       string
 	cfg         config.Config
@@ -68,15 +74,15 @@ func (m *ProviderMenu) ToggleFocused() error {
 	case 1:
 		m.cfg.STT = cycleProviderPreset(m.cfg.STT, []providerPreset{{Name: "openai-compatible", Model: "whisper-1"}, {Name: "local", Model: "whisper.cpp"}, {Name: "custom", Model: ""}})
 	case 2:
-		return m.BeginAPIKeyEdit("stt")
+		return m.BeginAPIKeyEdit(providerKindSTT)
 	case 3:
 		m.cfg.Chat = cycleProviderPreset(m.cfg.Chat, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini"}, {Name: "local", Model: "llama-3.2-3b-instruct"}, {Name: "custom", Model: ""}})
 	case 4:
-		return m.BeginAPIKeyEdit("chat")
+		return m.BeginAPIKeyEdit(providerKindChat)
 	case 5:
 		m.cfg.TTS = cycleProviderPreset(m.cfg.TTS, []providerPreset{{Name: "openai-compatible", Model: "gpt-4o-mini-tts", Voice: "nova"}, {Name: "openai-compatible", Model: "tts-1", Voice: "alloy"}, {Name: "local", Model: "piper"}, {Name: "custom", Model: ""}})
 	case 6:
-		return m.BeginAPIKeyEdit("tts")
+		return m.BeginAPIKeyEdit(providerKindTTS)
 	default:
 		return fmt.Errorf("unsupported focus")
 	}
@@ -109,11 +115,11 @@ func (m *ProviderMenu) Overlay() OverlayState {
 	items := []OverlayItem{
 		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode), Selected: true, Focused: m.focus == 0 && !m.editing},
 		{Code: "stt_provider", Label: providerSummaryLabel("STT", m.cfg.STT), Selected: m.cfg.STT.IsConfigured(), Focused: m.focus == 1 && !m.editing},
-		{Code: "stt_key", Label: providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == "stt", m.draft), Selected: strings.TrimSpace(m.cfg.STT.APIKey) != "", Focused: m.focus == 2 && !m.editing},
+		{Code: "stt_key", Label: providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == providerKindSTT), Selected: strings.TrimSpace(m.cfg.STT.APIKey) != "", Focused: m.focus == 2 && !m.editing},
 		{Code: "chat_provider", Label: providerSummaryLabel("CHAT", m.cfg.Chat), Selected: m.cfg.Chat.IsConfigured(), Focused: m.focus == 3 && !m.editing},
-		{Code: "chat_key", Label: providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == "chat", m.draft), Selected: strings.TrimSpace(m.cfg.Chat.APIKey) != "", Focused: m.focus == 4 && !m.editing},
+		{Code: "chat_key", Label: providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == providerKindChat), Selected: strings.TrimSpace(m.cfg.Chat.APIKey) != "", Focused: m.focus == 4 && !m.editing},
 		{Code: "tts_provider", Label: providerSummaryLabel("TTS", m.cfg.TTS), Selected: m.cfg.TTS.IsConfigured(), Focused: m.focus == 5 && !m.editing},
-		{Code: "tts_key", Label: providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == "tts", m.draft), Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "", Focused: m.focus == 6 && !m.editing},
+		{Code: "tts_key", Label: providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == providerKindTTS), Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "", Focused: m.focus == 6 && !m.editing},
 	}
 	subtitle := []string{"SELECT AI PROVIDERS OR API KEYS", "ENTER TO TOGGLE/CYCLE, E TO EDIT KEY"}
 	footer := "SPACE/A TO TOGGLE, ENTER TO EDIT KEY, START TO SAVE"
@@ -138,11 +144,11 @@ func (m *ProviderMenu) SetAPIKey(kind, key string) error {
 	}
 	key = strings.TrimSpace(key)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "stt":
+	case providerKindSTT:
 		m.cfg.STT.APIKey = key
-	case "chat":
+	case providerKindChat:
 		m.cfg.Chat.APIKey = key
-	case "tts":
+	case providerKindTTS:
 		m.cfg.TTS.APIKey = key
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
@@ -174,7 +180,7 @@ func (m *ProviderMenu) BeginAPIKeyEdit(kind string) error {
 	}
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	switch kind {
-	case "stt", "chat", "tts":
+	case providerKindSTT, providerKindChat, providerKindTTS:
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
 	}
@@ -228,11 +234,11 @@ func (m *ProviderMenu) itemCount() int { return 7 }
 
 func (m *ProviderMenu) currentAPIKey(kind string) string {
 	switch kind {
-	case "stt":
+	case providerKindSTT:
 		return m.cfg.STT.APIKey
-	case "chat":
+	case providerKindChat:
 		return m.cfg.Chat.APIKey
-	case "tts":
+	case providerKindTTS:
 		return m.cfg.TTS.APIKey
 	default:
 		return ""
@@ -287,7 +293,7 @@ func providerSummaryLabel(kind string, p config.Provider) string {
 	return strings.Join(parts, " • ")
 }
 
-func providerKeyLabel(kind, key string, editing bool, draft string) string {
+func providerKeyLabel(kind, key string, editing bool) string {
 	if editing {
 		return kind + ": KEY EDITING"
 	}
