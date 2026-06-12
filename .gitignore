@@ -1,6 +1,9 @@
 # Build artifacts
 bin/
 dist/
+lib/
+.go_cache/
+.go_cache.docker-polluted/
 *.pak
 *.pak.zip
 coverage.out

@@ -1,0 +1,11 @@
+# Development image for native (host) builds and tests.
+FROM golang:1.25
+ENV GOTOOLCHAIN=local
+RUN dpkg --add-architecture arm64 && \
+    apt-get update && apt-get install -y \
+    libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev \
+    libsdl2-dev:arm64 libsdl2-ttf-dev:arm64 \
+    gcc-aarch64-linux-gnu \
+    zip bsdmainutils \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
