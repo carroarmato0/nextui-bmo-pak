@@ -27,6 +27,7 @@ func TestCanonical(t *testing.T) {
 		{"listening", ExprListening},
 		{"thinking", ExprThinking},
 		{"speaking", ExprSpeaking},
+		{"look_around", ExprNeutral},
 	}
 	for _, tc := range tests {
 		if got := Canonical(tc.in); got != tc.want {
