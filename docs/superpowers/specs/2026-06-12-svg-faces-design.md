@@ -49,8 +49,9 @@ New package `internal/face`:
 
 - **`face.Library`** — resolves an expression name to SVG bytes. The default
   assets live in the binary via `go:embed` (source of truth — a deploy always
-  carries the current versions). If a `faces/` directory exists next to the pak
-  binary, it is checked first, per file:
+  carries the current versions). If a `faces/` directory exists in the BMO data
+  dir (`<dataRoot>/BMO/faces/`, alongside `persona.txt` — so a mod pack unzips
+  into one place and survives pak updates), it is checked first, per file:
   `faces/<name>.svg` → `faces/<canonical>.svg` (via the existing
   `normalizeExpression` aliasing, e.g. `laugh` → `smile`) → embedded default.
   A mod may override a single expression; the app never creates or writes `faces/`.
@@ -82,9 +83,10 @@ neutral.svg     blink.svg      listening.svg   thinking.svg
 speaking.svg    sleeping.svg   concerned.svg   smile.svg
 ```
 
-A modder creates an optional `faces/` directory next to the pak binary containing
-any subset of these filenames (or finer-grained alias names like `laugh.svg`).
-The app never ships or writes that directory.
+A modder creates an optional `faces/` directory in the BMO data dir (alongside
+`persona.txt`, `voice.txt`, `quotes.txt`) containing any subset of these
+filenames (or finer-grained alias names like `laugh.svg`). The app never ships
+or writes that directory.
 
 - Full scene per file: teal body `#4ECBA8`, screen interior `#90e5c8`, face elements —
   exactly the bmo-face skill's 280×210 boilerplate. WYSIWYG in any SVG editor.
