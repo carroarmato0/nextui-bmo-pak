@@ -7,6 +7,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -121,6 +122,7 @@ type Renderer struct {
 	W      int32
 	H      int32
 	stride int
+	faces  *face.Cache
 }
 
 type rgba struct {
@@ -268,7 +270,6 @@ func (r *Renderer) Draw(frame FrameState) error {
 		frame.Now = time.Now()
 	}
 	layout := LayoutFor(r.W, r.H)
-	style := styleForExpression(frame.Expression)
 	phase := frame.IdlePhase
 	if phase == 0 {
 		phase = float64(frame.Now.UnixNano()) / 1e9
@@ -279,11 +280,18 @@ func (r *Renderer) Draw(frame FrameState) error {
 		// Hide the face while the settings overlay is open so eye arcs
 		// cannot bleed outside the panel regardless of the current expression.
 		r.drawOverlay(layout, *frame.Overlay)
-	} else {
-		r.drawBackdrop(layout, phase)
-		r.drawFace(layout, style, frame, phase)
-		r.drawCornerClock(layout, frame)
+		return r.present()
 	}
+
+	canonical := face.Canonical(frame.Expression)
+	if !r.blitFace(canonical, frame, phase) {
+		r.drawPlainFace(layout)
+	}
+
+	if canonical == face.ExprSleeping {
+		r.drawSleepMarks(layout, phase)
+	}
+	r.drawCornerClock(layout, frame)
 	return r.present()
 }
 
@@ -304,238 +312,65 @@ func (r *Renderer) present() error {
 	return nil
 }
 
-type bmoEyeType uint8
-
-const (
-	bmoEyeDot       bmoEyeType = iota // dot: idle, concerned, thinking
-	bmoEyePill                        // narrow vertical pill: excited, speaking
-	bmoEyePillLarge                   // wider pill + shine: listening
-	bmoEyeArc                         // upward ∩ arc: happy/squint
-	bmoEyeFlat                        // horizontal line: sleeping
-)
-
-type bmoMouthType uint8
-
-const (
-	bmoMouthIdleSmile bmoMouthType = iota // gentle upward curve
-	bmoMouthFrown                         // gentle downward curve
-	bmoMouthOpenLarge                     // full open with teeth + tongue
-	bmoMouthOpenSpeak                     // smaller open, animated for TTS
-	bmoMouthOpenSmall                     // tiny 'o': listening
-)
-
-type bmoBrowType uint8
-
-const (
-	bmoBrowNone        bmoBrowType = iota
-	bmoBrowWorried                  // inner corners lower
-	bmoBrowRaisedRight              // one raised brow: thinking
-)
-
-type expressionStyle struct {
-	Eye        bmoEyeType
-	Mouth      bmoMouthType
-	Brow       bmoBrowType
-	Animated   bool // speaking mouth oscillation
-	Sleepy     bool // ZZZ marks
-	RightEyeUp bool // thinking: right eye slightly higher
+// SetFaces installs the face cache for SVG rendering. Call before the render loop.
+func (r *Renderer) SetFaces(c *face.Cache) {
+	r.faces = c
 }
 
-func styleForExpression(expr string) expressionStyle {
-	switch normalizeExpression(expr) {
-	case "listening":
-		return expressionStyle{Eye: bmoEyePillLarge, Mouth: bmoMouthOpenSmall}
-	case "thinking":
-		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthIdleSmile, Brow: bmoBrowRaisedRight, RightEyeUp: true}
-	case "speaking":
-		return expressionStyle{Eye: bmoEyePill, Mouth: bmoMouthOpenSpeak, Animated: true}
-	case exprSleeping:
-		return expressionStyle{Eye: bmoEyeFlat, Mouth: bmoMouthIdleSmile, Sleepy: true}
-	case "concerned":
-		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthFrown, Brow: bmoBrowWorried}
-	case "smile", "laugh", "excited":
-		return expressionStyle{Eye: bmoEyeArc, Mouth: bmoMouthOpenLarge}
-	case "blink":
-		return expressionStyle{Eye: bmoEyeFlat, Mouth: bmoMouthIdleSmile}
-	default: // neutral, idle
-		return expressionStyle{Eye: bmoEyeDot, Mouth: bmoMouthIdleSmile}
+// Size returns the current output dimensions.
+func (r *Renderer) Size() (int, int) {
+	return int(r.W), int(r.H)
+}
+
+// blitFace copies the cached SVG face for the given expression into r.pixels.
+// Returns false if the cache is absent or returns no frame (falls back to drawPlainFace).
+func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) bool {
+	if r.faces == nil {
+		return false
+	}
+	w, h := int(r.W), int(r.H)
+	if canonical == face.ExprSpeaking {
+		t := math.Sqrt(math.Min(1, float64(frame.SpeakAmplitude)))
+		if frame.SpeakAmplitude <= 0 {
+			t = 0.45 + 0.35*math.Sin(phase*8.0)
+		}
+		base, strip := r.faces.Speak(t, w, h)
+		if base == nil {
+			return false
+		}
+		copy(r.pixels, base)
+		if strip != nil {
+			r.blitStrip(strip)
+		}
+		return true
+	}
+	buf := r.faces.Frame(canonical, w, h)
+	if buf == nil {
+		return false
+	}
+	copy(r.pixels, buf)
+	return true
+}
+
+// blitStrip overlays a mouth-band strip onto r.pixels.
+func (r *Renderer) blitStrip(strip *face.Strip) {
+	if strip.X+strip.W > int(r.W) || strip.Y+strip.H > int(r.H) {
+		return // out-of-bounds strips are silently ignored
+	}
+	for row := 0; row < strip.H; row++ {
+		dst := (strip.Y+row)*r.stride + strip.X
+		copy(r.pixels[dst:dst+strip.W], strip.Pix[row*strip.W:(row+1)*strip.W])
 	}
 }
 
-func normalizeExpression(expr string) string {
-	switch strings.ToLower(strings.TrimSpace(expr)) {
-	case "idle", exprNeutral:
-		return exprNeutral
-	case "asleep", "sleep", exprSleeping:
-		return exprSleeping
-	case "error", "confused", "angry", "sad":
-		return "concerned"
-	case "happy":
-		return "smile"
-	case "excited":
-		return "laugh"
-	default:
-		return strings.ToLower(strings.TrimSpace(expr))
-	}
-}
-
-func (r *Renderer) drawBackdrop(layout Layout, phase float64) {
-	w, h := layout.W, layout.H
-	r.fillRectColor(0, 0, w, h, rgba{0x4e, 0xcb, 0xa8, 255}) // body teal #4ECBA8
-	for i := int32(0); i < 3; i++ {
-		sx := w/5 + i*w/4
-		sy := h/5 + int32(math.Sin(phase*0.7+float64(i))*float64(h)/16)
-		sz := clampInt32(w/18, 18, 44)
-		r.fillCircle(txClamp(sx, sz, w), txClamp(sy, sz, h), sz/2, rgba{255, 255, 255, 8})
-	}
-}
-
-func (r *Renderer) drawFace(layout Layout, style expressionStyle, frame FrameState, phase float64) {
+// drawPlainFace is the last-resort fallback: body teal + screen mint, no face elements.
+func (r *Renderer) drawPlainFace(layout Layout) {
 	outer := rectInset(layout.W, layout.H, layout.Margin)
 	inner := rectInset(layout.W, layout.H, layout.Margin+layout.ScreenInset)
-
-	// Body (bright teal) and screen background (pale mint).
 	r.fillRoundedRect(outer.X, outer.Y, outer.W, outer.H, layout.CornerRadius,
-		rgba{0x4e, 0xcb, 0xa8, 255}) // #4ECBA8
+		rgba{0x4e, 0xcb, 0xa8, 255})
 	r.fillRoundedRect(inner.X, inner.Y, inner.W, inner.H,
-		layout.CornerRadius-layout.ScreenInset/2,
-		rgba{0x90, 0xe5, 0xc8, 255}) // #90e5c8
-
-	iw := float64(inner.W)
-	ih := float64(inner.H)
-	ix := inner.X
-	iy := inner.Y
-
-	// Canonical eye positions (bmo-face skill): left=20.3%, right=79.2%, cy=37.4%
-	lx := ix + int32(iw*0.203)
-	rx := ix + int32(iw*0.792)
-	ey := iy + int32(ih*0.374)
-
-	dark := rgba{0x1a, 0x1a, 0x1a, 255}
-
-	// Eyes
-	switch style.Eye {
-	case bmoEyeDot:
-		// Reference: 2.9% wide × 7.2% tall — a narrow vertical pill, not a circle.
-		pw := max32(5, int32(iw*0.029))
-		ph := max32(10, int32(ih*0.072))
-		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-		if style.RightEyeUp {
-			r.fillRoundedRect(rx-pw/2, iy+int32(ih*0.348)-ph/2, pw, ph, pw/2, dark)
-		} else {
-			r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-		}
-
-	case bmoEyePill:
-		pw := max32(5, int32(iw*0.035))
-		ph := max32(14, int32(ih*0.129))
-		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-		r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-
-	case bmoEyePillLarge:
-		pw := max32(8, int32(iw*0.059))
-		ph := max32(18, int32(ih*0.181))
-		r.fillRoundedRect(lx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-		r.fillRoundedRect(rx-pw/2, ey-ph/2, pw, ph, pw/2, dark)
-		shR := max32(2, int32(iw*0.015))
-		r.fillCircle(lx-pw/4, ey-ph/4, shR, rgba{255, 255, 255, 140})
-		r.fillCircle(rx-pw/4, ey-ph/4, shR, rgba{255, 255, 255, 140})
-
-	case bmoEyeArc:
-		// ∩ upward arc: endpoints y=41.9%, control y=32.3%, half-width=18.8%
-		ahw := int32(iw * 0.094) // center-to-endpoint, not full span
-		aey := iy + int32(ih*0.419)
-		aqy := iy + int32(ih*0.323)
-		thk := max32(3, int32(iw*0.025))
-		lArc := quadBezierPoints(point{lx - ahw, aey}, point{lx, aqy}, point{lx + ahw, aey}, 14)
-		rArc := quadBezierPoints(point{rx - ahw, aey}, point{rx, aqy}, point{rx + ahw, aey}, 14)
-		r.drawBezierThick(lArc, thk, dark)
-		r.drawBezierThick(rArc, thk, dark)
-
-	case bmoEyeFlat:
-		fhw := max32(10, int32(iw*0.074))
-		fh := max32(3, int32(ih*0.032))
-		r.fillRectColor(lx-fhw, ey-fh/2, fhw*2, fh, dark)
-		r.fillRectColor(rx-fhw, ey-fh/2, fhw*2, fh, dark)
-	}
-
-	// Brows
-	browR := max32(2, int32(ih*0.016))
-	switch style.Brow {
-	case bmoBrowWorried:
-		lox := ix + int32(iw*0.109)
-		lix := ix + int32(iw*0.287)
-		rix := ix + int32(iw*0.713)
-		rox := ix + int32(iw*0.891)
-		byOuter := iy + int32(ih*0.226)
-		byInner := iy + int32(ih*0.323)
-		r.drawThickLine(lox, byOuter, lix, byInner, browR, dark)
-		r.drawThickLine(rix, byInner, rox, byOuter, browR, dark)
-	case bmoBrowRaisedRight:
-		rix := ix + int32(iw*0.713)
-		rox := ix + int32(iw*0.891)
-		byRaised := iy + int32(ih*0.194)
-		byBase := iy + int32(ih*0.258)
-		r.drawThickLine(rix, byBase, rox, byRaised, browR, dark)
-	}
-
-	// Mouth — shared variables used by smile, frown, and open-mouth cases.
-	cx := ix + inner.W/2
-	slx := ix + int32(iw*0.381)
-	srx := ix + int32(iw*0.600)
-	sey := iy + int32(ih*0.587)
-	sqy := iy + int32(ih*0.665)
-	fqy := iy + int32(ih*0.510)
-	mouthSW := max32(3, int32(ih*0.026))
-	// Large-mouth geometry (used by bmoMouthOpenLarge).
-	mw := int32(iw * 0.416)
-	mty := iy + int32(ih*0.523)
-	mh := int32(ih * 0.277)
-	teeth := rgba{0xe4, 0xe4, 0xe4, 255}
-	interior := rgba{0x1a, 0x78, 0x48, 255}
-	tongue := rgba{0x16, 0xae, 0x81, 255}
-
-	switch style.Mouth {
-	case bmoMouthIdleSmile:
-		smilePts := quadBezierPoints(point{slx, sey}, point{cx, sqy}, point{srx, sey}, 14)
-		r.drawBezierThick(smilePts, mouthSW, dark)
-
-	case bmoMouthFrown:
-		frownPts := quadBezierPoints(point{slx, sey}, point{cx, fqy}, point{srx, sey}, 14)
-		r.drawBezierThick(frownPts, mouthSW, dark)
-
-	case bmoMouthOpenLarge:
-		r.drawMouthFilled(cx, mty, mw, mh, teeth, interior, tongue)
-
-	case bmoMouthOpenSpeak:
-		smw := int32(iw * 0.318)
-		smty := iy + int32(ih*0.548)
-		smhBase := int32(ih * 0.213)
-		smh := smhBase
-		if frame.SpeakAmplitude > 0 {
-			// Amplitude-driven: sqrt gives more visible response at low levels.
-			openFactor := math.Sqrt(float64(frame.SpeakAmplitude))
-			smh = max32(smhBase/8, int32(float64(smhBase)*openFactor))
-		} else if style.Animated {
-			// Fallback sin-wave when no amplitude data is available.
-			smh = int32(float64(smhBase) * (0.45 + 0.35*math.Sin(phase*8.0)))
-			if smh < smhBase/6 {
-				smh = smhBase / 6
-			}
-		}
-		r.drawMouthFilled(cx, smty, smw, smh, teeth, interior, tongue)
-
-	case bmoMouthOpenSmall:
-		soRX := max32(8, int32(iw*0.074))
-		soRY := max32(5, int32(ih*0.065))
-		soCy := iy + int32(ih*0.665)
-		r.fillEllipse(cx-soRX, soCy-soRY, soRX*2, soRY*2, dark)
-		r.fillEllipse(cx-soRX*3/4, soCy-soRY*3/4, soRX*3/2, soRY*3/2, interior)
-	}
-
-	if style.Sleepy {
-		r.drawSleepMarks(layout, phase)
-	}
+		layout.CornerRadius-layout.ScreenInset/2, rgba{0x90, 0xe5, 0xc8, 255})
 }
 
 func (r *Renderer) drawCornerClock(layout Layout, frame FrameState) {
@@ -802,31 +637,6 @@ func (r *Renderer) fillCircle(cx, cy, radius int32, c rgba) {
 	}
 }
 
-func (r *Renderer) fillEllipse(x, y, w, h int32, c rgba) {
-	if w <= 0 || h <= 0 {
-		return
-	}
-	cx := x + w/2
-	cy := y + h/2
-	rx := float64(w) / 2.0
-	ry := float64(h) / 2.0
-	if rx < 1 {
-		rx = 1
-	}
-	if ry < 1 {
-		ry = 1
-	}
-	ryi := int32(math.Round(ry))
-	for dy := -ryi; dy <= ryi; dy++ {
-		norm := 1.0 - (float64(dy)*float64(dy))/(ry*ry)
-		if norm < 0 {
-			continue
-		}
-		dx := int32(math.Sqrt(norm) * rx)
-		r.drawLine(cx-dx, cy+dy, cx+dx, cy+dy, c)
-	}
-}
-
 func (r *Renderer) fillQuarterCircle(x, y, radius int32, quadrant int, c rgba) {
 	for dy := int32(0); dy <= radius; dy++ {
 		dx := int32(math.Sqrt(float64(radius*radius - dy*dy)))
@@ -841,126 +651,6 @@ func (r *Renderer) fillQuarterCircle(x, y, radius int32, quadrant int, c rgba) {
 			r.drawLine(x, y+dy, x+dx, y+dy, c)
 		}
 	}
-}
-
-type point struct {
-	X, Y int32
-}
-
-// quadBezierPoints samples a quadratic Bezier curve into discrete points.
-func quadBezierPoints(p0, p1, p2 point, segments int) []point {
-	if segments < 2 {
-		segments = 2
-	}
-	pts := make([]point, 0, segments+1)
-	for i := 0; i <= segments; i++ {
-		t := float64(i) / float64(segments)
-		u := 1 - t
-		x := u*u*float64(p0.X) + 2*u*t*float64(p1.X) + t*t*float64(p2.X)
-		y := u*u*float64(p0.Y) + 2*u*t*float64(p1.Y) + t*t*float64(p2.Y)
-		pts = append(pts, point{X: int32(math.Round(x)), Y: int32(math.Round(y))})
-	}
-	return pts
-}
-
-// drawBezierThick draws a thick curve by stamping a filled circle at each sample point.
-func (r *Renderer) drawBezierThick(pts []point, radius int32, c rgba) {
-	if radius < 1 {
-		radius = 1
-	}
-	for _, pt := range pts {
-		r.fillCircle(pt.X, pt.Y, radius, c)
-	}
-}
-
-// drawThickLine draws a thick line between two points using filled circles.
-func (r *Renderer) drawThickLine(x1, y1, x2, y2, radius int32, c rgba) {
-	pts := quadBezierPoints(
-		point{x1, y1},
-		point{(x1 + x2) / 2, (y1 + y2) / 2},
-		point{x2, y2},
-		12,
-	)
-	r.drawBezierThick(pts, radius, c)
-}
-
-// drawMouthFilled draws a rounded-rectangle open mouth (flat centre, rounded corners).
-// Teeth fill the top 28%, interior fills the rest, tongue sits in the lower interior.
-func (r *Renderer) drawMouthFilled(cx, mty, mw, mh int32, teeth, interior, tongue rgba) {
-	if mw <= 0 || mh <= 0 {
-		return
-	}
-	// Dark outline: slightly larger rounded rect underneath.
-	border := max32(2, mw/90)
-	mr := int32(float64(mh) * 0.42) // corner radius
-	r.fillRoundedRect(cx-mw/2-border, mty-border, mw+2*border, mh+2*border, mr+border, rgba{0x1a, 0x1a, 0x1a, 255})
-
-	// Per-scanline fill with rounded-rect clip.
-	// Corners are rounded; the centre section is full width.
-	tth := int32(float64(mh) * 0.28) // teeth height
-	// Tongue: ellipse centred on the bottom edge of the opening so the visible
-	// dome reads as rising from behind the lower lip. It is rendered inside
-	// this scanline loop so the opening clips it — it never overlaps the lip
-	// or escapes the mouth (spec §6.2).
-	tgy, tgw, tgh := tongueGeometry(mty, mw, mh)
-	tcy := float64(tgy) + float64(tgh)/2
-	trx := float64(tgw) / 2
-	try := float64(tgh) / 2
-	for dy := int32(0); dy < mh; dy++ {
-		var xOff int32
-		if dy < mr {
-			yInCorner := float64(mr - dy)
-			xOff = int32(float64(mr) - math.Sqrt(float64(mr)*float64(mr)-yInCorner*yInCorner))
-		} else if dy >= mh-mr {
-			yInCorner := float64(dy - (mh - mr))
-			xOff = int32(float64(mr) - math.Sqrt(float64(mr)*float64(mr)-yInCorner*yInCorner))
-		}
-		lineW := mw - 2*xOff
-		if lineW <= 0 {
-			continue
-		}
-		c := interior
-		if dy < tth {
-			c = teeth
-		}
-		r.fillRectColor(cx-mw/2+xOff, mty+dy, lineW, 1, c)
-		// Tongue segment on this scanline, clipped to the opening width.
-		ny := (float64(mty+dy) - tcy) / try
-		if ny*ny < 1 {
-			halfW := int32(trx * math.Sqrt(1-ny*ny))
-			lx := max32(cx-halfW, cx-mw/2+xOff)
-			rxEnd := min32(cx+halfW, cx-mw/2+xOff+lineW)
-			if rxEnd > lx {
-				r.fillRectColor(lx, mty+dy, rxEnd-lx, 1, tongue)
-			}
-		}
-	}
-}
-
-// tongueGeometry returns the tongue ellipse bounds for a mouth at (cx, mty)
-// of size mw x mh. The ellipse is centred on the mouth's bottom edge so its
-// root sits below the opening and only the upper dome is visible once the
-// scanline clip is applied — the tongue rises from behind the lower lip and
-// never overlaps it (spec §6.2).
-func tongueGeometry(mty, mw, mh int32) (y, w, h int32) {
-	trx := max32(4, int32(float64(mw)*0.28))
-	try := max32(2, int32(float64(mh)*0.18))
-	tcy := mty + mh
-	return tcy - try, trx * 2, try * 2
-}
-
-func max32(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min32(a, b int32) int32 {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func rectInset(w, h, inset int32) rect {
@@ -993,16 +683,6 @@ func clampInt32(v, lo, hi int32) int32 {
 	}
 	if v > hi {
 		return hi
-	}
-	return v
-}
-
-func txClamp(v, size, limit int32) int32 {
-	if v < size/2 {
-		return size / 2
-	}
-	if v > limit-size/2 {
-		return limit - size/2
 	}
 	return v
 }
