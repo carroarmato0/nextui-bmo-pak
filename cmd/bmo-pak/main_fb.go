@@ -172,6 +172,27 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}, 30*time.Second, time.Now().UnixNano())
 	deviceCtx.SetEnabled(cfg.DeviceContext)
 	deviceCtx.SetReminisce(achievementsCollector.RandomPastUnlock)
+	// Short-term memory: the remark journal feeds both the nudge picker
+	// (6h cooldown dedup) and the RECENT REMARKS prompt block. A corrupt
+	// file (hard power-off mid-write) just means starting empty.
+	journalPath := filepath.Join(homeDir, "remarks.json")
+	journal, jerr := devctx.LoadJournal(journalPath)
+	if jerr != nil {
+		logger.Warnf("remark journal unreadable, starting empty: %v", jerr)
+	}
+	deviceCtx.SetJournal(journal)
+	quotesPath := config.QuotesPath(homeDir)
+	quotesContent, qerr := config.EnsurePromptFile(quotesPath, config.DefaultQuotes)
+	if qerr != nil {
+		logger.Warnf("ensure quotes file: %v", qerr)
+	}
+	deviceCtx.SetQuotes(func() []string {
+		content := readPromptFile(quotesPath)
+		if content == "" {
+			content = quotesContent
+		}
+		return devctx.ParseQuotes(content)
+	})
 	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
 	proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 
@@ -206,7 +227,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			// be tuned without restarting the pak.
 			audioPipeline.SetTTSInstructionsSource(func() string { return readPromptFile(voicePath) })
 			audioPipeline.SetSystemPromptSource(func() string {
-				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot())
+				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot(), journal.PromptBlock(time.Now().UTC()))
 			})
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
@@ -392,7 +413,18 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if n, ok := deviceCtx.ProactiveNudge(); ok {
 					remarkPipeline := audioPipeline
 					go func() {
-						if err := remarkPipeline.SpeakRemark(ctx, n.Text, nil); err != nil {
+						record := func(reply string) {
+							if err := journal.Append(devctx.RemarkEntry{When: time.Now().UTC(), Topic: n.Topic, Subject: n.Subject, Reply: reply}); err != nil {
+								logger.Warnf("remark journal save: %v", err)
+							}
+						}
+						var err error
+						if n.Verbatim {
+							err = remarkPipeline.SpeakVerbatim(ctx, n.Text, record)
+						} else {
+							err = remarkPipeline.SpeakRemark(ctx, n.Text, record)
+						}
+						if err != nil {
 							logger.Warnf("proactive remark failed: %v", err)
 						}
 					}()

@@ -31,19 +31,16 @@ func restorePromptDefaults(personaPath, voicePath string) error {
 	return config.WritePromptFile(voicePath, config.DefaultTTSInstructions)
 }
 
-// systemPromptWithContext joins the persona prompt and the device-awareness
-// block; either may be empty.
-func systemPromptWithContext(persona, deviceCtx string) string {
-	persona = strings.TrimSpace(persona)
-	deviceCtx = strings.TrimSpace(deviceCtx)
-	switch {
-	case persona == "":
-		return deviceCtx
-	case deviceCtx == "":
-		return persona
-	default:
-		return persona + "\n\n" + deviceCtx
+// systemPromptWithContext joins the persona prompt, the device-awareness
+// block, and the recent-remarks block; empty segments are skipped.
+func systemPromptWithContext(parts ...string) string {
+	var nonEmpty []string
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			nonEmpty = append(nonEmpty, p)
+		}
 	}
+	return strings.Join(nonEmpty, "\n\n")
 }
 
 type pttLogger interface {

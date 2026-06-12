@@ -17,3 +17,10 @@ func TestSystemPromptWithContext(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemPromptWithContextThreeSegments(t *testing.T) {
+	got := systemPromptWithContext("persona", "device", "remarks")
+	if got != "persona\n\ndevice\n\nremarks" {
+		t.Fatalf("three segments joined wrong: %q", got)
+	}
+}
