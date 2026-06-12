@@ -49,7 +49,7 @@ type pttLogger interface {
 	Debugf(string, ...any)
 }
 
-func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.Machine, cfg config.Config, profile hardware.Profile, router *audio.CaptureRouter, pipeline *assistant.VoicePipeline, sampleRate, channels int) func() {
+func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.Machine, cfg config.Config, profile hardware.Profile, router *audio.CaptureRouter, pipeline *assistant.VoicePipeline, sampleRate, channels int, menuOpen func() bool) func() {
 	if ctx == nil || logger == nil || machine == nil || router == nil || pipeline == nil {
 		return func() {}
 	}
@@ -98,6 +98,15 @@ func startPushToTalk(ctx context.Context, logger pttLogger, machine *assistant.M
 
 	go func() {
 		for ev := range watcher.Events() {
+			if menuOpen != nil && menuOpen() {
+				// Discard any in-progress recording so the buffer doesn't
+				// stay stuck in held state if a menu opened mid-press.
+				if !ev.Held && buffer.Held() {
+					buffer.End()
+				}
+				logger.Debugf("PTT ignored: menu open")
+				continue
+			}
 			if ev.Held {
 				// Outside AI mode BMO does not react to push-to-talk at
 				// all: no listening state, no recording, no API traffic.

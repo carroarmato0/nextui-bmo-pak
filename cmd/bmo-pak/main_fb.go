@@ -229,7 +229,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			audioPipeline.SetSystemPromptSource(func() string {
 				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot(), memory.PromptBlock(time.Now().UTC()))
 			})
-			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
+			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 		}
 	}
 	if stopPTT != nil {
