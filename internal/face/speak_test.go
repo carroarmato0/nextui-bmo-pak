@@ -66,8 +66,8 @@ func TestIsSpeakTemplate(t *testing.T) {
 	if !IsSpeakTemplate([]byte(`<rect height="{{.MouthH}}"/>`)) {
 		t.Fatal("SVG with {{ must be detected as template")
 	}
-	if !strings.Contains(string(mustDefault(ExprSpeaking)), "{{") {
-		t.Fatal("embedded speaking.svg must contain template markers")
+	if !strings.Contains(string(mustDefault(ExprSpeaking)), "{{.MouthH}}") {
+		t.Fatal("embedded speaking.svg must use documented SpeakParams fields")
 	}
 }
 
