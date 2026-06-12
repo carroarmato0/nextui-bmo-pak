@@ -1,4 +1,4 @@
-# SVG-Based Face Rendering — Design
+# SVG-Based Face Rendering & Override-or-Default Assets — Design
 
 **Date:** 2026-06-12
 **Status:** Approved for planning
@@ -16,9 +16,10 @@ construction artifacts are clearly visible: lumpy mouth edges, stepped eyebrows.
 1. Smooth, anti-aliased face rendering at any resolution.
 2. Expressions defined as SVG files — verifiable through code and math, and editable
    by humans and Claude alike (the bmo-face skill already speaks this language).
-3. Moddable: users create a `faces/` folder on disk with replacement SVGs (plus
-   persona and voice) — no compilation. The app itself never writes this folder;
-   deploys always carry the current embedded assets.
+3. Moddable: users create a `faces/` folder on disk with replacement SVGs, and/or
+   `persona.txt` / `voice.txt` / `quotes.txt` override files — no compilation.
+   The app never writes any of these; deploys always carry the current built-in
+   defaults, which apply wherever no override exists.
 4. Keep the amplitude-driven speaking mouth animation for the default pack.
 5. No new CGO/C dependencies; the tg5040/tg5050 container cross-build stays untouched.
 
@@ -39,6 +40,8 @@ construction artifacts are clearly visible: lumpy mouth edges, stepped eyebrows.
 | 16:9 vs 4:3 | Non-uniform stretch to fill the screen (matches current behavior) |
 | Asset location | `go:embed` is the source of truth; optional `faces/` dir on disk overrides per file |
 | Mod validation | Parse-or-fallback only; geometry tests are internal CI QA |
+| Persona/voice/quotes | Same override-or-default model; app never creates the files |
+| Restore defaults | Settings action deletes override files instead of writing defaults |
 
 ## Architecture
 
@@ -115,6 +118,28 @@ inspected at load time for template action markers (`{{`):
    speech (logged as informational — this is the expected mod path).
 3. Static parse also fails → embedded default template.
 
+## Override-or-Default for Persona, Voice, and Quotes
+
+The same fallback strategy extends to BMO's text assets. Today
+`EnsurePromptFile` *writes* `persona.txt`, `voice.txt`, and `quotes.txt` with
+the built-in defaults on first run — so an existing install never receives
+improved defaults shipped in an update.
+
+New model (mirrors faces):
+
+- Built-in defaults (`DefaultSystemPrompt`, `DefaultTTSInstructions`,
+  `DefaultQuotes`) are the source of truth and ship with every update.
+- The app **never creates** these files. At load: file exists and is non-blank →
+  its content overrides the default; otherwise the built-in default is used.
+- Live-reload sources (`SetSystemPromptSource`, `SetTTSInstructionsSource`)
+  resolve override-or-default on each read, so dropping in or removing a file
+  takes effect without code changes.
+- The settings menu's **restore-defaults** action changes from "write default
+  content into the files" to "**delete the override files**" — the user returns
+  to tracking the binary's built-ins, and future updates flow again.
+- `EnsurePromptFile`/first-run file creation is removed; `WritePromptFile`
+  remains only if the settings menu still needs to write user edits.
+
 ## Error Handling
 
 - Mod file missing → embedded default (silent, per-file).
@@ -134,6 +159,8 @@ inspected at load time for template action markers (`{{`):
 - Speaking monotonicity: dark-pixel count in the mouth band increases with level.
 - Fallback: corrupt SVG in a temp `faces/` dir logs and falls back to default.
 - Template detection: static `speaking.svg` is accepted and used statically.
+- Prompt overrides: absent/blank file → built-in default; non-blank file → its
+  content; restore-defaults deletes overrides and defaults apply again.
 - `golangci-lint run ./...` clean; `internal/renderer/bmo_test.go` adapted.
 
 ## Follow-Ups (out of scope)
