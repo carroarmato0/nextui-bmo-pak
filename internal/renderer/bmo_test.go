@@ -1,6 +1,10 @@
 package renderer
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/carroarmato0/nextui-bmo/internal/face"
+)
 
 func TestLayoutForScalesAcrossScreens(t *testing.T) {
 	compact := LayoutFor(640, 480)
@@ -98,4 +102,21 @@ func TestNormalizeExpressionAliases(t *testing.T) {
 			t.Fatalf("normalizeExpression(%q) = %q, want %q", tt.expr, got, tt.want)
 		}
 	}
+}
+
+func TestBlitStripBounds(t *testing.T) {
+	r := &Renderer{W: 8, H: 8, stride: 8, pixels: make([]uint32, 64)}
+	strip := &face.Strip{X: 2, Y: 3, W: 4, H: 2, Pix: make([]uint32, 8)}
+	for i := range strip.Pix {
+		strip.Pix[i] = 0xFFFFFFFF
+	}
+	r.blitStrip(strip)
+	if r.pixels[3*8+2] != 0xFFFFFFFF || r.pixels[4*8+5] != 0xFFFFFFFF {
+		t.Fatal("strip pixels not blitted")
+	}
+	if r.pixels[0] != 0 || r.pixels[3*8+1] != 0 {
+		t.Fatal("pixels outside strip must be untouched")
+	}
+	// Out-of-bounds strip must be silently ignored.
+	r.blitStrip(&face.Strip{X: 7, Y: 7, W: 4, H: 4, Pix: make([]uint32, 16)})
 }
