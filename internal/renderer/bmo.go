@@ -335,7 +335,7 @@ func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) b
 			t = 0.45 + 0.35*math.Sin(phase*8.0)
 		}
 		base, strip := r.faces.Speak(t, w, h)
-		if base == nil {
+		if base == nil || len(base) != len(r.pixels) {
 			return false
 		}
 		copy(r.pixels, base)
@@ -345,7 +345,7 @@ func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) b
 		return true
 	}
 	buf := r.faces.Frame(canonical, w, h)
-	if buf == nil {
+	if buf == nil || len(buf) != len(r.pixels) {
 		return false
 	}
 	copy(r.pixels, buf)
@@ -354,8 +354,10 @@ func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) b
 
 // blitStrip overlays a mouth-band strip onto r.pixels.
 func (r *Renderer) blitStrip(strip *face.Strip) {
-	if strip.X+strip.W > int(r.W) || strip.Y+strip.H > int(r.H) {
-		return // out-of-bounds strips are silently ignored
+	if strip == nil || strip.X < 0 || strip.Y < 0 ||
+		strip.X+strip.W > int(r.W) || strip.Y+strip.H > int(r.H) ||
+		len(strip.Pix) < strip.W*strip.H {
+		return
 	}
 	for row := 0; row < strip.H; row++ {
 		dst := (strip.Y+row)*r.stride + strip.X
