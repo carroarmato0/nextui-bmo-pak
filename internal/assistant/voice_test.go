@@ -393,7 +393,7 @@ func TestSpeakRemarkHappyPath(t *testing.T) {
 	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1)
 	pipe.SetSystemPromptSource(func() string { return "persona plus device context" })
 
-	if err := pipe.SpeakRemark(context.Background(), "(BMO says something about achievements)"); err != nil {
+	if err := pipe.SpeakRemark(context.Background(), "(BMO says something about achievements)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	if chat.lastChat.SystemPrompt != "persona plus device context" {
@@ -417,7 +417,7 @@ func TestSpeakRemarkSkippedOutsideAIMode(t *testing.T) {
 	m := NewMachine() // idle mode
 	chat := &fakeProvider{reply: "should never be called"}
 	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
-	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	if chat.lastChat.Model != "" {
@@ -431,7 +431,7 @@ func TestSpeakRemarkSkippedWhenNotIdle(t *testing.T) {
 	m.Transition(EventListen) // user is mid-conversation
 	chat := &fakeProvider{reply: "should never be called"}
 	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
-	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	if chat.lastChat.Model != "" {
@@ -443,7 +443,7 @@ func TestSpeakRemarkEmptyReplyReturnsToIdle(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
 	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
-	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	if got := m.State(); got != StateIdle {
@@ -456,7 +456,7 @@ func TestSpeakRemarkChatFailureEntersErrorState(t *testing.T) {
 	m.SetMode("ai")
 	chat := &fakeProvider{err: fmt.Errorf("boom")}
 	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
-	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err == nil {
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err == nil {
 		t.Fatal("expected error")
 	}
 	if got := m.State(); got != StateError {
@@ -475,7 +475,11 @@ func (l *captureLogger) Infof(format string, args ...any) {
 	defer l.mu.Unlock()
 	l.lines = append(l.lines, fmt.Sprintf(format, args...))
 }
-func (l *captureLogger) Debugf(format string, args ...any) {}
+func (l *captureLogger) Debugf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+}
 
 func (l *captureLogger) joined() string {
 	l.mu.Lock()
@@ -532,7 +536,7 @@ func TestRemarkLogsTokenUsage(t *testing.T) {
 	logger := &captureLogger{}
 	pipe.SetLogger(logger)
 
-	if err := pipe.SpeakRemark(context.Background(), "(nudge)"); err != nil {
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	logs := logger.joined()
@@ -541,5 +545,117 @@ func TestRemarkLogsTokenUsage(t *testing.T) {
 	}
 	if !strings.Contains(logs, "remark TTS:") || !strings.Contains(logs, "input: 7 chars") {
 		t.Errorf("remark TTS log missing input chars: %q", logs)
+	}
+}
+
+func TestSpeakRemarkLogsPromptContext(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	chat := &fakeProvider{reply: "daebak!"}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe.SetSystemPromptSource(func() string { return "persona\n\nDEVICE AWARENESS: stuff" })
+	logger := &captureLogger{}
+	pipe.SetLogger(logger)
+
+	if err := pipe.SpeakRemark(context.Background(), "(nudge about achievements)", nil); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	logs := logger.joined()
+	if !strings.Contains(logs, `remark nudge: "(nudge about achievements)"`) {
+		t.Errorf("nudge not logged: %q", logs)
+	}
+	if !strings.Contains(logs, "remark system prompt:") || !strings.Contains(logs, "DEVICE AWARENESS: stuff") {
+		t.Errorf("system prompt not logged: %q", logs)
+	}
+}
+
+func TestSpeakRemarkInvokesOnSpoken(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	chat := &fakeProvider{reply: "what a save file!"}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+
+	var spoken []string
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", func(reply string) { spoken = append(spoken, reply) }); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	if len(spoken) != 1 || spoken[0] != "what a save file!" {
+		t.Fatalf("onSpoken calls = %v, want one call with the reply", spoken)
+	}
+}
+
+func TestSpeakRemarkOnSpokenSkippedOnFailure(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	called := 0
+	onSpoken := func(string) { called++ }
+
+	// Chat failure: callback must not fire.
+	chatFail := &fakeProvider{err: fmt.Errorf("boom")}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chatFail, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe.SpeakRemark(context.Background(), "(nudge)", onSpoken); err == nil {
+		t.Fatal("expected chat error")
+	}
+	// Empty reply: callback must not fire.
+	m2 := NewMachine()
+	m2.SetMode("ai")
+	pipe2 := NewVoicePipeline(m2, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	if err := pipe2.SpeakRemark(context.Background(), "(nudge)", onSpoken); err != nil {
+		t.Fatalf("speak remark: %v", err)
+	}
+	// TTS failure: callback must not fire.
+	m3 := NewMachine()
+	m3.SetMode("ai")
+	pipe3 := NewVoicePipeline(m3, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "hi"}, &fakeProvider{err: fmt.Errorf("tts boom")}, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	if err := pipe3.SpeakRemark(context.Background(), "(nudge)", onSpoken); err == nil {
+		t.Fatal("expected tts error")
+	}
+	if called != 0 {
+		t.Fatalf("onSpoken fired %d times on failure paths, want 0", called)
+	}
+}
+
+func TestSpeakVerbatimSkipsChat(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	writer := &fakeWriter{}
+	chat := &fakeProvider{reply: "must never be used"}
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
+	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+
+	var spoken []string
+	if err := pipe.SpeakVerbatim(context.Background(), "Who wants to play video games?", func(s string) { spoken = append(spoken, s) }); err != nil {
+		t.Fatalf("speak verbatim: %v", err)
+	}
+	if chat.lastChat.Model != "" {
+		t.Error("chat provider must not be called for verbatim speech")
+	}
+	if tts.lastSpeech.Input != "Who wants to play video games?" {
+		t.Errorf("tts input = %q", tts.lastSpeech.Input)
+	}
+	if len(spoken) != 1 || spoken[0] != "Who wants to play video games?" {
+		t.Fatalf("onSpoken = %v", spoken)
+	}
+	if writer.totalBytes() == 0 {
+		t.Error("expected PCM written to playback")
+	}
+	if got := m.State(); got != StateIdle {
+		t.Errorf("state after verbatim = %v, want idle", got)
+	}
+}
+
+func TestSpeakVerbatimSkippedWhenNotIdle(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	m.Transition(EventListen)
+	tts := &fakeProvider{speech: []byte{1, 2}}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, tts, "", "", "tts-1", "alloy", "", 16000, 1)
+	if err := pipe.SpeakVerbatim(context.Background(), "quote", nil); err != nil {
+		t.Fatalf("speak verbatim: %v", err)
+	}
+	if tts.lastSpeech.Input != "" {
+		t.Error("tts must not be called while not idle")
 	}
 }

@@ -253,7 +253,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 // PTT interruption, amplitude-driven mouth, and state transitions all
 // behave exactly like a normal utterance. No-op outside AI mode or when
 // BMO is not idle — a remark must never barge into a conversation.
-func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
+// onSpoken, when non-nil, is invoked with the reply text once TTS has
+// succeeded (i.e. the remark will actually be heard), so the caller can
+// record it in the remark journal.
+func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken func(reply string)) error {
 	if p == nil || !p.aiModeEnabled() {
 		return nil
 	}
@@ -270,11 +273,16 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 		}
 	}
 
+	systemPrompt := p.currentSystemPrompt()
+	if p.logger != nil {
+		p.logger.Debugf("remark nudge: %q", nudge)
+		p.logger.Debugf("remark system prompt: %q", systemPrompt)
+	}
 	chatStart := time.Now()
 	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: nudge}},
-		SystemPrompt: p.currentSystemPrompt(),
+		SystemPrompt: systemPrompt,
 	})
 	if err != nil {
 		return p.fail(err, EventFail)
@@ -308,6 +316,53 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string) error {
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
 			time.Since(ttsStart).Milliseconds(), len(speech), len(reply))
+	}
+	if onSpoken != nil {
+		onSpoken(reply)
+	}
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+
+	return p.speak(ctx, speech)
+}
+
+// SpeakVerbatim speaks text exactly as given — no chat call, no paraphrase
+// risk, zero chat tokens. Used for the curated-quote fallback when every
+// real remark topic is on cooldown. Same idle-only gating and playback
+// path as SpeakRemark; onSpoken fires once TTS has succeeded.
+func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken func(spoken string)) error {
+	if p == nil || !p.aiModeEnabled() {
+		return nil
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if p.machine != nil {
+		if p.machine.Transition(EventRemark) != StateThinking {
+			return nil
+		}
+	}
+	if p.logger != nil {
+		p.logger.Debugf("remark quote: %q", text)
+	}
+
+	ttsStart := time.Now()
+	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+		Model:        p.ttsModel,
+		Voice:        p.ttsVoice,
+		Input:        text,
+		Format:       "pcm",
+		Instructions: p.currentTTSInstructions(),
+	})
+	if err != nil {
+		return p.fail(err, EventFail)
+	}
+	if p.logger != nil {
+		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
+			time.Since(ttsStart).Milliseconds(), len(speech), len(text))
+	}
+	if onSpoken != nil {
+		onSpoken(text)
 	}
 	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
 

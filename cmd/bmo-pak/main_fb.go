@@ -392,7 +392,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if nudge, ok := deviceCtx.ProactiveNudge(); ok {
 					remarkPipeline := audioPipeline
 					go func() {
-						if err := remarkPipeline.SpeakRemark(ctx, nudge); err != nil {
+						if err := remarkPipeline.SpeakRemark(ctx, nudge, nil); err != nil {
 							logger.Warnf("proactive remark failed: %v", err)
 						}
 					}()
