@@ -449,10 +449,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(currentIdleExpression)
 			if audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
-				if nudge, ok := deviceCtx.ProactiveNudge(); ok {
+				if n, ok := deviceCtx.ProactiveNudge(); ok {
 					remarkPipeline := audioPipeline
 					go func() {
-						if err := remarkPipeline.SpeakRemark(ctx, nudge, nil); err != nil {
+						if err := remarkPipeline.SpeakRemark(ctx, n.Text, nil); err != nil {
 							logger.Warnf("proactive remark failed: %v", err)
 						}
 					}()

@@ -231,25 +231,33 @@ func (c AchievementsCollector) Collect(now time.Time) (Section, error) {
 	}
 	body := fmt.Sprintf("Recent unlocks: %s. Progress: %s.",
 		strings.Join(parts, "; "), strings.Join(progress, "; "))
-	return Section{Key: KeyAchievements, Title: "RETROACHIEVEMENTS", Body: body, Freshest: unlocks[0].when}, nil
+	return Section{
+		Key:      KeyAchievements,
+		Title:    "RETROACHIEVEMENTS",
+		Body:     body,
+		Subject:  fmt.Sprintf("%q in %s", recent[0].title, recent[0].game),
+		Freshest: unlocks[0].when,
+	}, nil
 }
 
 // RandomPastUnlock returns a one-line description of a randomly chosen past
-// unlock for reminisce-style proactive remarks ("remember when..."), or
-// false when RA is disabled or nothing is unlocked.
-func (c AchievementsCollector) RandomPastUnlock(now time.Time) (string, bool) {
+// unlock for reminisce-style proactive remarks ("remember when..."), plus
+// the stable subject used for journal cooldown dedup, or false when RA is
+// disabled or nothing is unlocked.
+func (c AchievementsCollector) RandomPastUnlock(now time.Time) (memory, subject string, ok bool) {
 	if c.Rng == nil || !c.raEnabled() {
-		return "", false
+		return "", "", false
 	}
 	unlocks, err := c.load()
 	if err != nil || len(unlocks) == 0 {
-		return "", false
+		return "", "", false
 	}
 	u := unlocks[c.Rng.Intn(len(unlocks))]
-	memory := fmt.Sprintf("the time the player unlocked %q in %s (%s), %s",
-		u.title, u.game, u.description, RelTime(u.when, now))
+	subject = fmt.Sprintf("%q in %s", u.title, u.game)
+	memory = fmt.Sprintf("the time the player unlocked %s (%s), %s",
+		subject, u.description, RelTime(u.when, now))
 	if tag := difficultyTag(u.points, u.rarity, u.achType); tag != "" {
 		memory += " — " + tag
 	}
-	return memory, true
+	return memory, subject, true
 }

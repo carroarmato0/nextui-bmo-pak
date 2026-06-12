@@ -157,6 +157,9 @@ func TestAchievementsCollector(t *testing.T) {
 	if !s.Freshest.Equal(now.Add(-2 * time.Hour)) {
 		t.Errorf("Freshest = %v, want unlock time", s.Freshest)
 	}
+	if s.Subject != `"Reach Stage 7" in Alleyway` {
+		t.Errorf("section subject = %q", s.Subject)
+	}
 }
 
 func TestAchievementsCollectorDisabled(t *testing.T) {
@@ -177,7 +180,7 @@ func TestAchievementsCollectorMissingCache(t *testing.T) {
 func TestRandomPastUnlock(t *testing.T) {
 	now := time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)
 	c := fixtureRA(t, now, "1")
-	memory, ok := c.RandomPastUnlock(now)
+	memory, subject, ok := c.RandomPastUnlock(now)
 	if !ok {
 		t.Fatal("expected a past unlock")
 	}
@@ -186,8 +189,11 @@ func TestRandomPastUnlock(t *testing.T) {
 			t.Errorf("memory missing %q: %q", want, memory)
 		}
 	}
+	if subject != `"Reach Stage 7" in Alleyway` {
+		t.Errorf("subject = %q", subject)
+	}
 	c2 := fixtureRA(t, now, "0")
-	if _, ok := c2.RandomPastUnlock(now); ok {
+	if _, _, ok := c2.RandomPastUnlock(now); ok {
 		t.Fatal("expected no reminisce when RA disabled")
 	}
 }

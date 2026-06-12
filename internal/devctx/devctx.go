@@ -22,6 +22,7 @@ type Section struct {
 	Key      string
 	Title    string    // uppercase header, e.g. "GAME LIBRARY"
 	Body     string    // formatted plain-text, no markdown
+	Subject  string    // the specific news item, e.g. the newest unlock; "" = the category itself
 	Freshest time.Time // most recent event in the category; zero = evergreen
 }
 

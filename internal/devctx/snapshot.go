@@ -21,7 +21,9 @@ type Builder struct {
 	ttl        time.Duration
 	now        func() time.Time
 	rng        *rand.Rand
-	reminisce  func(now time.Time) (string, bool)
+	reminisce  func(now time.Time) (memory, subject string, ok bool)
+	journal    *Journal
+	quotes     func() []string
 
 	cachedAt       time.Time
 	cachedSections []Section
@@ -55,10 +57,18 @@ func (b *Builder) SetEnabled(dc config.DeviceContext) {
 // SetReminisce installs the reminisce source used by ProactiveNudge
 // (wired to AchievementsCollector.RandomPastUnlock). fn is invoked while
 // the Builder's lock is held; it must not call any Builder method.
-func (b *Builder) SetReminisce(fn func(time.Time) (string, bool)) {
+func (b *Builder) SetReminisce(fn func(time.Time) (string, string, bool)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.reminisce = fn
+}
+
+// SetJournal installs the remark journal consulted for cooldown dedup.
+// A nil journal disables dedup (every candidate is always eligible).
+func (b *Builder) SetJournal(j *Journal) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.journal = j
 }
 
 // SetClock overrides the time source (tests).
