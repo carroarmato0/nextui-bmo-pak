@@ -239,11 +239,6 @@ const (
 	mouthLine
 )
 
-const (
-	exprNeutral  = "neutral"
-	exprSleeping = "sleeping"
-)
-
 func styleForExpression(expr string) expressionStyle {
 	switch normalizeExpression(expr) {
 	case "blink":
