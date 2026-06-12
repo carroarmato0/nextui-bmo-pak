@@ -22,7 +22,7 @@ func TestProactiveNudgeQuoteFallback(t *testing.T) {
 	now := time.Now().UTC()
 	saves := Section{Key: KeySaves, Title: "SAVE FILES", Body: "y", Freshest: now.Add(-1 * time.Hour)}
 	b := nudgeBuilder(t, nil, saves)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-30 * time.Minute), Topic: KeySaves, Subject: KeySaves, Reply: "saves!"},
 		{When: now.Add(-20 * time.Minute), Topic: TopicQuote, Subject: "Check, please!", Reply: "Check, please!"},
 	}})
@@ -40,9 +40,9 @@ func TestProactiveNudgeQuoteFallback(t *testing.T) {
 		if !n.Verbatim || n.Topic != TopicQuote {
 			t.Fatalf("expected a verbatim quote nudge, got %+v", n)
 		}
-		// "Check, please!" sits in the journal window: never re-picked.
+		// "Check, please!" sits in the memory window: never re-picked.
 		if n.Text != "Who wants to play video games?" {
-			t.Fatalf("journaled quote re-picked: %+v", n)
+			t.Fatalf("memorized quote re-picked: %+v", n)
 		}
 		if n.Subject != n.Text {
 			t.Fatalf("quote subject must equal its text: %+v", n)
@@ -57,14 +57,14 @@ func TestProactiveNudgeQuotesExhausted(t *testing.T) {
 	now := time.Now().UTC()
 	saves := Section{Key: KeySaves, Title: "SAVE FILES", Body: "y", Freshest: now.Add(-1 * time.Hour)}
 	b := nudgeBuilder(t, nil, saves)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-30 * time.Minute), Topic: KeySaves, Subject: KeySaves, Reply: "saves!"},
 		{When: now.Add(-20 * time.Minute), Topic: TopicQuote, Subject: "Check, please!", Reply: "Check, please!"},
 	}})
 	b.SetQuotes(func() []string { return []string{"Check, please!"} })
 	for i := 0; i < 100; i++ {
 		if n, ok := b.ProactiveNudge(); ok {
-			t.Fatalf("every quote is journaled: expected silence, got %+v", n)
+			t.Fatalf("every quote is memorized: expected silence, got %+v", n)
 		}
 	}
 }
@@ -73,7 +73,7 @@ func TestProactiveNudgeRealTopicsBeatQuotes(t *testing.T) {
 	now := time.Now().UTC()
 	saves := Section{Key: KeySaves, Title: "SAVE FILES", Body: "y", Freshest: now.Add(-1 * time.Hour)}
 	b := nudgeBuilder(t, nil, saves)
-	b.SetJournal(&Journal{})
+	b.SetMemory(&Memory{})
 	b.SetQuotes(func() []string { return []string{"Check, please!"} })
 	for i := 0; i < 50; i++ {
 		n, ok := b.ProactiveNudge()

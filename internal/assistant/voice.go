@@ -255,7 +255,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 // BMO is not idle — a remark must never barge into a conversation.
 // onSpoken, when non-nil, is invoked with the reply text once TTS has
 // succeeded (i.e. the remark will actually be heard), so the caller can
-// record it in the remark journal.
+// record it in the memory.
 func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken func(reply string)) error {
 	if p == nil || !p.aiModeEnabled() {
 		return nil

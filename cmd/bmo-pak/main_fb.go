@@ -172,15 +172,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}, 30*time.Second, time.Now().UnixNano())
 	deviceCtx.SetEnabled(cfg.DeviceContext)
 	deviceCtx.SetReminisce(achievementsCollector.RandomPastUnlock)
-	// Short-term memory: the remark journal feeds both the nudge picker
+	// Short-term memory: the memory feeds both the nudge picker
 	// (6h cooldown dedup) and the RECENT REMARKS prompt block. A corrupt
 	// file (hard power-off mid-write) just means starting empty.
-	journalPath := filepath.Join(homeDir, "remarks.json")
-	journal, jerr := devctx.LoadJournal(journalPath)
-	if jerr != nil {
-		logger.Warnf("remark journal unreadable, starting empty: %v", jerr)
+	memoryPath := filepath.Join(homeDir, "memory.json")
+	memory, merr := devctx.LoadMemory(memoryPath)
+	if merr != nil {
+		logger.Warnf("memory unreadable, starting empty: %v", merr)
 	}
-	deviceCtx.SetJournal(journal)
+	deviceCtx.SetMemory(memory)
 	quotesPath := config.QuotesPath(homeDir)
 	quotesContent, qerr := config.EnsurePromptFile(quotesPath, config.DefaultQuotes)
 	if qerr != nil {
@@ -227,7 +227,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			// be tuned without restarting the pak.
 			audioPipeline.SetTTSInstructionsSource(func() string { return readPromptFile(voicePath) })
 			audioPipeline.SetSystemPromptSource(func() string {
-				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot(), journal.PromptBlock(time.Now().UTC()))
+				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot(), memory.PromptBlock(time.Now().UTC()))
 			})
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels)
 		}
@@ -414,8 +414,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					remarkPipeline := audioPipeline
 					go func() {
 						record := func(reply string) {
-							if err := journal.Append(devctx.RemarkEntry{When: time.Now().UTC(), Topic: n.Topic, Subject: n.Subject, Reply: reply}); err != nil {
-								logger.Warnf("remark journal save: %v", err)
+							if err := memory.Append(devctx.MemoryEntry{When: time.Now().UTC(), Topic: n.Topic, Subject: n.Subject, Reply: reply}); err != nil {
+								logger.Warnf("memory save: %v", err)
 							}
 						}
 						var err error

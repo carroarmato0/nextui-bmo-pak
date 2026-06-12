@@ -22,7 +22,7 @@ type Builder struct {
 	now        func() time.Time
 	rng        *rand.Rand
 	reminisce  func(now time.Time) (memory, subject string, ok bool)
-	journal    *Journal
+	memory     *Memory
 	quotes     func() []string
 
 	cachedAt       time.Time
@@ -63,12 +63,12 @@ func (b *Builder) SetReminisce(fn func(time.Time) (string, string, bool)) {
 	b.reminisce = fn
 }
 
-// SetJournal installs the remark journal consulted for cooldown dedup.
-// A nil journal disables dedup (every candidate is always eligible).
-func (b *Builder) SetJournal(j *Journal) {
+// SetMemory installs the memory consulted for cooldown dedup.
+// A nil memory disables dedup (every candidate is always eligible).
+func (b *Builder) SetMemory(m *Memory) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.journal = j
+	b.memory = m
 }
 
 // SetClock overrides the time source (tests).

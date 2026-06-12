@@ -26,7 +26,7 @@ var nudgeTopics = map[string]string{
 
 // Nudge is a picked proactive remark: either a stage direction for the chat
 // model or (Verbatim) a line to speak exactly as-is, plus the identity
-// recorded in the remark journal once it has actually been spoken.
+// recorded in the memory once it has actually been spoken.
 type Nudge struct {
 	Text     string
 	Topic    string
@@ -34,7 +34,7 @@ type Nudge struct {
 	Verbatim bool
 }
 
-// subjectOf is the journal dedup identity of a section: the specific news
+// subjectOf is the memory dedup identity of a section: the specific news
 // item when the collector reports one (e.g. the newest achievement),
 // otherwise the whole category.
 func subjectOf(s Section) string {
@@ -57,7 +57,7 @@ func (b *Builder) ProactiveNudge() (Nudge, bool) {
 	sections, now := b.sectionsLocked()
 
 	onCooldown := func(subject string) bool {
-		last := b.journal.LastRemarkedAt(subject)
+		last := b.memory.LastRemarkedAt(subject)
 		return !last.IsZero() && now.Sub(last) < remarkCooldown
 	}
 
@@ -115,7 +115,7 @@ func (b *Builder) ProactiveNudge() (Nudge, bool) {
 }
 
 // quoteNudge rolls the verbatim-quote fallback: one time in three, pick a
-// random quote not present in the journal window. Quotes are spice, not a
+// random quote not present in the memory window. Quotes are spice, not a
 // guarantee that every proactive cycle makes noise.
 func (b *Builder) quoteNudge() (Nudge, bool) {
 	if b.quotes == nil || b.rng.Intn(3) != 0 {
@@ -123,7 +123,7 @@ func (b *Builder) quoteNudge() (Nudge, bool) {
 	}
 	var candidates []string
 	for _, q := range b.quotes() {
-		if !b.journal.Contains(q) {
+		if !b.memory.Contains(q) {
 			candidates = append(candidates, q)
 		}
 	}

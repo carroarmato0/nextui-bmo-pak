@@ -242,7 +242,7 @@ func (c AchievementsCollector) Collect(now time.Time) (Section, error) {
 
 // RandomPastUnlock returns a one-line description of a randomly chosen past
 // unlock for reminisce-style proactive remarks ("remember when..."), plus
-// the stable subject used for journal cooldown dedup, or false when RA is
+// the stable subject used for memory cooldown dedup, or false when RA is
 // disabled or nothing is unlocked.
 func (c AchievementsCollector) RandomPastUnlock(now time.Time) (memory, subject string, ok bool) {
 	if c.Rng == nil || !c.raEnabled() {

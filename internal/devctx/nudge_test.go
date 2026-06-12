@@ -14,7 +14,7 @@ func nudgeBuilder(t *testing.T, reminisce func(time.Time) (string, string, bool)
 	}
 	b, _ := testBuilder(collectors...)
 	// Pin the builder clock to the same wall-clock instant the cooldown
-	// tests anchor their journal entries and section freshness to, so
+	// tests anchor their memory entries and section freshness to, so
 	// relative-time math (6h cooldown, 24h fresh window) lines up.
 	now := time.Now().UTC()
 	b.SetClock(func() time.Time { return now })
@@ -116,7 +116,7 @@ func TestProactiveNudgeSkipsSubjectsOnCooldown(t *testing.T) {
 		Subject: `"Moon Presence" in Deadeus`, Freshest: now.Add(-30 * time.Minute)}
 	saves := Section{Key: KeySaves, Title: "SAVE FILES", Body: "y", Freshest: now.Add(-1 * time.Hour)}
 	b := nudgeBuilder(t, nil, ach, saves)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-10 * time.Minute), Topic: KeyAchievements, Subject: `"Moon Presence" in Deadeus`, Reply: "wow"},
 	}})
 	// Moon Presence was just remarked: only saves may be picked.
@@ -136,7 +136,7 @@ func TestProactiveNudgeCooldownExpires(t *testing.T) {
 	ach := Section{Key: KeyAchievements, Title: "RETROACHIEVEMENTS", Body: "x",
 		Subject: `"Moon Presence" in Deadeus`, Freshest: now.Add(-10 * time.Hour)}
 	b := nudgeBuilder(t, nil, ach)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-7 * time.Hour), Topic: KeyAchievements, Subject: `"Moon Presence" in Deadeus`, Reply: "wow"},
 	}})
 	if _, ok := b.ProactiveNudge(); !ok {
@@ -150,7 +150,7 @@ func TestProactiveNudgeNewUnlockEligibleDespiteOldRemark(t *testing.T) {
 	ach := Section{Key: KeyAchievements, Title: "RETROACHIEVEMENTS", Body: "x",
 		Subject: `"Knife Party" in Deadeus`, Freshest: now.Add(-5 * time.Minute)}
 	b := nudgeBuilder(t, nil, ach)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-20 * time.Minute), Topic: KeyAchievements, Subject: `"Moon Presence" in Deadeus`, Reply: "wow"},
 	}})
 	n, ok := b.ProactiveNudge()
@@ -163,7 +163,7 @@ func TestProactiveNudgeAllOnCooldownIsSilent(t *testing.T) {
 	now := time.Now().UTC()
 	saves := Section{Key: KeySaves, Title: "SAVE FILES", Body: "y", Freshest: now.Add(-1 * time.Hour)}
 	b := nudgeBuilder(t, nil, saves)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-30 * time.Minute), Topic: KeySaves, Subject: KeySaves, Reply: "saves!"},
 	}})
 	// No quotes installed (Task 4): everything on cooldown means silence.
@@ -181,7 +181,7 @@ func TestProactiveNudgeReminisceRespectsCooldown(t *testing.T) {
 	b := nudgeBuilder(t, func(at time.Time) (string, string, bool) {
 		return `the time the player unlocked "Moon Presence" in Deadeus`, `"Moon Presence" in Deadeus`, true
 	}, stale)
-	b.SetJournal(&Journal{entries: []RemarkEntry{
+	b.SetMemory(&Memory{entries: []MemoryEntry{
 		{When: now.Add(-1 * time.Hour), Topic: KeyAchievements, Subject: `"Moon Presence" in Deadeus`, Reply: "wow"},
 	}})
 	// Both the stale section subject and every reminisce roll are on
