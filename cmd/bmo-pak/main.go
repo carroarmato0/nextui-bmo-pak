@@ -19,6 +19,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 	"github.com/carroarmato0/nextui-bmo/internal/devctx"
+	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/carroarmato0/nextui-bmo/internal/hardware"
 	"github.com/carroarmato0/nextui-bmo/internal/input"
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
@@ -234,6 +235,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 	defer screen.Close()
 	logger.Infof("renderer ready: %s", screen.DebugInfo())
+
+	faceLib := face.NewLibrary(config.FacesDir(homeDir))
+	faceLib.SetLogf(logger.Warnf)
+	faceCache := face.NewCache(faceLib)
+	screen.SetFaces(faceCache)
+	// Pre-rasterize current expression synchronously; warm remaining in background.
+	go faceCache.Warm(screen.Size())
 
 	// Navigation is read from raw Linux evdev (internal/input), not SDL's
 	// GameController layer: SDL maps the TrimUI's Nintendo-style face buttons to

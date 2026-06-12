@@ -18,6 +18,12 @@ func VoicePath(homeDir string) string {
 	return filepath.Join(homeDir, "voice.txt")
 }
 
+// FacesDir returns the directory where mod SVG overrides are looked up.
+// The directory may not exist; callers should tolerate that gracefully.
+func FacesDir(homeDir string) string {
+	return filepath.Join(homeDir, "faces")
+}
+
 // EnsurePromptFile guarantees a usable prompt file at path and returns its
 // content. A missing file is created containing def; a blank file is filled
 // with def; a file with content is returned as-is and never overwritten.
