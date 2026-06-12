@@ -78,18 +78,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("validate config: %w", err)
 	}
 
-	// Persona and voice prompts live in plain-text sidecar files: created
-	// with defaults when missing or blank, never overwritten otherwise.
+	// Persona, voice, and quotes prompts use the override-or-default model:
+	// the built-in defaults are the source of truth; an override file is used
+	// only when it exists on disk and is non-blank. The app never creates them.
 	personaPath := config.PersonaPath(homeDir)
 	voicePath := config.VoicePath(homeDir)
-	personaPrompt, err := config.EnsurePromptFile(personaPath, config.DefaultSystemPrompt)
-	if err != nil {
-		return fmt.Errorf("ensure persona file: %w", err)
-	}
-	voicePrompt, err := config.EnsurePromptFile(voicePath, config.DefaultTTSInstructions)
-	if err != nil {
-		return fmt.Errorf("ensure voice file: %w", err)
-	}
+	quotesPath := config.QuotesPath(homeDir)
+	personaPrompt := config.LoadPromptFile(personaPath, config.DefaultSystemPrompt)
+	voicePrompt := config.LoadPromptFile(voicePath, config.DefaultTTSInstructions)
 
 	logPath := filepath.Join(dataRoot, "logs", "BMO.txt")
 	logger, err := observability.NewLogger(logPath, observability.ParseLevel(cfg.LogLevel), stdout)
@@ -121,11 +117,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Infof("log level changed to %s", level)
 	})
 	settingsMenu.SetRestoreDefaultsCallback(func() error {
-		if err := restorePromptDefaults(personaPath, voicePath); err != nil {
-			logger.Warnf("restore prompt defaults: %v", err)
+		if err := config.RemoveOverrides(personaPath, voicePath, quotesPath); err != nil {
+			logger.Warnf("restore defaults: %v", err)
 			return err
 		}
-		logger.Infof("persona and voice prompts restored to defaults")
+		logger.Infof("persona, voice, and quotes restored to built-in defaults")
 		return nil
 	})
 	setActiveMenu := func(menu ui.Menu) { activeMenu = menu }
@@ -176,17 +172,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Warnf("memory unreadable, starting empty: %v", merr)
 	}
 	deviceCtx.SetMemory(memory)
-	quotesPath := config.QuotesPath(homeDir)
-	quotesContent, qerr := config.EnsurePromptFile(quotesPath, config.DefaultQuotes)
-	if qerr != nil {
-		logger.Warnf("ensure quotes file: %v", qerr)
-	}
 	deviceCtx.SetQuotes(func() []string {
-		content := readPromptFile(quotesPath)
-		if content == "" {
-			content = quotesContent
-		}
-		return devctx.ParseQuotes(content)
+		return devctx.ParseQuotes(config.LoadPromptFile(quotesPath, config.DefaultQuotes))
 	})
 	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
 	proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
@@ -216,11 +203,18 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels)
 			audioPipeline.SetLogger(logger)
 			audioPipeline.SetTTSInstructions(voicePrompt)
-			// Re-read both prompt files before each utterance so they can
-			// be tuned without restarting the pak.
-			audioPipeline.SetTTSInstructionsSource(func() string { return readPromptFile(voicePath) })
+			// Re-read both override files before each utterance so they can
+			// be tuned without restarting the pak; absent or blank files fall
+			// back to the built-in defaults.
+			audioPipeline.SetTTSInstructionsSource(func() string {
+				return config.LoadPromptFile(voicePath, config.DefaultTTSInstructions)
+			})
 			audioPipeline.SetSystemPromptSource(func() string {
-				return systemPromptWithContext(readPromptFile(personaPath), deviceCtx.Snapshot(), memory.PromptBlock(time.Now().UTC()))
+				return systemPromptWithContext(
+					config.LoadPromptFile(personaPath, config.DefaultSystemPrompt),
+					deviceCtx.Snapshot(),
+					memory.PromptBlock(time.Now().UTC()),
+				)
 			})
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 		}

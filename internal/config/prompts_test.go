@@ -6,58 +6,51 @@ import (
 	"testing"
 )
 
-func TestEnsurePromptFileCreatesMissing(t *testing.T) {
+func TestLoadPromptFileAbsent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "persona.txt")
-	got, err := EnsurePromptFile(path, "the default")
-	if err != nil {
-		t.Fatalf("EnsurePromptFile() error = %v", err)
-	}
-	if got != "the default" {
-		t.Fatalf("content = %q, want default", got)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("file not created: %v", err)
-	}
-	if string(data) != "the default\n" {
-		t.Fatalf("file content = %q, want default with trailing newline", string(data))
+	if got := LoadPromptFile(path, "default content"); got != "default content" {
+		t.Fatalf("absent file: got %q, want default", got)
 	}
 }
 
-func TestEnsurePromptFileFillsBlank(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "voice.txt")
-	if err := os.WriteFile(path, []byte("  \n\t\n"), 0o600); err != nil {
+func TestLoadPromptFileBlank(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "persona.txt")
+	if err := os.WriteFile(path, []byte("  \n\t"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := EnsurePromptFile(path, "the default")
-	if err != nil {
-		t.Fatalf("EnsurePromptFile() error = %v", err)
-	}
-	if got != "the default" {
-		t.Fatalf("content = %q, want default for blank file", got)
-	}
-	data, _ := os.ReadFile(path)
-	if string(data) != "the default\n" {
-		t.Fatalf("blank file not filled with default: %q", string(data))
+	if got := LoadPromptFile(path, "default content"); got != "default content" {
+		t.Fatalf("blank file: got %q, want default", got)
 	}
 }
 
-func TestEnsurePromptFileKeepsContent(t *testing.T) {
+func TestLoadPromptFileOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "persona.txt")
-	custom := "My custom persona.\n\nWith multiple lines.\n"
-	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(" custom persona \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := EnsurePromptFile(path, "the default")
-	if err != nil {
-		t.Fatalf("EnsurePromptFile() error = %v", err)
+	if got := LoadPromptFile(path, "default content"); got != "custom persona" {
+		t.Fatalf("override: got %q, want trimmed custom content", got)
 	}
-	if got != "My custom persona.\n\nWith multiple lines." {
-		t.Fatalf("content = %q, want trimmed custom content", got)
+}
+
+func TestRemoveOverrides(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "persona.txt")
+	b := filepath.Join(dir, "voice.txt")
+	missing := filepath.Join(dir, "quotes.txt")
+	if err := os.WriteFile(a, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(path)
-	if string(data) != custom {
-		t.Fatalf("existing file was modified: %q", string(data))
+	if err := os.WriteFile(b, []byte("y"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveOverrides(a, b, missing); err != nil {
+		t.Fatalf("RemoveOverrides with missing file: %v", err)
+	}
+	for _, p := range []string{a, b} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("file %s should have been removed", p)
+		}
 	}
 }
 
@@ -67,5 +60,8 @@ func TestPromptPaths(t *testing.T) {
 	}
 	if got := VoicePath("/home/bmo"); got != "/home/bmo/voice.txt" {
 		t.Fatalf("VoicePath = %q", got)
+	}
+	if got := FacesDir("/home/bmo"); got != "/home/bmo/faces" {
+		t.Fatalf("FacesDir = %q", got)
 	}
 }
