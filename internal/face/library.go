@@ -58,7 +58,8 @@ func (l *Library) Bytes(expr string) ([]byte, bool) {
 				continue
 			}
 			if len(bytes.TrimSpace(data)) == 0 {
-				continue // blank file → fall through to embedded
+				l.logf("face: override %s.svg is blank; using default", name)
+				continue
 			}
 			return data, true
 		}
