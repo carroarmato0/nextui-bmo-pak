@@ -16,8 +16,9 @@ construction artifacts are clearly visible: lumpy mouth edges, stepped eyebrows.
 1. Smooth, anti-aliased face rendering at any resolution.
 2. Expressions defined as SVG files — verifiable through code and math, and editable
    by humans and Claude alike (the bmo-face skill already speaks this language).
-3. Moddable: users replace SVG files in a `faces/` folder on disk (plus persona and
-   voice) — no compilation.
+3. Moddable: users create a `faces/` folder on disk with replacement SVGs (plus
+   persona and voice) — no compilation. The app itself never writes this folder;
+   deploys always carry the current embedded assets.
 4. Keep the amplitude-driven speaking mouth animation for the default pack.
 5. No new CGO/C dependencies; the tg5040/tg5050 container cross-build stays untouched.
 
@@ -36,17 +37,20 @@ construction artifacts are clearly visible: lumpy mouth edges, stepped eyebrows.
 | Speaking mouth | Quantized: Go-templated SVG rendered at 12 openness levels |
 | SVG file contents | Full scene (body + screen + face), 280×210 viewBox |
 | 16:9 vs 4:3 | Non-uniform stretch to fill the screen (matches current behavior) |
-| Asset location | `faces/` on disk in the pak; `go:embed` copies as fallback |
+| Asset location | `go:embed` is the source of truth; optional `faces/` dir on disk overrides per file |
 | Mod validation | Parse-or-fallback only; geometry tests are internal CI QA |
 
 ## Architecture
 
 New package `internal/face`:
 
-- **`face.Library`** — resolves an expression name to SVG bytes.
-  Lookup order: `faces/<name>.svg` on disk → `faces/<canonical>.svg` on disk
-  (via the existing `normalizeExpression` aliasing, e.g. `laugh` → `smile`) →
-  embedded default. Per-file fallback: a mod may override a single expression.
+- **`face.Library`** — resolves an expression name to SVG bytes. The default
+  assets live in the binary via `go:embed` (source of truth — a deploy always
+  carries the current versions). If a `faces/` directory exists next to the pak
+  binary, it is checked first, per file:
+  `faces/<name>.svg` → `faces/<canonical>.svg` (via the existing
+  `normalizeExpression` aliasing, e.g. `laugh` → `smile`) → embedded default.
+  A mod may override a single expression; the app never creates or writes `faces/`.
 - **`face.Cache`** — rasterizes a parsed SVG into an ARGB8888 pixel buffer at the
   current output resolution and caches it per `(expression, W, H)`. A resolution
   change (renderer `SyncSize`) invalidates the cache.
@@ -68,12 +72,16 @@ untouched.
 
 ## Asset Format & Modding Contract
 
+Embedded in the binary (`internal/face/assets/`), one per canonical expression:
+
 ```
-faces/
-  neutral.svg     blink.svg      listening.svg   thinking.svg
-  speaking.svg    sleeping.svg   concerned.svg   smile.svg
-  README.md
+neutral.svg     blink.svg      listening.svg   thinking.svg
+speaking.svg    sleeping.svg   concerned.svg   smile.svg
 ```
+
+A modder creates an optional `faces/` directory next to the pak binary containing
+any subset of these filenames (or finer-grained alias names like `laugh.svg`).
+The app never ships or writes that directory.
 
 - Full scene per file: teal body `#4ECBA8`, screen interior `#90e5c8`, face elements —
   exactly the bmo-face skill's 280×210 boilerplate. WYSIWYG in any SVG editor.
@@ -81,7 +89,7 @@ faces/
   mouth constructions are rewritten as explicit paths (teeth band = path with rounded
   top corners; tongue = upper half-ellipse, which never crosses the mouth's rounded
   corners at canonical sizes, so the clip was a no-op). Same visible geometry.
-- Supported SVG subset (documented in `faces/README.md` for modders): `path` (all
+- Supported SVG subset (documented in `docs/FACES.md` for modders): `path` (all
   commands), `rect`, `circle`, `ellipse`, `line`, `polygon`, `polyline`, `g`,
   `defs`/`use`, transforms, fill/stroke/opacity, linear/radial gradients.
   **Not supported:** `clipPath`, filters, masks, text, CSS classes, `pattern`.
@@ -90,7 +98,7 @@ faces/
 
 ## Speaking Mouth (Default-Pack Special Case)
 
-- The shipped `speaking.svg` is a Go text template with one parameter: mouth
+- The embedded `speaking.svg` is a Go text template with one parameter: mouth
   openness ∈ [0,1], controlling the mouth-band height within the canonical
   y=101–144 / x=81–165 region.
 - At warm-up it is executed at 12 levels. Level 0 renders the full base frame; for
@@ -99,8 +107,8 @@ faces/
 - Per frame, `SpeakAmplitude` maps through the existing sqrt curve to the nearest
   level; the strip is blitted over the base.
 
-**Self-detection:** at load time, `speaking.svg` is inspected for template action
-markers (`{{`):
+**Self-detection:** when a disk override `faces/speaking.svg` exists, it is
+inspected at load time for template action markers (`{{`):
 
 1. Markers present → execute at all 12 levels; all parse as valid SVG → animated.
 2. No markers, or execution/parse fails → treat as a plain **static** SVG during
@@ -118,7 +126,7 @@ markers (`{{`):
 
 ## Testing (internal QA — mod files are never held to these)
 
-- Every shipped/embedded asset parses and rasterizes at 1024×768 and 1280×720,
+- Every embedded asset parses and rasterizes at 1024×768 and 1280×720,
   producing non-blank output.
 - Geometry assertions from the bmo-face proportions table: sampled pixels at eye
   centers (20.3% / 79.2% width, 37.4% height of screen interior) are dark
