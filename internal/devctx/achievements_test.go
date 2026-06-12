@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const reachStage7Subject = `"Reach Stage 7" in Alleyway`
+
 // writeCacheFile encodes v as an rcheevos offline cache file: 4-byte LE
 // length prefix + JSON + fake trailing checksum.
 func writeCacheFile(t *testing.T, path string, v any) {
@@ -136,7 +138,7 @@ func TestAchievementsCollector(t *testing.T) {
 		t.Fatalf("unexpected section identity: %+v", s)
 	}
 	for _, want := range []string{
-		`"Reach Stage 7" in Alleyway`,
+		reachStage7Subject,
 		"Reach stage 7",
 		"2 hours ago",
 		"easy — most players have this",
@@ -157,7 +159,7 @@ func TestAchievementsCollector(t *testing.T) {
 	if !s.Freshest.Equal(now.Add(-2 * time.Hour)) {
 		t.Errorf("Freshest = %v, want unlock time", s.Freshest)
 	}
-	if s.Subject != `"Reach Stage 7" in Alleyway` {
+	if s.Subject != reachStage7Subject {
 		t.Errorf("section subject = %q", s.Subject)
 	}
 }
@@ -189,7 +191,7 @@ func TestRandomPastUnlock(t *testing.T) {
 			t.Errorf("memory missing %q: %q", want, memory)
 		}
 	}
-	if subject != `"Reach Stage 7" in Alleyway` {
+	if subject != reachStage7Subject {
 		t.Errorf("subject = %q", subject)
 	}
 	c2 := fixtureRA(t, now, "0")
