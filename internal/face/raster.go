@@ -26,12 +26,19 @@ func Rasterize(svg []byte, w, h int) ([]uint32, error) {
 
 	out := make([]uint32, w*h)
 	pix := img.Pix
+	anyOpaque := false
 	for i := 0; i < w*h; i++ {
 		r := uint32(pix[i*4])
 		g := uint32(pix[i*4+1])
 		b := uint32(pix[i*4+2])
 		a := uint32(pix[i*4+3])
 		out[i] = a<<24 | r<<16 | g<<8 | b
+		if a > 0 {
+			anyOpaque = true
+		}
+	}
+	if !anyOpaque {
+		return nil, fmt.Errorf("SVG rendered blank (no opaque pixels)")
 	}
 	return out, nil
 }

@@ -60,3 +60,11 @@ func TestRasterizeInvalidSize(t *testing.T) {
 		t.Fatal("expected error for zero width")
 	}
 }
+
+func TestRasterizeGarbageInput(t *testing.T) {
+	// oksvg silently parses non-XML as an empty icon; blank-output guard must catch it.
+	_, err := Rasterize([]byte("not an svg at all"), 100, 100)
+	if err == nil {
+		t.Fatal("expected error for garbage input")
+	}
+}
