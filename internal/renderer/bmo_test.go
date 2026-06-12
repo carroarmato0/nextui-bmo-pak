@@ -1,5 +1,3 @@
-//go:build !cgo
-
 package renderer
 
 import "testing"
@@ -63,7 +61,7 @@ func TestTongueAnchoredBelowMouthOpening(t *testing.T) {
 	}
 	for _, tt := range sizes {
 		mty := int32(100)
-		_, ty, _, th := tongueGeometry(120, mty, tt.mw, tt.mh)
+		ty, _, th := tongueGeometry(mty, tt.mw, tt.mh)
 		mouthBottom := mty + tt.mh
 		if ty+th < mouthBottom {
 			t.Fatalf("%s: tongue root %d must reach the mouth bottom %d so it reads as coming from below", tt.name, ty+th, mouthBottom)

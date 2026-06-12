@@ -50,6 +50,6 @@ linters:
       # run() accumulates environment setup, named closure event-handlers, and the
       # main SDL loop in a single function. A proper fix requires extracting closures
       # into an appState struct — a separate architectural refactoring task.
-      - path: "cmd/bmo-pak/main_sdl\\.go"
+      - path: "cmd/bmo-pak/main\\.go"
         text: "cognitive complexity.*of func `run`"
         linters: [gocognit]

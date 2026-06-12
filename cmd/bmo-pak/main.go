@@ -1,5 +1,3 @@
-//go:build !cgo
-
 package main
 
 import (
@@ -27,7 +25,10 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 	"github.com/carroarmato0/nextui-bmo/internal/renderer"
 	"github.com/carroarmato0/nextui-bmo/internal/ui"
+	"github.com/veandco/go-sdl2/sdl"
 )
+
+const menuTitleSettings = "SETTINGS"
 
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
@@ -35,30 +36,14 @@ func main() {
 	}
 }
 
-// acquireLock tries to take an exclusive advisory lock on a file so that
-// only one instance of the pak runs at a time. It returns a release function.
-func acquireLock(path string) (release func(), ok bool) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return func() {}, true // can't create lock file — allow startup
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		return nil, false
-	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
-		_ = os.Remove(path)
-	}, true
-}
-
 func run(stdout io.Writer, stderr io.Writer) error {
 	_ = stderr
 
-	platform := strings.TrimSpace(os.Getenv("BMO_PLATFORM"))
+	platformHint := strings.TrimSpace(os.Getenv("BMO_PLATFORM"))
+	hardwareProfile := hardware.Detect(platformHint)
+	platform := hardwareProfile.Platform
 	if platform == "" {
-		platform = detectPlatform()
+		platform = hardware.DefaultPlatform
 	}
 
 	dataRoot := strings.TrimSpace(os.Getenv("BMO_DATA_ROOT"))
@@ -116,6 +101,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.RegisterSecret(secret)
 	}
 
+	logger.Infof("hardware profile: %s", hardwareProfile.Summary())
+	logger.Infof("hardware availability: framebuffer=%t input=%t audio=%t", hardwareProfile.FramebufferAvailable(), hardwareProfile.InputAvailable(), hardwareProfile.AudioAvailable())
 	logger.Infof("BMO starting (platform=%s mode=%s trigger=%s)", platform, cfg.Mode, cfg.InputTrigger)
 	logger.Debugf("config path: %s", cfgPath)
 	logger.Debugf("log path: %s", logPath)
@@ -126,9 +113,21 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	logger.Infof("initial screen: %s", initialScreen)
 
 	var activeMenu ui.Menu
+	providerMenu := ui.NewProviderMenu(cfg)
 	settingsMenu := ui.NewSettingsMenu(cfg)
+	settingsMenu.SetLogLevelCallback(func(level string) {
+		logger.SetLevel(observability.ParseLevel(level))
+		logger.Infof("log level changed to %s", level)
+	})
+	settingsMenu.SetRestoreDefaultsCallback(func() error {
+		if err := restorePromptDefaults(personaPath, voicePath); err != nil {
+			logger.Warnf("restore prompt defaults: %v", err)
+			return err
+		}
+		logger.Infof("persona and voice prompts restored to defaults")
+		return nil
+	})
 	setActiveMenu := func(menu ui.Menu) { activeMenu = menu }
-
 	if initialScreen == ui.ScreenSetup {
 		logger.Infof("setup flow required; press MENU to exit to NextUI, Start to open settings, Y for AI setup")
 	}
@@ -139,11 +138,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	machine.RecordInteraction(time.Now().UTC())
 	logger.Infof("initial state: %s", machine.State())
 	logger.Debugf("assistant snapshot: %+v", machine.Snapshot())
-
-	hardwareProfile := hardware.Detect(platform)
-	logger.Infof("hardware: %s", hardwareProfile.Summary())
-	logger.Infof("hardware availability: framebuffer=%t input=%t audio=%t",
-		hardwareProfile.FramebufferAvailable(), hardwareProfile.InputAvailable(), hardwareProfile.AudioAvailable())
 
 	// Device awareness: read-only collectors feeding the DEVICE AWARENESS
 	// block of the system prompt. BMO_SDCARD_ROOT overrides the SD card
@@ -203,8 +197,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() {
-		logger.Debugf("audio devices: capture=%s playback=%s alsa=%s",
-			hardwareProfile.AudioCapture, hardwareProfile.AudioPlayback, hardwareProfile.AudioALSAName)
 		audioCfg := audio.DefaultConfig(hardwareProfile)
 		audioSession = audio.NewSession(audioCfg)
 		audioRouter = audio.NewCaptureRouter(audioSession, audio.BytesPerSecond(audioCfg.SampleRate, audioCfg.Channels, audio.BytesPerSampleS16LE)/2)
@@ -241,7 +233,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer screen.Close()
+	logger.Infof("renderer ready: %s", screen.DebugInfo())
 
+	// Navigation is read from raw Linux evdev (internal/input), not SDL's
+	// GameController layer: SDL maps the TrimUI's Nintendo-style face buttons to
+	// Xbox semantics (swapping A/B and reporting Select as Start), whereas the
+	// evdev codes match the physical labels and are shared with the PTT path.
 	var navCh <-chan input.NavAction
 	if nr, nerr := input.NewNavReader(hardwareProfile.InputEvent); nerr != nil {
 		logger.Warnf("nav reader unavailable: %v", nerr)
@@ -284,20 +281,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	running := true // declared here so handleNav can close over it
 
-	settingsMenu.SetLogLevelCallback(func(level string) {
-		logger.SetLevel(observability.ParseLevel(level))
-		logger.Infof("log level changed to %s", level)
-	})
-
-	settingsMenu.SetRestoreDefaultsCallback(func() error {
-		if err := restorePromptDefaults(personaPath, voicePath); err != nil {
-			logger.Warnf("restore prompt defaults: %v", err)
-			return err
-		}
-		logger.Infof("persona and voice prompts restored to defaults")
-		return nil
-	})
-
+	// handleNav maps decoded evdev navigation intents to menu/overlay actions.
+	// Physical button layout (TrimUI, confirmed via getevent): A=BTN_EAST(305)
+	// is confirm/PTT (handled by the PTT path), B=BTN_SOUTH(304) cancels,
+	// Start opens settings, Y=BTN_NORTH(307) opens AI setup, Menu=BTN_MODE(316)
+	// exits to NextUI, D-pad navigates.
 	handleNav := func(action input.NavAction) {
 		// MENU (BTN_MODE) always exits to NextUI.
 		if action == input.NavMenu {
@@ -305,12 +293,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
-		// B closes the settings overlay when open; interrupts BMO mid-speech;
-		// exits to NextUI otherwise.
+		// B closes an open overlay; interrupts BMO mid-speech; exits otherwise.
 		if action == input.NavCancel {
 			if activeMenu != nil {
 				setActiveMenu(nil)
-			} else if audioPipeline.InterruptSpeech() {
+			} else if audioPipeline != nil && audioPipeline.InterruptSpeech() {
 				logger.Infof("speech interrupted by B press")
 			} else {
 				running = false
@@ -318,13 +305,23 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
-		// Start opens/closes the settings overlay.
-		// Values are already auto-saved on change, so just close.
+		// Start opens/closes the settings overlay. Values auto-save on change,
+		// so closing just closes.
 		if action == input.NavSave {
 			if activeMenu != nil {
 				setActiveMenu(nil)
 			} else {
 				setActiveMenu(settingsMenu)
+			}
+			return
+		}
+
+		// Y opens/closes the AI setup overlay.
+		if action == input.NavProvider {
+			if activeMenu == providerMenu {
+				setActiveMenu(nil)
+			} else {
+				setActiveMenu(providerMenu)
 			}
 			return
 		}
@@ -366,7 +363,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	scheduler := assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
-	var errorSince time.Time // tracks when error state was entered for auto-recovery
+	var errorSince time.Time
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -381,6 +378,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		default:
 		}
 
+		// Drain decoded navigation intents from the evdev reader.
 	drainNav:
 		for {
 			select {
@@ -392,6 +390,19 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				handleNav(action)
 			default:
 				break drainNav
+			}
+		}
+
+		// Pump SDL's event queue so the window stays responsive and display
+		// resizes are picked up. Navigation input comes from evdev (above).
+		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			switch ev := event.(type) {
+			case *sdl.QuitEvent:
+				running = false
+			case *sdl.WindowEvent:
+				if ev.Event == sdl.WINDOWEVENT_SIZE_CHANGED || ev.Event == sdl.WINDOWEVENT_RESIZED {
+					screen.SyncSize()
+				}
 			}
 		}
 
@@ -463,7 +474,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(assistant.ExpressionSleeping)
 		}
 		if activeMenu != nil {
-			expr = string(assistant.ExpressionNeutral)
+			if activeMenu.Title() == menuTitleSettings {
+				expr = string(assistant.ExpressionSmile)
+			} else {
+				expr = string(assistant.ExpressionConcerned)
+			}
 		}
 		machine.SetExpression(assistant.Expression(expr))
 
@@ -496,7 +511,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		if err := screen.Draw(frame); err != nil {
 			return fmt.Errorf("draw frame: %w", err)
 		}
-		time.Sleep(frameSleep(snap.Current, activeMenu != nil))
+		sdl.Delay(16)
 	}
 
 	logger.Infof("BMO shutting down")
@@ -525,29 +540,20 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 	}
 }
 
-// frameSleep returns how long to sleep after drawing a frame.
-// Active and menu states use 30fps for smooth feedback; idle uses 15fps
-// (animations are time-based so they look the same at any frame rate);
-// sleeping uses 5fps since the scene is nearly static.
-func frameSleep(state assistant.State, menuOpen bool) time.Duration {
-	if menuOpen {
-		return 50 * time.Millisecond // 20fps — responsive to button input
+func acquireLock(path string) (release func(), ok bool) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return func() {}, true
 	}
-	switch state {
-	case assistant.StateListening, assistant.StateThinking, assistant.StateSpeaking:
-		return 33 * time.Millisecond // 30fps — mouth animation needs decent sample rate
-	case assistant.StateSleeping:
-		return 500 * time.Millisecond // 2fps — nearly static, save power
-	default:
-		return 100 * time.Millisecond // 10fps — plenty for gentle idle animations
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, false
 	}
-}
-
-func detectPlatform() string {
-	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil && strings.Contains(strings.ToUpper(string(data)), "TG5050") {
-		return "tg5050"
-	}
-	return "tg5040"
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		_ = os.Remove(path)
+	}, true
 }
 
 func mustHomeDir() string {

@@ -22,6 +22,7 @@ const (
 	NavCancel                   // B/East or Select — close overlay or exit
 	NavSave                     // Start — save / open settings
 	NavMenu                     // Mode/Guide — exit to NextUI
+	NavProvider                 // Y/North — open AI setup menu
 )
 
 const (
@@ -163,6 +164,8 @@ func navActionForKey(code uint16) (NavAction, bool) {
 	switch code {
 	case 304: // BTN_SOUTH / physical B — cancel/exit
 		return NavCancel, true
+	case 307: // BTN_NORTH / physical Y — open AI setup
+		return NavProvider, true
 	case 315: // BTN_START
 		return NavSave, true
 	case 316: // BTN_MODE / menu button
