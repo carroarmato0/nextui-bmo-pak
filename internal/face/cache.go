@@ -101,7 +101,7 @@ func (c *Cache) Speak(t float64, w, h int) ([]uint32, *Strip) {
 
 // resizeLocked clears the cache if the target size has changed.
 func (c *Cache) resizeLocked(w, h int) {
-	if c.w == w && c.h == h {
+	if c.w == w && c.h == h && c.frames != nil {
 		return
 	}
 	c.w, c.h = w, h

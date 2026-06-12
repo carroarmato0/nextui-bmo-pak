@@ -26,6 +26,18 @@ func TestCacheFrameResizeInvalidates(t *testing.T) {
 	}
 }
 
+func TestCacheFrameAliasReuse(t *testing.T) {
+	c := NewCache(NewLibrary(""))
+	a := c.Frame("idle", 320, 240)
+	b := c.Frame(ExprNeutral, 320, 240)
+	if a == nil || b == nil {
+		t.Fatal("both alias and canonical must return non-nil")
+	}
+	if &a[0] != &b[0] {
+		t.Fatal("alias and canonical must share the same cached buffer")
+	}
+}
+
 func TestCacheSpeakAnimated(t *testing.T) {
 	c := NewCache(NewLibrary(""))
 	base, strip := c.Speak(0, 320, 240)
@@ -70,4 +82,6 @@ func TestCacheCorruptOverrideFallsBack(t *testing.T) {
 	if len(buf) != 320*240 {
 		t.Fatalf("expected %d pixels, got %d", 320*240, len(buf))
 	}
+	// The embedded neutral has dark eyes — confirm we got the real fallback, not zeros.
+	assertColor(t, buf, 320, 240, 63, 78, 0x1a, 0x1a, 0x1a, "fallback neutral eye")
 }

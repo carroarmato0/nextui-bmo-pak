@@ -87,8 +87,8 @@ func renderSpeakSVG(tmplData []byte, t float64) ([]byte, error) {
 func speakBand(w, h int) (x0, y0, x1, y1 int) {
 	x0 = int(75.0 / 280.0 * float64(w))
 	y0 = int(96.0 / 210.0 * float64(h))
-	x1 = int(171.0 / 280.0 * float64(w))
-	y1 = int(150.0 / 210.0 * float64(h))
+	x1 = int(171.0/280.0*float64(w)) + 1
+	y1 = int(150.0/210.0*float64(h)) + 1
 	if x1 > w {
 		x1 = w
 	}
