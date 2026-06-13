@@ -32,6 +32,7 @@ type platformGroup struct {
 // platformGroups scans root for platform subdirectories, groups them by their
 // baseName, counts non-hidden files in each group, skips groups with zero
 // files, and returns the remainder sorted descending by total file count.
+// Groups with equal file counts retain lexicographic directory order.
 // The only hard error is when root itself cannot be read.
 func platformGroups(root string) ([]platformGroup, error) {
 	entries, err := os.ReadDir(root)

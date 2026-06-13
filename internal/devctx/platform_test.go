@@ -43,9 +43,10 @@ func writeFile(t *testing.T, path string) {
 func TestPlatformGroups(t *testing.T) {
 	root := t.TempDir()
 
-	// Game Boy Advance (GBA): 2 files
+	// Game Boy Advance (GBA): 2 files (plus a hidden file that should not be counted)
 	writeFile(t, filepath.Join(root, "Game Boy Advance (GBA)", "Pokemon Red (USA).gba"))
 	writeFile(t, filepath.Join(root, "Game Boy Advance (GBA)", "Castlevania.gba"))
+	writeFile(t, filepath.Join(root, "Game Boy Advance (GBA)", ".hidden_file"))
 	// Game Boy Advance (MGBA): 3 files (one same name, two unique)
 	writeFile(t, filepath.Join(root, "Game Boy Advance (MGBA)", "Pokemon Red (USA).gba"))
 	writeFile(t, filepath.Join(root, "Game Boy Advance (MGBA)", "Metroid Fusion.gba"))
@@ -80,6 +81,16 @@ func TestPlatformGroups(t *testing.T) {
 	}
 	if len(gba.Dirs) != 2 {
 		t.Errorf("groups[0].Dirs len = %d, want 2", len(gba.Dirs))
+	}
+	// Verify the actual paths are correct (lexicographic order: GBA before MGBA)
+	wantGBADirs := []string{
+		filepath.Join(root, "Game Boy Advance (GBA)"),
+		filepath.Join(root, "Game Boy Advance (MGBA)"),
+	}
+	for i, d := range gba.Dirs {
+		if d != wantGBADirs[i] {
+			t.Errorf("groups[0].Dirs[%d] = %q, want %q", i, d, wantGBADirs[i])
+		}
 	}
 
 	// Second group: Pico-8 (1 file)
