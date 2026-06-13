@@ -19,6 +19,7 @@ func TestRoundTrip(t *testing.T) {
 	want.Chat = Provider{Name: "openai-compatible", Model: "gpt-4o-mini", APIKey: "secret-chat"}
 	want.TTS = Provider{Name: "openai-compatible", Model: "tts-1", Voice: "alloy", APIKey: "secret-tts"}
 	want.PTTButtons = []string{"BTN_TL2", "BTN_TR2"}
+	want.LogSystemPrompt = true
 
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -34,6 +35,9 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if got.STT.APIKey != want.STT.APIKey || got.Chat.APIKey != want.Chat.APIKey || got.TTS.APIKey != want.TTS.APIKey || got.TTS.Voice != want.TTS.Voice || len(got.PTTButtons) != len(want.PTTButtons) || got.PTTButtons[0] != want.PTTButtons[0] || got.PTTButtons[1] != want.PTTButtons[1] {
 		t.Fatalf("provider fields lost: got %+v want %+v", got, want)
+	}
+	if got.LogSystemPrompt != want.LogSystemPrompt {
+		t.Fatalf("LogSystemPrompt lost: got %v want %v", got.LogSystemPrompt, want.LogSystemPrompt)
 	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

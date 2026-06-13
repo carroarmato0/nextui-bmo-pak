@@ -119,6 +119,7 @@ type Config struct {
 	DeviceContext DeviceContext `json:"device_context"`
 	ProactiveTalk string        `json:"proactive_talk"`
 	LibraryDetail string        `json:"library_detail"`
+	LogSystemPrompt bool        `json:"log_system_prompt,omitempty"`
 }
 
 func Default() Config {
