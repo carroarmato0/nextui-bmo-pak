@@ -40,6 +40,7 @@ type VoicePipeline struct {
 	ttsVoice        string
 	ttsInstructions string
 	systemPrompt    string
+	logSystemPrompt bool
 
 	// ttsInstructionsSource and systemPromptSource, when set, are consulted
 	// before each utterance so the prompts can be tuned at runtime (e.g.
@@ -107,6 +108,14 @@ func (p *VoicePipeline) SetTTSInstructions(instructions string) {
 func (p *VoicePipeline) SetTTSInstructionsSource(source func() string) {
 	if p != nil {
 		p.ttsInstructionsSource = source
+	}
+}
+
+// SetLogSystemPrompt controls whether system prompt and TTS instructions are
+// written to the debug log on each ProcessBatch call.
+func (p *VoicePipeline) SetLogSystemPrompt(v bool) {
+	if p != nil {
+		p.logSystemPrompt = v
 	}
 }
 
@@ -197,6 +206,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.machine.Transition(EventThink)
 	}
 
+	if p.logger != nil && p.logSystemPrompt {
+		p.logger.Debugf("pipeline system prompt: %q", p.currentSystemPrompt())
+	}
+
 	chatStart := time.Now()
 	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
 		Model:        p.chatModel,
@@ -219,6 +232,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 	if p.logger != nil {
 		p.logger.Debugf("pipeline reply: %q", reply)
+	}
+
+	if p.logger != nil && p.logSystemPrompt {
+		p.logger.Debugf("pipeline TTS instructions: %q", p.currentTTSInstructions())
 	}
 
 	ttsStart := time.Now()

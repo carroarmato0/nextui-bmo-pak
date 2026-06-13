@@ -659,3 +659,51 @@ func TestSpeakVerbatimSkippedWhenNotIdle(t *testing.T) {
 		t.Error("tts must not be called while not idle")
 	}
 }
+
+func TestProcessBatchDoesNotLogSystemPromptByDefault(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "secret persona", 16000, 1)
+	logger := &captureLogger{}
+	pipe.SetLogger(logger)
+	pipe.SetTTSInstructions("secret voice style")
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	logs := logger.joined()
+	if strings.Contains(logs, "secret persona") {
+		t.Errorf("system prompt leaked into logs with logSystemPrompt=false: %q", logs)
+	}
+	if strings.Contains(logs, "secret voice style") {
+		t.Errorf("TTS instructions leaked into logs with logSystemPrompt=false: %q", logs)
+	}
+}
+
+func TestProcessBatchLogsSystemPromptWhenEnabled(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "", 16000, 1)
+	pipe.SetSystemPromptSource(func() string { return "be bmo, the computer" })
+	pipe.SetTTSInstructions("speak like bmo")
+	logger := &captureLogger{}
+	pipe.SetLogger(logger)
+	pipe.SetLogSystemPrompt(true)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	logs := logger.joined()
+	if !strings.Contains(logs, "pipeline system prompt:") || !strings.Contains(logs, "be bmo, the computer") {
+		t.Errorf("system prompt not in logs: %q", logs)
+	}
+	if !strings.Contains(logs, "pipeline TTS instructions:") || !strings.Contains(logs, "speak like bmo") {
+		t.Errorf("TTS instructions not in logs: %q", logs)
+	}
+}
