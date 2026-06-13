@@ -9,10 +9,10 @@ import (
 
 // ── Structure ──────────────────────────────────────────────────────────────
 
-func TestSettingsMenuHas14Items(t *testing.T) {
+func TestSettingsMenuHas15Items(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	if got := len(m.Overlay().Items); got != 14 {
-		t.Fatalf("expected 14 overlay items, got %d", got)
+	if got := len(m.Overlay().Items); got != 15 {
+		t.Fatalf("expected 15 overlay items, got %d", got)
 	}
 }
 
@@ -21,7 +21,7 @@ func TestSettingsMenuItemCodes(t *testing.T) {
 	items := m.Overlay().Items
 	want := []string{
 		"log_level", "log_system_prompt", "mode",
-		"stt_status", "chat_status", "tts_status",
+		"stt_status", "chat_status", "tts_status", "voice_status",
 		"aware_library", "aware_saves", "aware_playlog",
 		"aware_system", "aware_achievements",
 		"library_detail", "proactive_talk", "restore_defaults",
@@ -42,12 +42,12 @@ func TestSettingsMenuMoveSkipsAIStatusItems(t *testing.T) {
 	if got := m.Overlay().Items[2].Focused; !got {
 		t.Fatal("expected mode item (idx 2) to be focused after Move(1) from log_level in non-debug mode")
 	}
-	// From MODE (2), down should jump to AWARE LIBRARY (6), skipping stt/chat/tts (3-5).
+	// From MODE (2), down should jump to AWARE LIBRARY (7), skipping stt/chat/tts/voice (3-6).
 	m.Move(1)
-	if got := m.Overlay().Items[6].Focused; !got {
-		t.Fatal("expected aware_library (idx 6) to be focused after Move(1) from mode")
+	if got := m.Overlay().Items[7].Focused; !got {
+		t.Fatal("expected aware_library (idx 7) to be focused after Move(1) from mode")
 	}
-	// From AWARE LIBRARY (6), up should jump back to MODE (2).
+	// From AWARE LIBRARY (7), up should jump back to MODE (2).
 	m.Move(-1)
 	if got := m.Overlay().Items[2].Focused; !got {
 		t.Fatal("expected mode (idx 2) to be focused after Move(-1) from aware_library")
@@ -58,7 +58,7 @@ func TestSettingsMenuLogSystemPromptNotNavigableOutsideDebug(t *testing.T) {
 	cfg := config.Default() // log_level = "info"
 	m := NewSettingsMenu(cfg)
 	// Cursor must never land on idx 1 (log_system_prompt) when not debug.
-	for range 14 {
+	for range 15 {
 		m.Move(1)
 		if m.Overlay().Items[1].Focused {
 			t.Fatal("log_system_prompt item was focused while log level is not debug")
@@ -140,7 +140,7 @@ func TestSettingsMenuModeToggles(t *testing.T) {
 func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
 	cfg := config.Default()
 	m := NewSettingsMenu(cfg)
-	// Move(5) from 0: (0+5)%14=5 (tts_status, skip+1)→6 (aware_library).
+	// Move(5) from 0: (0+5)%15=5 (tts_status, skip)→6 (voice_status, skip)→7 (aware_library).
 	m.Move(5)
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("toggle library: %v", err)
@@ -154,7 +154,7 @@ func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
 	if !m.Config().DeviceContext.Library {
 		t.Fatal("library toggle did not flip back on")
 	}
-	// Move(4) from 6: (6+4)%14=10 (aware_achievements).
+	// Move(4) from 7: (7+4)%15=11 (aware_achievements).
 	m.Move(4)
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("toggle achievements: %v", err)
@@ -166,7 +166,7 @@ func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
 
 func TestSettingsMenuCyclesProactiveTalk(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	m.Move(12) // proactive_talk is now at idx 12
+	m.Move(13) // proactive_talk is now at idx 13
 	want := []string{
 		config.ProactiveChatty, config.ProactiveRegular,
 		config.ProactiveOccasional, config.ProactiveRare, config.ProactiveOff,
@@ -201,8 +201,8 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	// restore_defaults is now at idx 13.
-	menu.Move(13)
+	// restore_defaults is now at idx 14.
+	menu.Move(14)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -220,7 +220,7 @@ func TestSettingsMenuRestoreDefaultsIsLastSlot(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.Move(13) // restore_defaults is at idx 13
+	m.Move(14) // restore_defaults is at idx 14
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("restore defaults: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestSettingsMenuAIStatusDisabledWhenIdle(t *testing.T) {
 	cfg := config.Default() // Mode = "idle"
 	m := NewSettingsMenu(cfg)
 	items := m.Overlay().Items
-	for _, idx := range []int{3, 4, 5} {
+	for _, idx := range []int{3, 4, 5, 6} {
 		if !items[idx].Disabled {
 			t.Errorf("items[%d].Disabled = false, want true when mode is idle", idx)
 		}
@@ -250,7 +250,7 @@ func TestSettingsMenuAIStatusEnabledWhenAI(t *testing.T) {
 	cfg.Mode = config.ModeAI
 	m := NewSettingsMenu(cfg)
 	items := m.Overlay().Items
-	for _, idx := range []int{3, 4, 5} {
+	for _, idx := range []int{3, 4, 5, 6} {
 		if items[idx].Disabled {
 			t.Errorf("items[%d].Disabled = true, want false when mode is ai", idx)
 		}
@@ -260,23 +260,33 @@ func TestSettingsMenuAIStatusEnabledWhenAI(t *testing.T) {
 	}
 }
 
-func TestSettingsMenuAIStatusShowsProviderSummary(t *testing.T) {
+func TestSettingsMenuAIStatusShowsModelOnly(t *testing.T) {
 	cfg := config.Default()
 	cfg.STT = config.Provider{Name: "openai-compatible", Model: "whisper-1", APIKey: "sk-s"}
 	cfg.Chat = config.Provider{Name: "openai-compatible", Model: "gpt-4o-mini"}
+	cfg.TTS = config.Provider{Name: "openai-compatible", Model: "tts-1", Voice: "nova", APIKey: "sk-t"}
 	m := NewSettingsMenu(cfg)
 	items := m.Overlay().Items
-	if !strings.HasPrefix(items[3].Label, "STT:") {
-		t.Errorf("stt_status label = %q, want STT: prefix", items[3].Label)
+	if got := items[3].Label; got != "STT: whisper-1" {
+		t.Errorf("stt_status label = %q, want %q", got, "STT: whisper-1")
 	}
-	if !strings.Contains(items[3].Label, "whisper-1") {
-		t.Errorf("stt_status label = %q, want model name", items[3].Label)
+	if got := items[4].Label; got != "CHAT: gpt-4o-mini" {
+		t.Errorf("chat_status label = %q, want %q", got, "CHAT: gpt-4o-mini")
 	}
-	if !strings.Contains(items[3].Label, "KEY SET") {
-		t.Errorf("stt_status label = %q, want KEY SET", items[3].Label)
+	if got := items[5].Label; got != "TTS: tts-1" {
+		t.Errorf("tts_status label = %q, want %q", got, "TTS: tts-1")
 	}
-	if !strings.Contains(items[4].Label, "KEY MISSING") {
-		t.Errorf("chat_status label = %q, want KEY MISSING", items[4].Label)
+	if got := items[6].Label; got != "VOICE: nova" {
+		t.Errorf("voice_status label = %q, want %q", got, "VOICE: nova")
+	}
+}
+
+func TestSettingsMenuVoiceStatusNotSetWhenNoVoice(t *testing.T) {
+	cfg := config.Default()
+	cfg.TTS = config.Provider{Name: "openai-compatible", Model: "tts-1"}
+	m := NewSettingsMenu(cfg)
+	if got := m.Overlay().Items[6].Label; got != "VOICE: NOT SET" {
+		t.Errorf("voice_status label = %q, want %q", got, "VOICE: NOT SET")
 	}
 }
 
@@ -317,8 +327,8 @@ func TestSettingsMenuLogSystemPromptLabelReflectsValue(t *testing.T) {
 func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	overlay := m.Overlay()
-	if len(overlay.Items) != 14 {
-		t.Fatalf("expected 14 overlay items, got %d", len(overlay.Items))
+	if len(overlay.Items) != 15 {
+		t.Fatalf("expected 15 overlay items, got %d", len(overlay.Items))
 	}
 	labels := map[string]string{}
 	for _, item := range overlay.Items {

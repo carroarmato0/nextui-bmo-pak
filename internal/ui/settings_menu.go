@@ -45,13 +45,13 @@ func (m *SettingsMenu) Title() string {
 }
 
 // Move advances the focus by delta, skipping non-navigable slots.
-// Slots 3–5 (AI status indicators) are always skipped.
+// Slots 3–6 (AI status indicators) are always skipped.
 // Slot 1 (log system prompt) is skipped unless log level is "debug".
 func (m *SettingsMenu) Move(delta int) {
 	if m == nil {
 		return
 	}
-	const count = 14
+	const count = 15
 	step := 1
 	if delta < 0 {
 		step = -1
@@ -63,7 +63,7 @@ func (m *SettingsMenu) Move(delta int) {
 }
 
 func (m *SettingsMenu) shouldSkip(idx int) bool {
-	if idx >= 3 && idx <= 5 {
+	if idx >= 3 && idx <= 6 {
 		return true
 	}
 	if idx == 1 && strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) != "debug" {
@@ -98,23 +98,23 @@ func (m *SettingsMenu) ToggleFocused() error {
 		} else {
 			m.cfg.Mode = config.ModeIdle
 		}
-	case 6:
-		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 7:
-		m.cfg.DeviceContext.Saves = !m.cfg.DeviceContext.Saves
+		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 8:
-		m.cfg.DeviceContext.PlayLog = !m.cfg.DeviceContext.PlayLog
+		m.cfg.DeviceContext.Saves = !m.cfg.DeviceContext.Saves
 	case 9:
-		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
+		m.cfg.DeviceContext.PlayLog = !m.cfg.DeviceContext.PlayLog
 	case 10:
-		m.cfg.DeviceContext.Achievements = !m.cfg.DeviceContext.Achievements
+		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
 	case 11:
+		m.cfg.DeviceContext.Achievements = !m.cfg.DeviceContext.Achievements
+	case 12:
 		if m.cfg.LibraryDetail == config.LibraryDetailRandom {
 			m.cfg.LibraryDetail = config.LibraryDetailFull
 		} else {
 			m.cfg.LibraryDetail = config.LibraryDetailRandom
 		}
-	case 12:
+	case 13:
 		levels := config.SupportedProactiveTalkLevels()
 		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
 		next := levels[0]
@@ -125,7 +125,7 @@ func (m *SettingsMenu) ToggleFocused() error {
 			}
 		}
 		m.cfg.ProactiveTalk = next
-	case 13:
+	case 14:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -145,24 +145,25 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: m.cfg.LogSystemPrompt, Focused: m.focus == 1, Hidden: !isDebug},
 		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
 			Selected: true, Focused: m.focus == 2},
-		{Code: "stt_status", Label: providerSummaryLabel("STT", m.cfg.STT), Disabled: !isAI},
-		{Code: "chat_status", Label: providerSummaryLabel("CHAT", m.cfg.Chat), Disabled: !isAI},
-		{Code: "tts_status", Label: providerSummaryLabel("TTS", m.cfg.TTS), Disabled: !isAI},
+		{Code: "stt_status", Label: providerModelLabel("STT", m.cfg.STT), Disabled: !isAI},
+		{Code: "chat_status", Label: providerModelLabel("CHAT", m.cfg.Chat), Disabled: !isAI},
+		{Code: "tts_status", Label: providerModelLabel("TTS", m.cfg.TTS), Disabled: !isAI},
+		{Code: "voice_status", Label: voiceStatusLabel(m.cfg.TTS), Disabled: !isAI},
 		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
-			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 6},
+			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 7},
 		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
-			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 7},
+			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 8},
 		{Code: "aware_playlog", Label: "AWARE PLAY LOG: " + onOff(m.cfg.DeviceContext.PlayLog),
-			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 8},
+			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 9},
 		{Code: "aware_system", Label: "AWARE SYSTEM: " + onOff(m.cfg.DeviceContext.System),
-			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 9},
+			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 10},
 		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
-			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 10},
+			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 11},
 		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
-			Selected: true, Focused: m.focus == 11},
-		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
 			Selected: true, Focused: m.focus == 12},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 13},
+		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
+			Selected: true, Focused: m.focus == 13},
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 14},
 	}
 	return OverlayState{
 		Visible:  true,
@@ -213,4 +214,20 @@ func onOff(v bool) string {
 		return "ON"
 	}
 	return "OFF"
+}
+
+func providerModelLabel(kind string, p config.Provider) string {
+	model := strings.TrimSpace(p.Model)
+	if model == "" {
+		return kind + ": NOT SET"
+	}
+	return kind + ": " + model
+}
+
+func voiceStatusLabel(p config.Provider) string {
+	voice := strings.TrimSpace(p.Voice)
+	if voice == "" {
+		return "VOICE: NOT SET"
+	}
+	return "VOICE: " + voice
 }
