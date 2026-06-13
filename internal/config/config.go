@@ -233,6 +233,12 @@ func (c Config) Validate() error {
 		return fmt.Errorf("%w: unknown proactive_talk %q", ErrInvalid, cfg.ProactiveTalk)
 	}
 
+	switch cfg.LibraryDetail {
+	case LibraryDetailFull, LibraryDetailRandom:
+	default:
+		return fmt.Errorf("%w: unknown library_detail %q", ErrInvalid, cfg.LibraryDetail)
+	}
+
 	if cfg.Mode == ModeAI {
 		if err := validateAIProvider("stt", cfg.STT); err != nil {
 			return err
