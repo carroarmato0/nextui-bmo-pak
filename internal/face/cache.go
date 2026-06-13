@@ -35,15 +35,91 @@ func NewCache(lib *Library) *Cache {
 	return &Cache{lib: lib}
 }
 
-// Warm pre-rasterizes every canonical expression at w×h. Call in a goroutine.
+// Warm pre-rasterizes every canonical expression at w×h without holding the
+// mutex during the expensive Rasterize calls, so the render loop is never
+// blocked for more than the brief store-write at the end of each expression.
+// Call in a goroutine.
 func (c *Cache) Warm(w, h int) {
+	// Initialise the size maps once so warmFrame can store results immediately.
+	c.mu.Lock()
+	c.resizeLocked(w, h)
+	c.mu.Unlock()
+
 	for _, name := range CanonicalNames {
 		if name == ExprSpeaking {
 			continue
 		}
-		c.Frame(name, w, h)
+		c.warmFrame(name, w, h)
 	}
-	c.Speak(1, w, h)
+	c.warmSpeak(w, h)
+}
+
+// warmFrame rasterizes one expression outside the mutex, then stores the
+// result with a brief lock.  If the cache was resized while rasterizing, the
+// result is silently discarded (the render loop will re-render on demand).
+func (c *Cache) warmFrame(name string, w, h int) {
+	data, fromDisk := c.lib.Bytes(name)
+	if data == nil {
+		return
+	}
+	buf, err := Rasterize(data, w, h) // expensive – NO lock held
+	if err != nil {
+		if !fromDisk {
+			return
+		}
+		def, ok := defaultBytes(name)
+		if !ok {
+			return
+		}
+		buf, err = Rasterize(def, w, h)
+		if err != nil {
+			return
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.w != w || c.h != h || c.frames == nil {
+		return // size changed while rasterizing; render loop will redo
+	}
+	if !c.failed[name] {
+		if _, ok := c.frames[name]; !ok {
+			c.frames[name] = buf
+		}
+	}
+}
+
+// warmSpeak pre-renders the full 12-level speaking animation outside the
+// mutex and stores the completed speakSet with a brief lock.
+func (c *Cache) warmSpeak(w, h int) {
+	data, fromDisk := c.lib.Bytes(ExprSpeaking)
+	if data == nil {
+		return
+	}
+	var set *speakSet
+	if !IsSpeakTemplate(data) {
+		if buf, err := Rasterize(data, w, h); err == nil {
+			set = &speakSet{static: buf}
+		}
+	}
+	if set == nil && IsSpeakTemplate(data) {
+		set = renderSpeakLevels(data, w, h) // NO lock held
+	}
+	if set == nil && fromDisk {
+		if def, ok := defaultBytes(ExprSpeaking); ok {
+			set = renderSpeakLevels(def, w, h)
+		}
+	}
+	if set == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.w != w || c.h != h {
+		return
+	}
+	if c.speak == nil {
+		c.speak = set
+	}
 }
 
 // Frame returns the cached ARGB buffer for expr at w×h, rasterizing on first
@@ -155,7 +231,7 @@ func (c *Cache) buildSpeakLocked(w, h int) *speakSet {
 		return &speakSet{static: buf}
 	}
 
-	set := c.renderSpeakLevelsLocked(data, w, h)
+	set := renderSpeakLevels(data, w, h)
 	if set == nil && fromDisk {
 		c.lib.logf("face: override speaking.svg template failed; using default template")
 		return c.buildSpeakFromDefault(w, h)
@@ -169,12 +245,13 @@ func (c *Cache) buildSpeakFromDefault(w, h int) *speakSet {
 	if !ok {
 		return nil
 	}
-	return c.renderSpeakLevelsLocked(def, w, h)
+	return renderSpeakLevels(def, w, h)
 }
 
-// renderSpeakLevelsLocked rasterizes all 12 openness levels from a template
-// and extracts mouth-band strips for levels above zero.
-func (c *Cache) renderSpeakLevelsLocked(tmplData []byte, w, h int) *speakSet {
+// renderSpeakLevels rasterizes all 12 openness levels from a template and
+// extracts mouth-band strips for levels above zero.  It accesses no shared
+// state and may be called with or without the cache mutex held.
+func renderSpeakLevels(tmplData []byte, w, h int) *speakSet {
 	bx0, by0, bx1, by1 := speakBand(w, h)
 	set := &speakSet{}
 	for lvl := 0; lvl < speakLevels; lvl++ {
