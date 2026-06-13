@@ -17,6 +17,9 @@ graphify-out/
 # Local debugging / profiling markers
 .profile-flags
 
+# Git worktrees
+.worktrees/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
