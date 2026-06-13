@@ -76,18 +76,3 @@ func (c SavesCollector) Collect(now time.Time) (Section, error) {
 		len(files), strings.Join(countParts, ", "), strings.Join(recentParts, "; "))
 	return Section{Key: KeySaves, Title: "SAVE FILES", Body: body, Freshest: files[0].mtime}, nil
 }
-
-// gameName strips up to two trailing extensions from a save file name:
-// "Pokemon Red (USA).zip.sav" → "Pokemon Red (USA)". Parenthesized region
-// tags are kept — they are part of how players know their ROMs.
-func gameName(file string) string {
-	name := file
-	for i := 0; i < 2; i++ {
-		ext := filepath.Ext(name)
-		if ext == "" || len(ext) == len(name) {
-			break
-		}
-		name = strings.TrimSuffix(name, ext)
-	}
-	return name
-}
