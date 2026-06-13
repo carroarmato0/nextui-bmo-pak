@@ -162,6 +162,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		achievementsCollector,
 	}, 30*time.Second, time.Now().UnixNano())
 	deviceCtx.SetEnabled(cfg.DeviceContext)
+	deviceCtx.SetLibraryDetail(cfg.LibraryDetail)
 	deviceCtx.SetReminisce(achievementsCollector.RandomPastUnlock)
 	// Short-term memory: the memory feeds both the nudge picker
 	// (6h cooldown dedup) and the RECENT REMARKS prompt block. A corrupt
@@ -268,8 +269,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// Apply the (possibly changed) mode immediately: it gates the PTT
 		// watcher and the voice pipeline.
 		machine.SetMode(cfg.Mode)
-		// Apply awareness toggles and proactive level immediately too.
+		// Apply awareness toggles, library detail, and proactive level immediately.
 		deviceCtx.SetEnabled(cfg.DeviceContext)
+		deviceCtx.SetLibraryDetail(cfg.LibraryDetail)
 		proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return fmt.Errorf("save config: %w", err)
