@@ -2,6 +2,7 @@ package devctx
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,55 +10,77 @@ import (
 	"time"
 )
 
-// LibraryCollector summarizes the ROM library as per-system game counts.
-// Game names are deliberately not listed (a full listing is ~6K tokens);
-// specific titles reach BMO through saves, play history, and achievements.
+// LibraryCollector summarizes the ROM library grouped by platform.
 type LibraryCollector struct {
-	Root string // e.g. /mnt/SDCARD/Roms
+	Root   string // e.g. /mnt/SDCARD/Roms
+	Detail string // "full" or "random"; defaults to "full" if empty
 }
 
-func (LibraryCollector) Key() string { return KeyLibrary }
+func (c LibraryCollector) Key() string { return KeyLibrary }
 
-func (c LibraryCollector) Collect(now time.Time) (Section, error) {
-	systems, err := os.ReadDir(c.Root)
+func (c LibraryCollector) Collect(_ time.Time) (Section, error) {
+	groups, err := platformGroups(c.Root)
 	if err != nil {
-		return Section{}, fmt.Errorf("read roms dir: %w", err)
+		return Section{}, err
 	}
-	type sysCount struct {
-		name  string
-		count int
+
+	type platformTitles struct {
+		name   string
+		titles []string
 	}
-	var counts []sysCount
-	total := 0
-	for _, sys := range systems {
-		if !sys.IsDir() || strings.HasPrefix(sys.Name(), ".") {
-			continue
-		}
-		entries, err := os.ReadDir(filepath.Join(c.Root, sys.Name()))
-		if err != nil {
-			continue
-		}
-		n := 0
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), ".") {
+
+	totalTitles := 0
+	platforms := make([]platformTitles, 0, len(groups))
+
+	for _, g := range groups {
+		seen := map[string]struct{}{}
+		for _, dir := range g.Dirs {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
 				continue
 			}
-			n++
+			for _, e := range entries {
+				if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+					continue
+				}
+				title := gameName(filepath.Base(e.Name()))
+				seen[title] = struct{}{}
+			}
 		}
-		if n == 0 {
+		if len(seen) == 0 {
 			continue
 		}
-		counts = append(counts, sysCount{sys.Name(), n})
-		total += n
+		titles := make([]string, 0, len(seen))
+		for t := range seen {
+			titles = append(titles, t)
+		}
+		sort.Strings(titles)
+		totalTitles += len(titles)
+		platforms = append(platforms, platformTitles{name: g.Name, titles: titles})
 	}
-	if total == 0 {
+
+	if totalTitles == 0 {
 		return Section{}, fmt.Errorf("no games found under %s", c.Root)
 	}
-	sort.Slice(counts, func(i, j int) bool { return counts[i].count > counts[j].count })
-	parts := make([]string, 0, len(counts))
-	for _, sc := range counts {
-		parts = append(parts, fmt.Sprintf("%s: %d", sc.name, sc.count))
+
+	fullMode := c.Detail == "" || c.Detail == "full"
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+
+	lines := make([]string, 0, len(platforms)+1)
+	lines = append(lines, fmt.Sprintf("%d platforms, %d total titles.", len(platforms), totalTitles))
+
+	for _, p := range platforms {
+		var line string
+		if fullMode {
+			line = fmt.Sprintf("%s: %s", p.name, strings.Join(p.titles, ", "))
+		} else {
+			pick := p.titles[rng.Intn(len(p.titles))]
+			line = fmt.Sprintf("%s (%d titles): e.g. %s", p.name, len(p.titles), pick)
+		}
+		lines = append(lines, line)
 	}
-	body := fmt.Sprintf("%d games across %d systems. %s.", total, len(counts), strings.Join(parts, "; "))
+
+	body := strings.Join(lines, "\n")
 	return Section{Key: KeyLibrary, Title: "GAME LIBRARY", Body: body}, nil
 }
