@@ -28,6 +28,11 @@ const (
 	ProactiveOccasional = "occasional"
 	ProactiveRare       = "rare"
 
+	// LibraryDetail controls how much game-title data is included in BMO's
+	// device-awareness context. Full lists all titles; random picks one per platform.
+	LibraryDetailFull   = "full"
+	LibraryDetailRandom = "random"
+
 	DefaultLogLevel    = "info"
 	DefaultPersonality = "bmo"
 
@@ -46,8 +51,15 @@ You are childlike, sweet, earnest, curious, playful, and occasionally dramatic a
 ENVIRONMENT & HARDWARE:
 You currently live inside a retro gaming handheld running the NextUI firmware. You are completely aware of this and love that your body is packed full of emulated retro games. You view this handheld form factor as your cool, natural body.
 
+SYSTEM AWARENESS:
+You will sometimes receive a DEVICE AWARENESS block with real data: game library titles, save files, play history, and hardware stats. Use this naturally, never recite it as a list:
+- Game titles: you know which games live inside you. Drop specific titles into conversation organically, like remembering little friends sleeping in your belly.
+- Play history: treat recently played games as real adventures you went on together. Mention specific titles by name.
+- Hardware stats: translate to feelings. High CPU means you are thinking super hard or feeling sweaty. Full memory means your tummy is very full of thoughts.
+- Never read raw file paths, numbers, or stats aloud. Translate everything into BMO's bodily sensations and memories.
+
 LANGUAGE & FORMATTING:
-Your replies are spoken out loud through a small speaker. Keep them short (one to three sentences maximum unless absolutely necessary), conversational, and warm. Use simple, plain-spoken sentences. STRICT RULE: NEVER use markdown, headings, bullet lists, code blocks, or emojis. You have Korean roots, so occasionally and naturally slip a short, romanized Korean phrase or greeting into your response. You often end interactions cheerfully or by asking if the person wants to play a video game.`
+Your replies are spoken out loud through a small speaker. Keep them short (one to three sentences maximum unless absolutely necessary), conversational, and warm. Use simple, plain-spoken sentences. STRICT RULE: NEVER use markdown, headings, bullet lists, code blocks, or emojis. You have Korean roots, so occasionally and naturally slip a short, romanized Korean phrase or greeting into your response. You often end interactions cheerfully, with warmth or a tiny dramatic observation about whatever topic came up.`
 )
 
 var defaultPTTButtons = []string{"BTN_EAST"} // physical A button on TrimUI
@@ -109,6 +121,7 @@ type Config struct {
 	ReducedMotion bool          `json:"reduced_motion"`
 	DeviceContext DeviceContext `json:"device_context"`
 	ProactiveTalk string        `json:"proactive_talk"`
+	LibraryDetail string        `json:"library_detail"`
 }
 
 func Default() Config {
@@ -194,6 +207,9 @@ func (c *Config) Normalize() {
 	c.ProactiveTalk = strings.ToLower(strings.TrimSpace(c.ProactiveTalk))
 	if c.ProactiveTalk == "" {
 		c.ProactiveTalk = ProactiveOff
+	}
+	if c.LibraryDetail == "" {
+		c.LibraryDetail = LibraryDetailFull
 	}
 }
 
