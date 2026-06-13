@@ -9,6 +9,8 @@ type OverlayItem struct {
 	Label    string
 	Selected bool
 	Focused  bool
+	Disabled bool
+	Hidden   bool
 }
 
 type OverlayState struct {

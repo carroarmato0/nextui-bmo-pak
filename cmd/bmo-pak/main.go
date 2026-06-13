@@ -533,6 +533,8 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 			Label:    item.Label,
 			Selected: item.Selected,
 			Focused:  item.Focused,
+			Disabled: item.Disabled,
+			Hidden:   item.Hidden,
 		})
 	}
 	return &renderer.OverlayState{

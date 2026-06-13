@@ -46,6 +46,8 @@ type OverlayItem struct {
 	Label    string
 	Selected bool
 	Focused  bool
+	Disabled bool
+	Hidden   bool
 }
 
 type Layout struct {
@@ -521,6 +523,15 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	}
 	top += 18
 	for _, item := range overlay.Items {
+		if item.Hidden {
+			continue
+		}
+		if item.Disabled {
+			r.fillRectColor(left, top+3, 10, 10, rgba{40, 65, 70, 255})
+			r.drawText(left+20, top, 2, rgba{95, 115, 115, 255}, item.Label)
+			top += 22
+			continue
+		}
 		boxColor := rgba{79, 139, 141, 255}
 		if item.Selected {
 			boxColor = rgba{170, 232, 183, 255}
@@ -538,7 +549,7 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 			labelColor = rgba{255, 241, 145, 255}
 		}
 		r.drawText(left+20, top, 2, labelColor, item.Label)
-		top += 26
+		top += 22
 	}
 	if strings.TrimSpace(overlay.Footer) != "" {
 		r.drawText(left, panelY+panelH-28, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
