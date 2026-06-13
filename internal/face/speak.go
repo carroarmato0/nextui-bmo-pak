@@ -26,7 +26,7 @@ func IsSpeakTemplate(data []byte) bool {
 // speakParams computes mouth geometry for openness t ∈ [0,1].
 func speakParams(t float64) SpeakParams {
 	t = math.Max(0, math.Min(1, t))
-	const left, right, top = 89.0, 157.0, 106.0
+	const left, right, top = 106.0, 174.0, 106.0
 	h := 6 + 30*t
 	r := math.Min(16, h/2)
 	bottom := top + h
@@ -58,7 +58,7 @@ func speakParams(t float64) SpeakParams {
 	tr := 19.0 * h / 36.0
 	ty := 0.18 * h
 	tongue := fmt.Sprintf("M %.2f %.2f A %.2f %.2f 0 0 1 %.2f %.2f Z",
-		123-tr, bottom, tr, ty, 123+tr, bottom)
+		140-tr, bottom, tr, ty, 140+tr, bottom)
 
 	return SpeakParams{
 		MouthH:       h,
@@ -83,11 +83,11 @@ func renderSpeakSVG(tmplData []byte, t float64) ([]byte, error) {
 }
 
 // speakBand returns the pixel bounding box of the mouth animation strip
-// (viewBox x 75..171, y 96..150 — with anti-aliasing margin).
+// (viewBox x 92..188, y 96..150 — mouth at 106..174 with anti-aliasing margin).
 func speakBand(w, h int) (x0, y0, x1, y1 int) {
-	x0 = int(75.0 / 280.0 * float64(w))
+	x0 = int(92.0 / 280.0 * float64(w))
 	y0 = int(96.0 / 210.0 * float64(h))
-	x1 = int(171.0/280.0*float64(w)) + 1
+	x1 = int(188.0/280.0*float64(w)) + 1
 	y1 = int(150.0/210.0*float64(h)) + 1
 	if x1 > w {
 		x1 = w

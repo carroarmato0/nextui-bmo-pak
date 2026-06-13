@@ -24,7 +24,7 @@ func TestSpeakLevelsMonotonic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("rasterize level %d: %v", lvl, err)
 		}
-		// Count dark pixels in mouth band (viewBox y 96..150, x 75..171)
+		// Count dark pixels in mouth band (viewBox y 96..150, x 92..188)
 		bx0, by0, bx1, by1 := speakBand(w, h)
 		count := 0
 		for row := by0; row < by1; row++ {
@@ -54,9 +54,9 @@ func TestSpeakFullOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Fully open: pill eyes, teeth top of mouth, interior below
-	assertColor(t, buf, 1024, 768, 62, 78, 0x1a, 0x1a, 0x1a, "left pill eye")
-	assertColor(t, buf, 1024, 768, 123, 109, 0xe4, 0xe4, 0xe4, "teeth")
-	assertColor(t, buf, 1024, 768, 123, 128, 0x1a, 0x78, 0x48, "interior")
+	assertColor(t, buf, 1024, 768, 79, 78, 0x1a, 0x1a, 0x1a, "left pill eye")
+	assertColor(t, buf, 1024, 768, 140, 109, 0xe4, 0xe4, 0xe4, "teeth")
+	assertColor(t, buf, 1024, 768, 140, 128, 0x1a, 0x78, 0x48, "interior")
 }
 
 func TestIsSpeakTemplate(t *testing.T) {

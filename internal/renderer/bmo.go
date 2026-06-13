@@ -189,10 +189,6 @@ func (r *Renderer) ensureBuffer(w, h int32) error {
 	if r.tex != nil && w == r.W && h == r.H {
 		return nil
 	}
-	if r.tex != nil {
-		_ = r.tex.Destroy()
-		r.tex = nil
-	}
 	tex, err := r.ren.CreateTexture(sdl.PIXELFORMAT_ARGB8888, sdl.TEXTUREACCESS_STREAMING, w, h)
 	if err != nil {
 		return fmt.Errorf("create texture: %w", err)
@@ -203,6 +199,11 @@ func (r *Renderer) ensureBuffer(w, h int32) error {
 	if err := tex.SetBlendMode(sdl.BLENDMODE_NONE); err != nil {
 		_ = tex.Destroy()
 		return fmt.Errorf("set texture blend mode: %w", err)
+	}
+	// Only destroy the old texture after the new one is successfully created,
+	// so r.tex is never left nil on a resize failure.
+	if r.tex != nil {
+		_ = r.tex.Destroy()
 	}
 	r.tex = tex
 	r.W, r.H = w, h

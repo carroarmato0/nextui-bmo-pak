@@ -83,5 +83,5 @@ func TestCacheCorruptOverrideFallsBack(t *testing.T) {
 		t.Fatalf("expected %d pixels, got %d", 320*240, len(buf))
 	}
 	// The embedded neutral has dark eyes — confirm we got the real fallback, not zeros.
-	assertColor(t, buf, 320, 240, 63, 78, 0x1a, 0x1a, 0x1a, "fallback neutral eye")
+	assertColor(t, buf, 320, 240, 80, 78, 0x1a, 0x1a, 0x1a, "fallback neutral eye")
 }
