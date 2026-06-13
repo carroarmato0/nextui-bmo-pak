@@ -273,6 +273,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		deviceCtx.SetEnabled(cfg.DeviceContext)
 		deviceCtx.SetLibraryDetail(cfg.LibraryDetail)
 		proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
+		if audioPipeline != nil {
+			audioPipeline.SetLogSystemPrompt(cfg.LogSystemPrompt)
+		}
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
