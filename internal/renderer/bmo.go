@@ -549,7 +549,7 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 			labelColor = rgba{255, 241, 145, 255}
 		}
 		r.drawText(left+20, top, 2, labelColor, item.Label)
-		top += 22
+		top += 26
 	}
 	if strings.TrimSpace(overlay.Footer) != "" {
 		r.drawText(left, panelY+panelH-28, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
