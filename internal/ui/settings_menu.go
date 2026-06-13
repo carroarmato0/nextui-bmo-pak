@@ -54,7 +54,7 @@ func (m *SettingsMenu) Move(delta int) {
 	if m == nil || m.editing {
 		return
 	}
-	const count = 12
+	const count = 13
 	m.focus = (m.focus + delta) % count
 	if m.focus < 0 {
 		m.focus += count
@@ -104,7 +104,13 @@ func (m *SettingsMenu) ToggleFocused() error {
 		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
 	case 9:
 		m.cfg.DeviceContext.Achievements = !m.cfg.DeviceContext.Achievements
-	case 10: // proactive talk — cycle through supported levels
+	case 10: // library detail — toggle between full and random
+		if m.cfg.LibraryDetail == config.LibraryDetailRandom {
+			m.cfg.LibraryDetail = config.LibraryDetailFull
+		} else {
+			m.cfg.LibraryDetail = config.LibraryDetailRandom
+		}
+	case 11: // proactive talk — cycle through supported levels
 		levels := config.SupportedProactiveTalkLevels()
 		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
 		next := levels[0]
@@ -115,7 +121,7 @@ func (m *SettingsMenu) ToggleFocused() error {
 			}
 		}
 		m.cfg.ProactiveTalk = next
-	case 11: // restore persona/voice prompt files to built-in defaults
+	case 12: // restore persona/voice prompt files to built-in defaults
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -175,10 +181,12 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 8 && !m.editing},
 		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
 			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 9 && !m.editing},
+		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
+			Selected: m.cfg.LibraryDetail == config.LibraryDetailFull, Focused: m.focus == 10 && !m.editing},
 		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
-			Selected: m.cfg.ProactiveTalk != config.ProactiveOff, Focused: m.focus == 10 && !m.editing},
+			Selected: m.cfg.ProactiveTalk != config.ProactiveOff, Focused: m.focus == 11 && !m.editing},
 		{Code: "restore_defaults", Label: "RESTORE DEFAULTS",
-			Selected: true, Focused: m.focus == 11 && !m.editing},
+			Selected: true, Focused: m.focus == 12 && !m.editing},
 	}
 	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}
 	footer := "START OR B TO CLOSE"

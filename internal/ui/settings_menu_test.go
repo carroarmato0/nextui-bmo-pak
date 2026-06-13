@@ -142,8 +142,8 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	// Move to the restore item (position 11) and activate it.
-	menu.Move(11)
+	// Move to the restore item (position 12) and activate it.
+	menu.Move(12)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -206,7 +206,7 @@ func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
 
 func TestSettingsMenuCyclesProactiveTalk(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	m.Move(10)
+	m.Move(11)
 	want := []string{
 		config.ProactiveChatty, config.ProactiveRegular,
 		config.ProactiveOccasional, config.ProactiveRare, config.ProactiveOff,
@@ -225,20 +225,20 @@ func TestSettingsMenuRestoreDefaultsMovedToLastSlot(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.Move(11)
+	m.Move(12)
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("restore defaults: %v", err)
 	}
 	if !called {
-		t.Fatal("restore defaults callback not invoked at focus 11")
+		t.Fatal("restore defaults callback not invoked at focus 12")
 	}
 }
 
 func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	overlay := m.Overlay()
-	if len(overlay.Items) != 12 {
-		t.Fatalf("expected 12 overlay items, got %d", len(overlay.Items))
+	if len(overlay.Items) != 13 {
+		t.Fatalf("expected 13 overlay items, got %d", len(overlay.Items))
 	}
 	labels := map[string]string{}
 	for _, item := range overlay.Items {
