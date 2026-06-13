@@ -164,7 +164,13 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: true, Focused: m.focus == 12},
 		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 13},
 	}
-	return OverlayState{Visible: true, Title: m.title, Items: items}
+	return OverlayState{
+		Visible:  true,
+		Title:    m.title,
+		Subtitle: []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"},
+		Footer:   "START OR B TO CLOSE",
+		Items:    items,
+	}
 }
 
 func (m *SettingsMenu) Save() (config.Config, error) {

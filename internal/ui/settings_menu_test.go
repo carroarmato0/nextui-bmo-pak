@@ -338,6 +338,17 @@ func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	}
 }
 
+func TestSettingsMenuOverlayHasSubtitleAndFooter(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	overlay := m.Overlay()
+	if len(overlay.Subtitle) == 0 {
+		t.Fatal("Settings overlay should include navigation hints in Subtitle")
+	}
+	if overlay.Footer == "" {
+		t.Fatal("Settings overlay should include close hint in Footer")
+	}
+}
+
 func TestSettingsMenuSave(t *testing.T) {
 	menu := NewSettingsMenu(config.Default())
 	saved, err := menu.Save()
