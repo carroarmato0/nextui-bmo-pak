@@ -20,6 +20,11 @@ type PlayLogCollector struct {
 
 func (PlayLogCollector) Key() string { return KeyPlayLog }
 
+func (c PlayLogCollector) withDetail(d string) Collector {
+	c.Detail = d
+	return c
+}
+
 type playRow struct {
 	name    string
 	seconds int64

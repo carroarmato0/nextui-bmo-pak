@@ -18,6 +18,11 @@ type LibraryCollector struct {
 
 func (c LibraryCollector) Key() string { return KeyLibrary }
 
+func (c LibraryCollector) withDetail(d string) Collector {
+	c.Detail = d
+	return c
+}
+
 func (c LibraryCollector) Collect(_ time.Time) (Section, error) {
 	groups, err := platformGroups(c.Root)
 	if err != nil {

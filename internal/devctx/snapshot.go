@@ -18,6 +18,7 @@ type Builder struct {
 	mu         sync.Mutex
 	collectors []Collector
 	enabled    map[string]bool
+	detail     string // propagated to detailAware collectors on each Collect call
 	ttl        time.Duration
 	now        func() time.Time
 	rng        *rand.Rand
@@ -29,6 +30,12 @@ type Builder struct {
 	cachedSections []Section
 }
 
+// detailAware is implemented by collectors whose verbosity depends on the
+// LibraryDetail config setting (LibraryCollector, PlayLogCollector).
+type detailAware interface {
+	withDetail(string) Collector
+}
+
 func NewBuilder(collectors []Collector, ttl time.Duration, seed int64) *Builder {
 	return &Builder{
 		collectors: collectors,
@@ -37,6 +44,15 @@ func NewBuilder(collectors []Collector, ttl time.Duration, seed int64) *Builder 
 		now:        time.Now,
 		rng:        rand.New(rand.NewSource(seed)),
 	}
+}
+
+// SetLibraryDetail sets the detail mode ("full" or "random") forwarded to
+// detailAware collectors and invalidates the cache.
+func (b *Builder) SetLibraryDetail(d string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.detail = d
+	b.cachedAt = time.Time{}
 }
 
 // SetEnabled maps the config toggles onto collector keys and invalidates
@@ -89,6 +105,9 @@ func (b *Builder) sectionsLocked() ([]Section, time.Time) {
 	for _, c := range b.collectors {
 		if c == nil || !b.enabled[c.Key()] {
 			continue
+		}
+		if da, ok := c.(detailAware); ok {
+			c = da.withDetail(b.detail)
 		}
 		s, err := c.Collect(now)
 		if err != nil || strings.TrimSpace(s.Body) == "" {
