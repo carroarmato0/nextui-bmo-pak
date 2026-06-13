@@ -13,9 +13,6 @@ type SettingsMenu struct {
 	title            string
 	cfg              config.Config
 	focus            int
-	editing          bool
-	editingKind      string
-	draft            string
 	onLogLevelChange func(string)
 	onRestore        func() error
 }
@@ -26,17 +23,14 @@ func NewSettingsMenu(cfg config.Config) *SettingsMenu {
 }
 
 // SetLogLevelCallback registers a function called immediately whenever the
-// log level item is cycled, so the running logger can be updated without
-// waiting for Save.
+// log level item is cycled, so the live logger can be updated in place.
 func (m *SettingsMenu) SetLogLevelCallback(fn func(string)) {
 	if m != nil {
 		m.onLogLevelChange = fn
 	}
 }
 
-// SetRestoreDefaultsCallback registers the action run when the RESTORE
-// DEFAULTS item is activated (rewrites the persona/voice prompt files with
-// their built-in defaults).
+// SetRestoreDefaultsCallback registers the action run when RESTORE DEFAULTS is activated.
 func (m *SettingsMenu) SetRestoreDefaultsCallback(fn func() error) {
 	if m != nil {
 		m.onRestore = fn
@@ -50,26 +44,40 @@ func (m *SettingsMenu) Title() string {
 	return strings.ToUpper(strings.TrimSpace(m.title))
 }
 
+// Move advances the focus by delta, skipping non-navigable slots.
+// Slots 3–5 (AI status indicators) are always skipped.
+// Slot 1 (log system prompt) is skipped unless log level is "debug".
 func (m *SettingsMenu) Move(delta int) {
-	if m == nil || m.editing {
+	if m == nil {
 		return
 	}
-	const count = 13
-	m.focus = (m.focus + delta) % count
-	if m.focus < 0 {
-		m.focus += count
+	const count = 14
+	step := 1
+	if delta < 0 {
+		step = -1
 	}
+	m.focus = ((m.focus + delta) % count + count) % count
+	for m.shouldSkip(m.focus) {
+		m.focus = (m.focus + step + count) % count
+	}
+}
+
+func (m *SettingsMenu) shouldSkip(idx int) bool {
+	if idx >= 3 && idx <= 5 {
+		return true
+	}
+	if idx == 1 && strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) != "debug" {
+		return true
+	}
+	return false
 }
 
 func (m *SettingsMenu) ToggleFocused() error {
 	if m == nil {
 		return fmt.Errorf("nil settings menu")
 	}
-	if m.editing {
-		return m.SubmitEdit()
-	}
 	switch m.focus {
-	case 0: // log level — cycle through ordered list
+	case 0:
 		curr := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel))
 		next := logLevelOrder[0]
 		for i, l := range logLevelOrder {
@@ -82,35 +90,31 @@ func (m *SettingsMenu) ToggleFocused() error {
 		if m.onLogLevelChange != nil {
 			m.onLogLevelChange(next)
 		}
-	case 1: // mode — toggle between idle and ai
+	case 1:
+		m.cfg.LogSystemPrompt = !m.cfg.LogSystemPrompt
+	case 2:
 		if m.cfg.Mode == config.ModeIdle {
 			m.cfg.Mode = config.ModeAI
 		} else {
 			m.cfg.Mode = config.ModeIdle
 		}
-	case 2:
-		return m.BeginAPIKeyEdit(providerKindSTT)
-	case 3:
-		return m.BeginAPIKeyEdit(providerKindChat)
-	case 4:
-		return m.BeginAPIKeyEdit(providerKindTTS)
-	case 5:
-		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 6:
-		m.cfg.DeviceContext.Saves = !m.cfg.DeviceContext.Saves
+		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 7:
-		m.cfg.DeviceContext.PlayLog = !m.cfg.DeviceContext.PlayLog
+		m.cfg.DeviceContext.Saves = !m.cfg.DeviceContext.Saves
 	case 8:
-		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
+		m.cfg.DeviceContext.PlayLog = !m.cfg.DeviceContext.PlayLog
 	case 9:
+		m.cfg.DeviceContext.System = !m.cfg.DeviceContext.System
+	case 10:
 		m.cfg.DeviceContext.Achievements = !m.cfg.DeviceContext.Achievements
-	case 10: // library detail — toggle between full and random
+	case 11:
 		if m.cfg.LibraryDetail == config.LibraryDetailRandom {
 			m.cfg.LibraryDetail = config.LibraryDetailFull
 		} else {
 			m.cfg.LibraryDetail = config.LibraryDetailRandom
 		}
-	case 11: // proactive talk — cycle through supported levels
+	case 12:
 		levels := config.SupportedProactiveTalkLevels()
 		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
 		next := levels[0]
@@ -121,7 +125,7 @@ func (m *SettingsMenu) ToggleFocused() error {
 			}
 		}
 		m.cfg.ProactiveTalk = next
-	case 12: // restore persona/voice prompt files to built-in defaults
+	case 13:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -131,14 +135,41 @@ func (m *SettingsMenu) ToggleFocused() error {
 	return nil
 }
 
+func (m *SettingsMenu) Overlay() OverlayState {
+	isDebug := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) == "debug"
+	isAI := m.cfg.Mode == config.ModeAI
+	items := []OverlayItem{
+		{Code: "log_level", Label: "LOG: " + strings.ToUpper(m.cfg.LogLevel),
+			Selected: true, Focused: m.focus == 0},
+		{Code: "log_system_prompt", Label: "LOG SYSTEM PROMPT: " + onOff(m.cfg.LogSystemPrompt),
+			Selected: m.cfg.LogSystemPrompt, Focused: m.focus == 1, Hidden: !isDebug},
+		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
+			Selected: true, Focused: m.focus == 2},
+		{Code: "stt_status", Label: providerSummaryLabel("STT", m.cfg.STT), Disabled: !isAI},
+		{Code: "chat_status", Label: providerSummaryLabel("CHAT", m.cfg.Chat), Disabled: !isAI},
+		{Code: "tts_status", Label: providerSummaryLabel("TTS", m.cfg.TTS), Disabled: !isAI},
+		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
+			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 6},
+		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
+			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 7},
+		{Code: "aware_playlog", Label: "AWARE PLAY LOG: " + onOff(m.cfg.DeviceContext.PlayLog),
+			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 8},
+		{Code: "aware_system", Label: "AWARE SYSTEM: " + onOff(m.cfg.DeviceContext.System),
+			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 9},
+		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
+			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 10},
+		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
+			Selected: true, Focused: m.focus == 11},
+		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
+			Selected: true, Focused: m.focus == 12},
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 13},
+	}
+	return OverlayState{Visible: true, Title: m.title, Items: items}
+}
+
 func (m *SettingsMenu) Save() (config.Config, error) {
 	if m == nil {
 		return config.Config{}, fmt.Errorf("nil settings menu")
-	}
-	if m.editing {
-		if err := m.SubmitEdit(); err != nil {
-			return config.Config{}, err
-		}
 	}
 	cfg := m.cfg
 	cfg.Normalize()
@@ -148,54 +179,6 @@ func (m *SettingsMenu) Save() (config.Config, error) {
 	}
 	m.cfg = cfg
 	return cfg, nil
-}
-
-func (m *SettingsMenu) Overlay() OverlayState {
-	if m == nil {
-		return OverlayState{}
-	}
-	items := []OverlayItem{
-		{Code: "log_level", Label: "LOG: " + strings.ToUpper(m.cfg.LogLevel),
-			Selected: true, Focused: m.focus == 0 && !m.editing},
-		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
-			Selected: true, Focused: m.focus == 1 && !m.editing},
-		{Code: "stt_key",
-			Label:    providerKeyLabel("STT", m.cfg.STT.APIKey, m.editing && m.editingKind == providerKindSTT),
-			Selected: strings.TrimSpace(m.cfg.STT.APIKey) != "",
-			Focused:  m.focus == 2 && !m.editing},
-		{Code: "chat_key",
-			Label:    providerKeyLabel("CHAT", m.cfg.Chat.APIKey, m.editing && m.editingKind == providerKindChat),
-			Selected: strings.TrimSpace(m.cfg.Chat.APIKey) != "",
-			Focused:  m.focus == 3 && !m.editing},
-		{Code: "tts_key",
-			Label:    providerKeyLabel("TTS", m.cfg.TTS.APIKey, m.editing && m.editingKind == providerKindTTS),
-			Selected: strings.TrimSpace(m.cfg.TTS.APIKey) != "",
-			Focused:  m.focus == 4 && !m.editing},
-		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
-			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 5 && !m.editing},
-		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
-			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 6 && !m.editing},
-		{Code: "aware_playlog", Label: "AWARE PLAY LOG: " + onOff(m.cfg.DeviceContext.PlayLog),
-			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 7 && !m.editing},
-		{Code: "aware_system", Label: "AWARE SYSTEM: " + onOff(m.cfg.DeviceContext.System),
-			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 8 && !m.editing},
-		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
-			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 9 && !m.editing},
-		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
-			Selected: m.cfg.LibraryDetail == config.LibraryDetailFull, Focused: m.focus == 10 && !m.editing},
-		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
-			Selected: m.cfg.ProactiveTalk != config.ProactiveOff, Focused: m.focus == 11 && !m.editing},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS",
-			Selected: true, Focused: m.focus == 12 && !m.editing},
-	}
-	subtitle := []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"}
-	footer := "START OR B TO CLOSE"
-	if m.editing {
-		cur := strings.ToUpper(strings.TrimSpace(m.editingKind))
-		subtitle = []string{"EDITING " + cur + " API KEY", "START TO SAVE  B TO CANCEL"}
-		footer = "TYPE THE KEY NOW"
-	}
-	return OverlayState{Visible: true, Title: m.title, Subtitle: subtitle, Items: items, Footer: footer}
 }
 
 func (m *SettingsMenu) Config() config.Config {
@@ -216,101 +199,6 @@ func (m *SettingsMenu) SetProvider(kind string, provider config.Provider) {
 		m.cfg.Chat = provider
 	case providerKindTTS:
 		m.cfg.TTS = provider
-	}
-}
-
-func (m *SettingsMenu) SetAPIKey(kind, key string) error {
-	if m == nil {
-		return fmt.Errorf("nil settings menu")
-	}
-	key = strings.TrimSpace(key)
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case providerKindSTT:
-		m.cfg.STT.APIKey = key
-	case providerKindChat:
-		m.cfg.Chat.APIKey = key
-	case providerKindTTS:
-		m.cfg.TTS.APIKey = key
-	default:
-		return fmt.Errorf("unknown provider kind %q", kind)
-	}
-	return nil
-}
-
-func (m *SettingsMenu) IsEditing() bool { return m != nil && m.editing }
-func (m *SettingsMenu) EditingKind() string {
-	if m == nil {
-		return ""
-	}
-	return m.editingKind
-}
-func (m *SettingsMenu) EditBuffer() string {
-	if m == nil {
-		return ""
-	}
-	return m.draft
-}
-func (m *SettingsMenu) BeginAPIKeyEdit(kind string) error {
-	if m == nil {
-		return fmt.Errorf("nil settings menu")
-	}
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	switch kind {
-	case providerKindSTT, providerKindChat, providerKindTTS:
-	default:
-		return fmt.Errorf("unknown provider kind %q", kind)
-	}
-	m.editing = true
-	m.editingKind = kind
-	m.draft = m.currentAPIKey(kind)
-	return nil
-}
-func (m *SettingsMenu) InsertText(text string) {
-	if m == nil || !m.editing {
-		return
-	}
-	m.draft += text
-}
-func (m *SettingsMenu) Backspace() {
-	if m == nil || !m.editing || m.draft == "" {
-		return
-	}
-	r := []rune(m.draft)
-	m.draft = string(r[:len(r)-1])
-}
-func (m *SettingsMenu) SubmitEdit() error {
-	if m == nil {
-		return fmt.Errorf("nil settings menu")
-	}
-	if !m.editing {
-		return nil
-	}
-	if err := m.SetAPIKey(m.editingKind, m.draft); err != nil {
-		return err
-	}
-	m.editing = false
-	m.editingKind = ""
-	m.draft = ""
-	return nil
-}
-func (m *SettingsMenu) CancelEdit() {
-	if m == nil {
-		return
-	}
-	m.editing = false
-	m.editingKind = ""
-	m.draft = ""
-}
-func (m *SettingsMenu) currentAPIKey(kind string) string {
-	switch kind {
-	case providerKindSTT:
-		return m.cfg.STT.APIKey
-	case providerKindChat:
-		return m.cfg.Chat.APIKey
-	case providerKindTTS:
-		return m.cfg.TTS.APIKey
-	default:
-		return ""
 	}
 }
 
