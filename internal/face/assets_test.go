@@ -18,9 +18,10 @@ func TestEmbeddedFacesGeometry(t *testing.T) {
 			{199, 78, dark[0], dark[1], dark[2], "right eye"},
 			{0, 0, body[0], body[1], body[2], "top-left corner"},
 			{140, 105, screen[0], screen[1], screen[2], "screen center"},
-			// (40,21) is inside the screen rect's top-left corner arc (rx=ry=14,
-			// arc centre at (53,34), distance ≈18.4 > 14) → must be body not screen.
-			{40, 21, body[0], body[1], body[2], "screen top-left corner cut by rx/ry"},
+			// (13,11) is inside screen bounds but outside the screen's top-left
+			// corner arc (rx=ry=12, arc centre at (24,22), distance ≈15.6 > 12)
+			// → must be body not screen.
+			{13, 11, body[0], body[1], body[2], "screen top-left corner cut by rx/ry"},
 		},
 		ExprBlink: {
 			{80, 78, dark[0], dark[1], dark[2], "left blink eye"},
