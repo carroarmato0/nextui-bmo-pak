@@ -15,6 +15,7 @@ import (
 // open while a game runs; any error here just omits the section.
 type PlayLogCollector struct {
 	DBPath string // e.g. /mnt/SDCARD/.userdata/shared/game_logs.sqlite
+	Detail string // "full" or "random"; defaults to "full" (20 entries) if empty
 }
 
 func (PlayLogCollector) Key() string { return KeyPlayLog }
@@ -35,21 +36,27 @@ func (c PlayLogCollector) Collect(now time.Time) (Section, error) {
 	}
 	defer db.Close()
 
+	// Determine limit based on Detail mode.
+	limit := 20 // full mode (default)
+	if strings.EqualFold(c.Detail, "random") {
+		limit = 5
+	}
+
 	// The same game can exist as several rom rows; group by name.
-	recent, err := queryPlayRows(db, `
+	recent, err := queryPlayRows(db, fmt.Sprintf(`
 		SELECT r.name, SUM(p.play_time), MAX(p.created_at)
 		FROM play_activity p JOIN rom r ON r.id = p.rom_id
-		GROUP BY r.name ORDER BY MAX(p.created_at) DESC LIMIT 5`)
+		GROUP BY r.name ORDER BY MAX(p.created_at) DESC LIMIT %d`, limit))
 	if err != nil {
 		return Section{}, err
 	}
 	if len(recent) == 0 {
 		return Section{}, fmt.Errorf("play log is empty")
 	}
-	top, err := queryPlayRows(db, `
+	top, err := queryPlayRows(db, fmt.Sprintf(`
 		SELECT r.name, SUM(p.play_time), MAX(p.created_at)
 		FROM play_activity p JOIN rom r ON r.id = p.rom_id
-		GROUP BY r.name ORDER BY SUM(p.play_time) DESC LIMIT 5`)
+		GROUP BY r.name ORDER BY SUM(p.play_time) DESC LIMIT %d`, limit))
 	if err != nil {
 		return Section{}, err
 	}

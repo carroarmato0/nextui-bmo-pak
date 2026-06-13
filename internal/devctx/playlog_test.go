@@ -92,3 +92,84 @@ func TestPlayLogCollectorEmptyDB(t *testing.T) {
 		t.Fatal("expected error for empty play log")
 	}
 }
+
+func TestPlayLogCollectorDetailFull(t *testing.T) {
+	now := time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "many_games.sqlite")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create tables
+	for _, stmt := range []string{
+		`CREATE TABLE rom(id INTEGER PRIMARY KEY, type TEXT, name TEXT, file_path TEXT, image_path TEXT, created_at INTEGER, updated_at INTEGER)`,
+		`CREATE TABLE play_activity(rom_id INTEGER, play_time INTEGER, created_at INTEGER, updated_at INTEGER)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Insert 8 distinct games with sequential timestamps (oldest first)
+	games := []string{"Game1", "Game2", "Game3", "Game4", "Game5", "Game6", "Game7", "Game8"}
+	for i, name := range games {
+		romID := i + 1
+		if _, err := db.Exec(`INSERT INTO rom(id, name) VALUES (?, ?)`, romID, name); err != nil {
+			t.Fatal(err)
+		}
+		// Each game has a single play session, with timestamps increasing from oldest to newest
+		// Game1 is oldest (7 hours ago), Game8 is newest (just now)
+		playTime := now.Add(time.Duration(-(7-i)) * time.Hour)
+		if _, err := db.Exec(`INSERT INTO play_activity(rom_id, play_time, created_at) VALUES (?, ?, ?)`,
+			romID, 3600, playTime.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	// Test full mode (default) — should get all 8 games
+	s, err := PlayLogCollector{DBPath: path}.Collect(now)
+	if err != nil {
+		t.Fatalf("collect (full mode): %v", err)
+	}
+	for _, game := range games {
+		if !strings.Contains(s.Body, game) {
+			t.Errorf("full mode missing game in body: %q not in %q", game, s.Body)
+		}
+	}
+
+	// Test explicit full mode — should also get all 8 games
+	s, err = PlayLogCollector{DBPath: path, Detail: "full"}.Collect(now)
+	if err != nil {
+		t.Fatalf("collect (detail=full): %v", err)
+	}
+	for _, game := range games {
+		if !strings.Contains(s.Body, game) {
+			t.Errorf("detail=full missing game in body: %q not in %q", game, s.Body)
+		}
+	}
+
+	// Test random mode — should only get 5 most recent games
+	// Most recent are: Game8, Game7, Game6, Game5, Game4 (the 5 newest timestamps)
+	// Oldest are: Game1, Game2, Game3 (not in top 5)
+	s2, err := PlayLogCollector{DBPath: path, Detail: "random"}.Collect(now)
+	if err != nil {
+		t.Fatalf("collect (detail=random): %v", err)
+	}
+
+	// Should contain the 5 most recent
+	for _, game := range []string{"Game8", "Game7", "Game6", "Game5", "Game4"} {
+		if !strings.Contains(s2.Body, game) {
+			t.Errorf("random mode missing recent game: %q not in %q", game, s2.Body)
+		}
+	}
+
+	// Should NOT contain the oldest 3
+	for _, game := range []string{"Game1", "Game2", "Game3"} {
+		if strings.Contains(s2.Body, game) {
+			t.Errorf("random mode should not contain old game: %q found in %q", game, s2.Body)
+		}
+	}
+}
