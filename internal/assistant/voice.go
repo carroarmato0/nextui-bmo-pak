@@ -49,8 +49,13 @@ type VoicePipeline struct {
 	ttsInstructionsSource func() string
 	systemPromptSource    func() string
 
-	sampleRate int
-	channels   int
+	sampleRate       int
+	captureChannels  int
+	playbackChannels int
+
+	requestTimeout time.Duration
+	timeoutClip    []byte
+	errorClip      []byte
 
 	// ampl holds float32 bits of the current RMS amplitude during TTS playback.
 	// 0 = silence, 1 = maximum loudness. Updated ~every 20ms during paced playback.
@@ -62,29 +67,74 @@ type VoicePipeline struct {
 	playMu     sync.Mutex
 	playCancel context.CancelFunc
 	playDone   chan struct{}
+
+	// batchMu guards batchCancel for the in-flight ProcessBatch request.
+	batchMu     sync.Mutex
+	batchCancel context.CancelFunc
 }
 
-func NewVoicePipeline(machine *Machine, writer AudioWriter, stt providers.STTProvider, chat providers.ChatProvider, tts providers.TTSProvider, sttModel, chatModel, ttsModel, ttsVoice, systemPrompt string, sampleRate, channels int) *VoicePipeline {
+func NewVoicePipeline(machine *Machine, writer AudioWriter, stt providers.STTProvider, chat providers.ChatProvider, tts providers.TTSProvider, sttModel, chatModel, ttsModel, ttsVoice, systemPrompt string, sampleRate, captureChannels, playbackChannels int) *VoicePipeline {
 	if sampleRate <= 0 {
 		sampleRate = audio.DefaultSampleRate
 	}
-	if channels <= 0 {
-		channels = audio.DefaultChannels
+	if captureChannels <= 0 {
+		captureChannels = 1
+	}
+	if playbackChannels <= 0 {
+		playbackChannels = 2
 	}
 	return &VoicePipeline{
-		machine:      machine,
-		writer:       writer,
-		stt:          stt,
-		chat:         chat,
-		tts:          tts,
-		sttModel:     strings.TrimSpace(sttModel),
-		chatModel:    strings.TrimSpace(chatModel),
-		ttsModel:     strings.TrimSpace(ttsModel),
-		ttsVoice:     strings.TrimSpace(ttsVoice),
-		systemPrompt: strings.TrimSpace(systemPrompt),
-		sampleRate:   sampleRate,
-		channels:     channels,
+		machine:          machine,
+		writer:           writer,
+		stt:              stt,
+		chat:             chat,
+		tts:              tts,
+		sttModel:         strings.TrimSpace(sttModel),
+		chatModel:        strings.TrimSpace(chatModel),
+		ttsModel:         strings.TrimSpace(ttsModel),
+		ttsVoice:         strings.TrimSpace(ttsVoice),
+		systemPrompt:     strings.TrimSpace(systemPrompt),
+		sampleRate:       sampleRate,
+		captureChannels:  captureChannels,
+		playbackChannels: playbackChannels,
 	}
+}
+
+// SetRequestTimeout sets the per-batch timeout. Zero disables it.
+func (p *VoicePipeline) SetRequestTimeout(d time.Duration) {
+	if p != nil {
+		p.requestTimeout = d
+	}
+}
+
+// SetTimeoutClip sets the pre-encoded stereo PCM played when a batch times out.
+func (p *VoicePipeline) SetTimeoutClip(pcm []byte) {
+	if p != nil {
+		p.timeoutClip = pcm
+	}
+}
+
+// SetErrorClip sets the pre-encoded stereo PCM played on network/provider errors.
+func (p *VoicePipeline) SetErrorClip(pcm []byte) {
+	if p != nil {
+		p.errorClip = pcm
+	}
+}
+
+// CancelBatch cancels the in-flight ProcessBatch request. Returns false when
+// no batch is in progress.
+func (p *VoicePipeline) CancelBatch() bool {
+	if p == nil {
+		return false
+	}
+	p.batchMu.Lock()
+	cancel := p.batchCancel
+	p.batchMu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // SetLogger wires a logger for per-stage timing output.
@@ -162,7 +212,6 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	if p == nil {
 		return errors.New("nil voice pipeline")
 	}
-	// Outside AI mode no provider/API traffic may happen at all.
 	if !p.aiModeEnabled() {
 		return nil
 	}
@@ -173,23 +222,38 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.machine.Transition(EventListen)
 	}
 
+	timeout := p.requestTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	batchCtx, batchCancel := context.WithTimeout(ctx, timeout)
+	p.batchMu.Lock()
+	p.batchCancel = batchCancel
+	p.batchMu.Unlock()
+	defer func() {
+		batchCancel()
+		p.batchMu.Lock()
+		p.batchCancel = nil
+		p.batchMu.Unlock()
+	}()
+
 	totalStart := time.Now()
 
 	sttStart := time.Now()
-	transcription, err := p.stt.Transcribe(ctx, providers.TranscriptionRequest{
+	transcription, err := p.stt.Transcribe(batchCtx, providers.TranscriptionRequest{
 		Model:      p.sttModel,
 		Audio:      pcm,
 		SampleRate: p.sampleRate,
-		Channels:   p.channels,
+		Channels:   p.captureChannels,
 		Format:     "wav",
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline STT: %dms | tokens: %s (%.1fs audio)",
 			time.Since(sttStart).Milliseconds(), usageString(transcription.Usage),
-			audioSeconds(len(pcm), p.sampleRate, p.channels))
+			audioSeconds(len(pcm), p.sampleRate, p.captureChannels))
 	}
 	transcript := strings.TrimSpace(transcription.Text)
 	if transcript == "" {
@@ -211,13 +275,13 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	chatStart := time.Now()
-	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
+	chat, err := p.chat.Reply(batchCtx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: transcript}},
 		SystemPrompt: p.currentSystemPrompt(),
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline Chat: %dms | tokens: %s",
@@ -259,9 +323,48 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	// the device playback rate so BMO's voice plays at natural speed and
 	// pitch. (Skipping this step is the planned "funny voice" easter egg:
 	// 24kHz played at 16kHz sounds ~1.5x slower and a third deeper.)
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
 
 	return p.speak(ctx, speech)
+}
+
+// handleBatchError dispatches STT/Chat errors: B-cancel → silent idle,
+// timeout → timeout clip, quota → quota state, other → error clip.
+func (p *VoicePipeline) handleBatchError(ctx, batchCtx context.Context, err error, _ bool) error {
+	// B-button cancel: batchCtx cancelled but outer ctx still alive.
+	if errors.Is(batchCtx.Err(), context.Canceled) && ctx.Err() == nil {
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	// Timeout: batchCtx deadline exceeded but outer ctx still alive.
+	if errors.Is(batchCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		return p.playFallbackClip(ctx, p.timeoutClip)
+	}
+	// Quota exhausted.
+	if classifyQuota(p.stt, err) || classifyQuota(p.chat, err) || classifyQuota(p.tts, err) {
+		if p.machine != nil {
+			p.machine.Transition(EventQuotaExhausted)
+		}
+		return err
+	}
+	// Other network/provider error.
+	return p.playFallbackClip(ctx, p.errorClip)
+}
+
+// playFallbackClip plays pcm through the writer. If pcm is empty the machine
+// transitions to idle silently via EventRest; otherwise speak() handles all
+// state transitions.
+func (p *VoicePipeline) playFallbackClip(ctx context.Context, pcm []byte) error {
+	if len(pcm) == 0 {
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	// Machine may be in Listening or Thinking; speak() handles EventSpeak/EventRest.
+	return p.speak(ctx, pcm)
 }
 
 // SpeakRemark generates and speaks a spontaneous proactive remark. The
@@ -337,7 +440,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	if onSpoken != nil {
 		onSpoken(reply)
 	}
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
 
 	return p.speak(ctx, speech)
 }
@@ -381,7 +484,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 	if onSpoken != nil {
 		onSpoken(text)
 	}
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.channels)
+	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
 
 	return p.speak(ctx, speech)
 }
@@ -472,11 +575,11 @@ const ttsPCMSampleRate = 24000
 // chunk. The call returns once the final chunk has finished playing, so the
 // caller can key the speaking state directly to actual sound output.
 func (p *VoicePipeline) playPaced(ctx context.Context, pcm []byte) error {
-	bytesPerChunk := p.sampleRate * p.channels * 2 /* 16-bit */ * speakChunkMs / 1000
+	bytesPerChunk := p.sampleRate * p.playbackChannels * 2 /* 16-bit */ * speakChunkMs / 1000
 	if bytesPerChunk <= 0 {
 		return p.writer.WritePCM(pcm)
 	}
-	amps := rmsChunks(pcm, p.sampleRate, p.channels, speakChunkMs)
+	amps := rmsChunks(pcm, p.sampleRate, p.playbackChannels, speakChunkMs)
 	lead := audio.PlaybackBufferMs / speakChunkMs
 	chunkDur := time.Duration(speakChunkMs) * time.Millisecond
 	nChunks := (len(pcm) + bytesPerChunk - 1) / bytesPerChunk

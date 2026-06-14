@@ -94,8 +94,8 @@ func TestVoicePipelineHappyPath(t *testing.T) {
 	writer := &fakeWriter{}
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi there"}
-	tts := &fakeProvider{speech: []byte{1, 2, 3}}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", audio.DefaultSampleRate, 1)
+	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}} // min one stereo frame (4 bytes)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", audio.DefaultSampleRate, 1, 2)
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
@@ -115,7 +115,7 @@ func TestProcessBatchRefusesOutsideAIMode(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "", 16000, 1, 2)
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() in idle mode error = %v, want silent no-op", err)
@@ -145,7 +145,7 @@ func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "static persona", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts", "nova", "static persona", 16000, 1, 2)
 
 	current := "persona one"
 	pipe.SetSystemPromptSource(func() string { return current })
@@ -182,7 +182,7 @@ func TestTTSInstructionsSourceReadPerUtterance(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini-tts", "tts", "nova", "", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini-tts", "tts", "nova", "", 16000, 1, 2)
 	pipe.SetTTSInstructions("static fallback")
 
 	current := "take one"
@@ -223,7 +223,7 @@ func TestProcessBatchResamplesTTSToPlaybackRate(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: speech}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
@@ -238,11 +238,11 @@ func TestProcessBatchResamplesTTSToPlaybackRate(t *testing.T) {
 
 func TestPlayPacedTracksPlaybackClock(t *testing.T) {
 	writer := &fakeWriter{}
-	pipe := NewVoicePipeline(nil, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "", "", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(nil, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "", "", "", "", "", 16000, 1, 2)
 
-	// 500ms of constant-amplitude PCM (int16 = 8192 -> RMS ~ 0.25).
+	// 500ms of constant-amplitude stereo PCM (int16 = 8192 -> RMS ~ 0.25).
 	const totalMs = 500
-	pcm := make([]byte, 16000*2*totalMs/1000)
+	pcm := make([]byte, 16000*2*2*totalMs/1000) // 16kHz stereo S16LE
 	for i := 0; i+1 < len(pcm); i += 2 {
 		binary.LittleEndian.PutUint16(pcm[i:i+2], uint16(int16(8192)))
 	}
@@ -298,7 +298,7 @@ func TestInterruptSpeechCutsPlaybackShort(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: speech}
-	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 
 	result := make(chan error, 1)
 	go func() { result <- pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}) }()
@@ -344,7 +344,7 @@ func TestInterruptSpeechCutsPlaybackShort(t *testing.T) {
 }
 
 func TestInterruptSpeechIdleReturnsFalse(t *testing.T) {
-	pipe := NewVoicePipeline(nil, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "", "", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(nil, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "", "", "", "", "", 16000, 1, 2)
 	done := make(chan bool, 1)
 	go func() { done <- pipe.InterruptSpeech() }()
 	select {
@@ -361,7 +361,7 @@ func TestVoicePipelineIgnoresSilentAudio(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
 	writer := &fakeWriter{}
-	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1)
+	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1, 2)
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x00, 0x00, 0x00}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
 	}
@@ -375,7 +375,7 @@ func TestVoicePipelineQuotaFailure(t *testing.T) {
 	m.SetMode("ai")
 	writer := &fakeWriter{}
 	stt := &fakeProvider{err: errors.New("quota exceeded")}
-	pipe := NewVoicePipeline(m, writer, stt, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1)
+	pipe := NewVoicePipeline(m, writer, stt, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", audio.DefaultSampleRate, 1, 2)
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err == nil {
 		t.Fatal("ProcessBatch() error = nil, want error")
 	}
@@ -390,7 +390,7 @@ func TestSpeakRemarkHappyPath(t *testing.T) {
 	writer := &fakeWriter{}
 	chat := &fakeProvider{reply: "You reached stage 7! Daebak!"}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
 	pipe.SetSystemPromptSource(func() string { return "persona plus device context" })
 
 	if err := pipe.SpeakRemark(context.Background(), "(BMO says something about achievements)", nil); err != nil {
@@ -416,7 +416,7 @@ func TestSpeakRemarkHappyPath(t *testing.T) {
 func TestSpeakRemarkSkippedOutsideAIMode(t *testing.T) {
 	m := NewMachine() // idle mode
 	chat := &fakeProvider{reply: "should never be called"}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestSpeakRemarkSkippedWhenNotIdle(t *testing.T) {
 	m.SetMode("ai")
 	m.Transition(EventListen) // user is mid-conversation
 	chat := &fakeProvider{reply: "should never be called"}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestSpeakRemarkSkippedWhenNotIdle(t *testing.T) {
 func TestSpeakRemarkEmptyReplyReturnsToIdle(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestSpeakRemarkChatFailureEntersErrorState(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
 	chat := &fakeProvider{err: fmt.Errorf("boom")}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", nil); err == nil {
 		t.Fatal("expected error")
 	}
@@ -496,7 +496,7 @@ func TestPipelineLogsTokenUsage(t *testing.T) {
 		chatUsage: providers.Usage{PromptTokens: 612, CompletionTokens: 43, TotalTokens: 655},
 	}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
 	logger := &captureLogger{}
 	pipe.SetLogger(logger)
 
@@ -532,7 +532,7 @@ func TestRemarkLogsTokenUsage(t *testing.T) {
 		chatUsage: providers.Usage{PromptTokens: 705, CompletionTokens: 38, TotalTokens: 743},
 	}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 	logger := &captureLogger{}
 	pipe.SetLogger(logger)
 
@@ -553,7 +553,7 @@ func TestSpeakRemarkLogsPromptContext(t *testing.T) {
 	m.SetMode("ai")
 	chat := &fakeProvider{reply: "daebak!"}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 	pipe.SetSystemPromptSource(func() string { return "persona\n\nDEVICE AWARENESS: stuff" })
 	logger := &captureLogger{}
 	pipe.SetLogger(logger)
@@ -575,7 +575,7 @@ func TestSpeakRemarkInvokesOnSpoken(t *testing.T) {
 	m.SetMode("ai")
 	chat := &fakeProvider{reply: "what a save file!"}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 
 	var spoken []string
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", func(reply string) { spoken = append(spoken, reply) }); err != nil {
@@ -594,21 +594,21 @@ func TestSpeakRemarkOnSpokenSkippedOnFailure(t *testing.T) {
 
 	// Chat failure: callback must not fire.
 	chatFail := &fakeProvider{err: fmt.Errorf("boom")}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chatFail, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, chatFail, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe.SpeakRemark(context.Background(), "(nudge)", onSpoken); err == nil {
 		t.Fatal("expected chat error")
 	}
 	// Empty reply: callback must not fire.
 	m2 := NewMachine()
 	m2.SetMode("ai")
-	pipe2 := NewVoicePipeline(m2, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1)
+	pipe2 := NewVoicePipeline(m2, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "  "}, &fakeProvider{}, "", "gpt-4o-mini", "", "", "", 16000, 1, 2)
 	if err := pipe2.SpeakRemark(context.Background(), "(nudge)", onSpoken); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
 	// TTS failure: callback must not fire.
 	m3 := NewMachine()
 	m3.SetMode("ai")
-	pipe3 := NewVoicePipeline(m3, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "hi"}, &fakeProvider{err: fmt.Errorf("tts boom")}, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe3 := NewVoicePipeline(m3, &fakeWriter{}, &fakeProvider{}, &fakeProvider{reply: "hi"}, &fakeProvider{err: fmt.Errorf("tts boom")}, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 	if err := pipe3.SpeakRemark(context.Background(), "(nudge)", onSpoken); err == nil {
 		t.Fatal("expected tts error")
 	}
@@ -623,7 +623,7 @@ func TestSpeakVerbatimSkipsChat(t *testing.T) {
 	writer := &fakeWriter{}
 	chat := &fakeProvider{reply: "must never be used"}
 	tts := &fakeProvider{speech: []byte{1, 2, 3, 4}}
-	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, writer, &fakeProvider{}, chat, tts, "", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
 
 	var spoken []string
 	if err := pipe.SpeakVerbatim(context.Background(), "Who wants to play video games?", func(s string) { spoken = append(spoken, s) }); err != nil {
@@ -651,12 +651,124 @@ func TestSpeakVerbatimSkippedWhenNotIdle(t *testing.T) {
 	m.SetMode("ai")
 	m.Transition(EventListen)
 	tts := &fakeProvider{speech: []byte{1, 2}}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, tts, "", "", "tts-1", "alloy", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, tts, "", "", "tts-1", "alloy", "", 16000, 1, 2)
 	if err := pipe.SpeakVerbatim(context.Background(), "quote", nil); err != nil {
 		t.Fatalf("speak verbatim: %v", err)
 	}
 	if tts.lastSpeech.Input != "" {
 		t.Error("tts must not be called while not idle")
+	}
+}
+
+// blockingProvider blocks until context is cancelled.
+type blockingProvider struct{ fakeProvider }
+
+func (b *blockingProvider) Transcribe(ctx context.Context, req providers.TranscriptionRequest) (providers.TranscriptionResult, error) {
+	<-ctx.Done()
+	return providers.TranscriptionResult{}, ctx.Err()
+}
+
+func (b *blockingProvider) Reply(ctx context.Context, req providers.ChatRequest) (providers.ChatResult, error) {
+	<-ctx.Done()
+	return providers.ChatResult{}, ctx.Err()
+}
+
+func TestCancelBatchReturnsFalseWhenIdle(t *testing.T) {
+	p := NewVoicePipeline(nil, &fakeWriter{}, &fakeProvider{}, &fakeProvider{}, &fakeProvider{},
+		"", "", "", "", "", 16000, 1, 2)
+	if p.CancelBatch() {
+		t.Fatal("CancelBatch should return false when no batch is in progress")
+	}
+}
+
+func TestProcessBatchSilentCancelReturnsMachineToIdle(t *testing.T) {
+	machine := NewMachine()
+	machine.SetMode("ai")
+	w := &fakeWriter{}
+
+	stt := &blockingProvider{}
+	p := NewVoicePipeline(machine, w, stt, &fakeProvider{}, &fakeProvider{},
+		"m", "m", "m", "v", "sys", 16000, 1, 2)
+
+	pcm := make([]byte, 32000)
+	for i := range pcm {
+		pcm[i] = 0x40
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- p.ProcessBatch(context.Background(), pcm)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	p.CancelBatch()
+
+	err := <-done
+	if err != nil {
+		t.Fatalf("expected nil after B-cancel, got %v", err)
+	}
+	if got := machine.State(); got != StateIdle {
+		t.Fatalf("machine should be idle after cancel, got %s", got)
+	}
+	if w.totalBytes() > 0 {
+		t.Fatal("expected no PCM writes after B-cancel (no fallback clip)")
+	}
+}
+
+func TestProcessBatchTimeoutDuringChatPlaysFallback(t *testing.T) {
+	machine := NewMachine()
+	machine.SetMode("ai")
+	w := &fakeWriter{}
+
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &blockingProvider{}
+	p := NewVoicePipeline(machine, w, stt, chat, &fakeProvider{},
+		"m", "m", "m", "v", "sys", 16000, 1, 2)
+	p.SetRequestTimeout(50 * time.Millisecond)
+
+	timeoutPCM := []byte{0x01, 0x00, 0x01, 0x00}
+	p.SetTimeoutClip(timeoutPCM)
+
+	pcm := make([]byte, 32000)
+	for i := range pcm {
+		pcm[i] = 0x40
+	}
+
+	if err := p.ProcessBatch(context.Background(), pcm); err != nil {
+		t.Fatalf("unexpected error after timeout: %v", err)
+	}
+	if w.totalBytes() == 0 {
+		t.Fatal("expected timeout clip to be played (PCM written)")
+	}
+	if got := machine.State(); got != StateIdle {
+		t.Fatalf("machine should be idle after timeout, got %s", got)
+	}
+}
+
+func TestProcessBatchNetworkErrorPlaysErrorClip(t *testing.T) {
+	machine := NewMachine()
+	machine.SetMode("ai")
+	w := &fakeWriter{}
+
+	stt := &fakeProvider{err: fmt.Errorf("network error")}
+	p := NewVoicePipeline(machine, w, stt, &fakeProvider{}, &fakeProvider{},
+		"m", "m", "m", "v", "sys", 16000, 1, 2)
+
+	errorPCM := []byte{0x01, 0x00, 0x01, 0x00}
+	p.SetErrorClip(errorPCM)
+
+	pcm := make([]byte, 32000)
+	for i := range pcm {
+		pcm[i] = 0x40
+	}
+
+	if err := p.ProcessBatch(context.Background(), pcm); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.totalBytes() == 0 {
+		t.Fatal("expected error clip to be played (PCM written)")
+	}
+	if got := machine.State(); got != StateIdle {
+		t.Fatalf("machine should be idle after network error, got %s", got)
 	}
 }
 
@@ -666,7 +778,7 @@ func TestProcessBatchDoesNotLogSystemPromptByDefault(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "secret persona", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "secret persona", 16000, 1, 2)
 	logger := &captureLogger{}
 	pipe.SetLogger(logger)
 	pipe.SetTTSInstructions("secret voice style")
@@ -689,7 +801,7 @@ func TestProcessBatchLogsSystemPromptWhenEnabled(t *testing.T) {
 	stt := &fakeProvider{transcript: "hello"}
 	chat := &fakeProvider{reply: "hi"}
 	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "", 16000, 1)
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "nova", "", 16000, 1, 2)
 	pipe.SetSystemPromptSource(func() string { return "be bmo, the computer" })
 	pipe.SetTTSInstructions("speak like bmo")
 	logger := &captureLogger{}
