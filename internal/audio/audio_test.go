@@ -49,3 +49,24 @@ func TestDefaultConfigUsesTrimUIDevicePaths(t *testing.T) {
 		t.Fatal("PlaybackArgs() returned empty args")
 	}
 }
+
+func TestDefaultConfigCaptureChannelsIs1(t *testing.T) {
+	cfg := DefaultConfig(hardware.Profile{}).normalize()
+	args := cfg.CaptureArgs()
+	for i, a := range args {
+		if a == "-c" && i+1 < len(args) {
+			if args[i+1] != "1" {
+				t.Fatalf("CaptureArgs -c = %q, want 1", args[i+1])
+			}
+			return
+		}
+	}
+	t.Fatal("no -c flag in CaptureArgs")
+}
+
+func TestNormalizeZeroPlaybackChannelsDefaultsTo2(t *testing.T) {
+	cfg := Config{}.normalize()
+	if cfg.PlaybackChannels != 2 {
+		t.Fatalf("PlaybackChannels = %d, want 2", cfg.PlaybackChannels)
+	}
+}

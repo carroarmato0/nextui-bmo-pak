@@ -29,13 +29,14 @@ type CmdRunner func(name string, args ...string) error
 type CmdFactory func(name string, args ...string) *exec.Cmd
 
 type Config struct {
-	CaptureDevice  string
-	PlaybackDevice string
-	CaptureTool    string
-	PlaybackTool   string
-	SampleRate     int
-	Channels       int
-	Format         string
+	CaptureDevice   string
+	PlaybackDevice  string
+	CaptureTool     string
+	PlaybackTool    string
+	SampleRate      int
+	Channels        int
+	PlaybackChannels int
+	Format          string
 }
 
 type Session struct {
@@ -93,6 +94,9 @@ func (c Config) normalize() Config {
 	if c.Channels <= 0 {
 		c.Channels = DefaultChannels
 	}
+	if c.PlaybackChannels <= 0 {
+		c.PlaybackChannels = 2
+	}
 	if strings.TrimSpace(c.Format) == "" {
 		c.Format = DefaultFormat
 	}
@@ -101,7 +105,7 @@ func (c Config) normalize() Config {
 
 func (c Config) Summary() string {
 	c = c.normalize()
-	return fmt.Sprintf("capture=%s via %s, playback=%s via %s, %dHz %dch %s", c.CaptureDevice, c.CaptureTool, c.PlaybackDevice, c.PlaybackTool, c.SampleRate, c.Channels, c.Format)
+	return fmt.Sprintf("capture=%s via %s, playback=%s via %s, %dHz cap=%dch play=%dch %s", c.CaptureDevice, c.CaptureTool, c.PlaybackDevice, c.PlaybackTool, c.SampleRate, c.Channels, c.PlaybackChannels, c.Format)
 }
 
 func (c Config) CaptureArgs() []string {
@@ -111,7 +115,7 @@ func (c Config) CaptureArgs() []string {
 
 func (c Config) PlaybackArgs() []string {
 	c = c.normalize()
-	return []string{"-q", "-D", c.PlaybackDevice, "-f", c.Format, "-c", fmt.Sprintf("%d", c.Channels), "-r", fmt.Sprintf("%d", c.SampleRate), "-t", "raw",
+	return []string{"-q", "-D", c.PlaybackDevice, "-f", c.Format, "-c", fmt.Sprintf("%d", c.PlaybackChannels), "-r", fmt.Sprintf("%d", c.SampleRate), "-t", "raw",
 		fmt.Sprintf("--buffer-time=%d", PlaybackBufferMs*1000)}
 }
 
