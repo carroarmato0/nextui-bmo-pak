@@ -25,7 +25,7 @@ Add seven pre-recorded in-character audio clips to BMO, a lightweight clip playe
 
 ### Storage and embedding
 
-Raw S16LE PCM at 16 kHz mono (device-native rate, pre-resampled from TTS 24 kHz output). Files live in `assets/audio/<name>.pcm` and are embedded in the binary via:
+Raw S16LE PCM at 16 kHz **stereo** (2 channels, device-native playback rate, pre-resampled and upmixed from TTS 24 kHz mono output). Files live in `assets/audio/<name>.pcm` and are embedded in the binary via:
 
 ```go
 //go:embed assets/audio/*.pcm
@@ -98,8 +98,9 @@ A standalone Go tool that generates the PCM files for all seven clips using the 
 
 1. Send a short "nudge" to the Chat AI with `DefaultSystemPrompt` as the system prompt, asking for an in-character one- or two-sentence response appropriate for the clip's situation.
 2. Pass the returned text to TTS with the configured voice and instructions.
-3. Resample the 24 kHz PCM output to 16 kHz using `audio.ResampleS16LE`.
-4. Write to `<out>/<name>.pcm`.
+3. Resample the 24 kHz mono PCM output to 16 kHz using `audio.ResampleS16LE`.
+4. Upmix mono to stereo by interleaving each sample as `[L, R]` (duplicate channel).
+5. Write to `<out>/<name>.pcm`.
 
 Running the tool a second time overwrites existing files (idempotent).
 
@@ -232,7 +233,20 @@ A 5-second timeout guards against a stuck audio session. Deferred cleanup (audio
 
 ---
 
-## 7. What Is Not Changed
+## 7. Audio Channel Configuration
+
+The TrimUI hardware has stereo speakers but a mono microphone. The current `audio.Config.Channels = 1` conflates both. This spec splits them:
+
+- `audio.Config` gains `PlaybackChannels int` (default 2) alongside the existing `Channels` field which becomes the capture channel count (remains 1).
+- `audio.Config.PlaybackArgs()` uses `PlaybackChannels`; `CaptureArgs()` keeps `Channels`.
+- `VoicePipeline` receives `playbackChannels` separately from `captureChannels` and uses it for `ResampleS16LE` on TTS output and for the `timeout`/`error` clip playback.
+- `clips.Player` is constructed with `playbackChannels = 2`.
+
+Verified against device: `aplay --dump-hw-params` on hw:0,0 reports `CHANNELS: [1 2]` — stereo playback is supported.
+
+---
+
+## 8. What Is Not Changed
 
 - `SpeakRemark` and `SpeakVerbatim` error paths — unchanged
 - `EventQuotaExhausted` handling — unchanged
@@ -241,7 +255,7 @@ A 5-second timeout guards against a stuck audio session. Deferred cleanup (audio
 
 ---
 
-## Files Affected
+## 9. Files Affected
 
 | Path | Change |
 |---|---|
@@ -255,3 +269,4 @@ A 5-second timeout guards against a stuck audio session. Deferred cleanup (audio
 | `internal/assistant/voice.go` | Add timeout, cancel, clip fields and methods |
 | `cmd/bmo-pak/main.go` | Wire `clips.Player`, hello/mod_error/goodbye, `CancelBatch` in `handleNav`, `SetRequestTimeout` |
 | `internal/ui/screen_settings.go` | Add Timeout settings item |
+| `internal/audio/audio.go` | Split `Channels` into `Channels` (capture) + `PlaybackChannels` (playback) |
