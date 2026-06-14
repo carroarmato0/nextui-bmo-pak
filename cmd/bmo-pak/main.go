@@ -17,6 +17,7 @@ import (
 
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
+	"github.com/carroarmato0/nextui-bmo/internal/clips"
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 	"github.com/carroarmato0/nextui-bmo/internal/devctx"
 	"github.com/carroarmato0/nextui-bmo/internal/face"
@@ -179,29 +180,39 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
 	proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 
-	var audioSession *audio.Session
+	audioCfg := audio.DefaultConfig(hardwareProfile)
+	audioSession := audio.NewSession(audioCfg)
+	if err := audioSession.Start(); err != nil {
+		logger.Warnf("audio session unavailable: %v", err)
+		audioSession = nil
+	} else {
+		logger.Infof("audio session ready: %s", audioCfg.Summary())
+		defer audioSession.Close()
+	}
+
+	var clipPlayer *clips.Player
+	if audioSession != nil {
+		clipLib := clips.NewLibrary(homeDir)
+		clipPlayer = clips.NewPlayer(audioSession, audioCfg.SampleRate, audioCfg.PlaybackChannels, clipLib)
+	}
+
 	var audioRouter *audio.CaptureRouter
 	var audioPipeline *assistant.VoicePipeline
 	var stopPTT func()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if cfg.UsesAI() {
-		audioCfg := audio.DefaultConfig(hardwareProfile)
-		audioSession = audio.NewSession(audioCfg)
+	if cfg.UsesAI() && audioSession != nil {
 		audioRouter = audio.NewCaptureRouter(audioSession, audio.BytesPerSecond(audioCfg.SampleRate, audioCfg.Channels, audio.BytesPerSampleS16LE)/2)
 		if err := audioRouter.Start(); err != nil {
-			logger.Warnf("audio session unavailable: %v", err)
+			logger.Warnf("capture router unavailable: %v", err)
 			audioRouter = nil
-			audioSession = nil
 		} else {
-			logger.Infof("audio session ready: %s", audioCfg.Summary())
 			defer audioRouter.Close()
-			defer audioSession.Close()
 
 			sttClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.STT.BaseURL, APIKey: cfg.STT.APIKey}, http.DefaultClient)
 			chatClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.Chat.BaseURL, APIKey: cfg.Chat.APIKey}, http.DefaultClient)
 			ttsClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.TTS.BaseURL, APIKey: cfg.TTS.APIKey}, http.DefaultClient)
-			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels)
+			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels, audioCfg.PlaybackChannels)
 			audioPipeline.SetLogger(logger)
 			audioPipeline.SetTTSInstructions(voicePrompt)
 			// Re-read both override files before each utterance so they can
@@ -217,6 +228,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					memory.PromptBlock(time.Now().UTC()),
 				)
 			})
+			if clipPlayer != nil {
+				audioPipeline.SetTimeoutClip(clips.NewLibrary(homeDir).Load("timeout"))
+				audioPipeline.SetErrorClip(clips.NewLibrary(homeDir).Load("error"))
+			}
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 		}
 	}
@@ -275,6 +290,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 		if audioPipeline != nil {
 			audioPipeline.SetLogSystemPrompt(cfg.LogSystemPrompt)
+			audioPipeline.SetRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second)
 		}
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return fmt.Errorf("save config: %w", err)
@@ -300,10 +316,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
-		// B closes an open overlay; interrupts BMO mid-speech; exits otherwise.
+		// B closes an open overlay; cancels in-flight batch; interrupts speech; exits otherwise.
 		if action == input.NavCancel {
 			if activeMenu != nil {
 				setActiveMenu(nil)
+			} else if audioPipeline != nil && audioPipeline.CancelBatch() {
+				logger.Infof("batch cancelled by B press")
 			} else if audioPipeline != nil && audioPipeline.InterruptSpeech() {
 				logger.Infof("speech interrupted by B press")
 			} else {
@@ -375,6 +393,19 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
+
+	if clipPlayer != nil {
+		startupCtx, startupCancel := context.WithTimeout(ctx, 10*time.Second)
+		_ = clipPlayer.Play(startupCtx, "hello")
+		overrideErrs := config.CheckOverrides(homeDir)
+		for _, e := range overrideErrs {
+			logger.Warnf("mod override error: %v", e)
+		}
+		if len(overrideErrs) > 0 {
+			_ = clipPlayer.Play(startupCtx, "mod_error")
+		}
+		startupCancel()
+	}
 
 	logger.Infof("BMO ready; entering face loop")
 	for running {
@@ -522,6 +553,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 
 	logger.Infof("BMO shutting down")
+	if clipPlayer != nil {
+		goodbyeCtx, goodbyeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = clipPlayer.Play(goodbyeCtx, "goodbye")
+		goodbyeCancel()
+	}
 	return nil
 }
 
