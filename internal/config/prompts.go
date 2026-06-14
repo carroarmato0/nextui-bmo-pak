@@ -1,7 +1,11 @@
 package config
 
 import (
+	"bytes"
+	"encoding/xml"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,4 +50,71 @@ func RemoveOverrides(paths ...string) error {
 		}
 	}
 	return firstErr
+}
+
+// CheckOverrides validates override files in homeDir and returns any errors
+// found. It checks persona.txt, voice.txt, and quotes.txt for non-blank
+// content, and validates all *.svg files in the faces/ subdirectory as
+// well-formed XML.
+func CheckOverrides(homeDir string) []error {
+	var errs []error
+
+	checkText := func(path, label string) {
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", label, err))
+			return
+		}
+		if strings.TrimSpace(string(data)) == "" {
+			errs = append(errs, fmt.Errorf("%s exists but is blank", label))
+		}
+	}
+
+	checkText(PersonaPath(homeDir), "persona.txt")
+	checkText(VoicePath(homeDir), "voice.txt")
+	checkText(QuotesPath(homeDir), "quotes.txt")
+
+	entries, err := os.ReadDir(FacesDir(homeDir))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("faces dir: %w", err))
+		}
+		return errs
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".svg" {
+			continue
+		}
+		p := filepath.Join(FacesDir(homeDir), e.Name())
+		data, err := os.ReadFile(p)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("faces/%s: %w", e.Name(), err))
+			continue
+		}
+		if !isValidXML(data) {
+			errs = append(errs, fmt.Errorf("faces/%s: not valid XML", e.Name()))
+		}
+	}
+	return errs
+}
+
+func isValidXML(data []byte) bool {
+	d := xml.NewDecoder(bytes.NewReader(data))
+	hasElement := false
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			return hasElement
+		}
+		if err != nil {
+			return false
+		}
+		if _, ok := tok.(xml.StartElement); ok {
+			hasElement = true
+		}
+	}
 }

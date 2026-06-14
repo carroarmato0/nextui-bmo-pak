@@ -65,3 +65,56 @@ func TestPromptPaths(t *testing.T) {
 		t.Fatalf("FacesDir = %q", got)
 	}
 }
+
+func TestCheckOverridesValidPersonaReturnsNoError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "persona.txt"), []byte("I am BMO"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errs := CheckOverrides(dir)
+	if len(errs) != 0 {
+		t.Fatalf("want no errors for valid persona.txt, got %v", errs)
+	}
+}
+
+func TestCheckOverridesInvalidSVGReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	facesDir := filepath.Join(dir, "faces")
+	if err := os.MkdirAll(facesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(facesDir, "neutral.svg"), []byte("not xml!!!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errs := CheckOverrides(dir)
+	if len(errs) == 0 {
+		t.Fatal("want error for invalid SVG, got none")
+	}
+}
+
+func TestCheckOverridesValidSVGReturnsNoError(t *testing.T) {
+	dir := t.TempDir()
+	facesDir := filepath.Join(dir, "faces")
+	if err := os.MkdirAll(facesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>`)
+	if err := os.WriteFile(filepath.Join(facesDir, "neutral.svg"), svg, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errs := CheckOverrides(dir)
+	if len(errs) != 0 {
+		t.Fatalf("want no errors for valid SVG, got %v", errs)
+	}
+}
+
+func TestCheckOverridesBlankPersonaReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "persona.txt"), []byte("   "), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errs := CheckOverrides(dir)
+	if len(errs) == 0 {
+		t.Fatal("want error for blank persona.txt, got none")
+	}
+}
