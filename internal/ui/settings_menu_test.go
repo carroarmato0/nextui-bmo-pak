@@ -9,10 +9,10 @@ import (
 
 // ── Structure ──────────────────────────────────────────────────────────────
 
-func TestSettingsMenuHas15Items(t *testing.T) {
+func TestSettingsMenuHas16Items(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	if got := len(m.Overlay().Items); got != 15 {
-		t.Fatalf("expected 15 overlay items, got %d", got)
+	if got := len(m.Overlay().Items); got != 16 {
+		t.Fatalf("expected 16 overlay items, got %d", got)
 	}
 }
 
@@ -24,12 +24,33 @@ func TestSettingsMenuItemCodes(t *testing.T) {
 		"stt_status", "chat_status", "tts_status", "voice_status",
 		"aware_library", "aware_saves", "aware_playlog",
 		"aware_system", "aware_achievements",
-		"library_detail", "proactive_talk", "restore_defaults",
+		"library_detail", "request_timeout", "proactive_talk", "restore_defaults",
 	}
 	for i, code := range want {
 		if got := items[i].Code; got != code {
 			t.Errorf("items[%d].Code = %q, want %q", i, got, code)
 		}
+	}
+}
+
+func TestSettingsMenuTimeoutCycles(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	// Navigate to request_timeout at index 13.
+	// From 0 (log_level): down → 2 (mode) → 7 (aware_library) → 8 → 9 → 10 → 11 → 12 → 13
+	m.Move(1) // → 2
+	m.Move(1) // → 7
+	for i := 0; i < 6; i++ {
+		m.Move(1)
+	}
+	if got := m.Overlay().Items[13].Code; got != "request_timeout" {
+		t.Fatalf("expected request_timeout at focus after navigation, got %q", got)
+	}
+	initial := m.Config().RequestTimeout
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused: %v", err)
+	}
+	if m.Config().RequestTimeout == initial {
+		t.Fatal("timeout should have changed after toggle")
 	}
 }
 
@@ -166,7 +187,7 @@ func TestSettingsMenuTogglesAwarenessCategories(t *testing.T) {
 
 func TestSettingsMenuCyclesProactiveTalk(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	m.Move(13) // proactive_talk is now at idx 13
+	m.Move(14) // proactive_talk is now at idx 14
 	want := []string{
 		config.ProactiveChatty, config.ProactiveRegular,
 		config.ProactiveOccasional, config.ProactiveRare, config.ProactiveOff,
@@ -201,8 +222,8 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	// restore_defaults is now at idx 14.
-	menu.Move(14)
+	// restore_defaults is now at idx 15.
+	menu.Move(15)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -220,12 +241,12 @@ func TestSettingsMenuRestoreDefaultsIsLastSlot(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.Move(14) // restore_defaults is at idx 14
+	m.Move(15) // restore_defaults is at idx 15
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("restore defaults: %v", err)
 	}
 	if !called {
-		t.Fatal("restore defaults callback not invoked at focus 13")
+		t.Fatal("restore defaults callback not invoked at focus 15")
 	}
 }
 
@@ -327,8 +348,8 @@ func TestSettingsMenuLogSystemPromptLabelReflectsValue(t *testing.T) {
 func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	overlay := m.Overlay()
-	if len(overlay.Items) != 15 {
-		t.Fatalf("expected 15 overlay items, got %d", len(overlay.Items))
+	if len(overlay.Items) != 16 {
+		t.Fatalf("expected 16 overlay items, got %d", len(overlay.Items))
 	}
 	labels := map[string]string{}
 	for _, item := range overlay.Items {

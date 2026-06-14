@@ -51,7 +51,7 @@ func (m *SettingsMenu) Move(delta int) {
 	if m == nil {
 		return
 	}
-	const count = 15
+	const count = 16
 	step := 1
 	if delta < 0 {
 		step = -1
@@ -115,6 +115,17 @@ func (m *SettingsMenu) ToggleFocused() error {
 			m.cfg.LibraryDetail = config.LibraryDetailRandom
 		}
 	case 13:
+		timeouts := config.SupportedRequestTimeouts()
+		curr := m.cfg.RequestTimeout
+		next := timeouts[0]
+		for i, v := range timeouts {
+			if v == curr {
+				next = timeouts[(i+1)%len(timeouts)]
+				break
+			}
+		}
+		m.cfg.RequestTimeout = next
+	case 14:
 		levels := config.SupportedProactiveTalkLevels()
 		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
 		next := levels[0]
@@ -125,7 +136,7 @@ func (m *SettingsMenu) ToggleFocused() error {
 			}
 		}
 		m.cfg.ProactiveTalk = next
-	case 14:
+	case 15:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -161,9 +172,11 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 11},
 		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
 			Selected: true, Focused: m.focus == 12},
-		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
+		{Code: "request_timeout", Label: fmt.Sprintf("TIMEOUT: %ds", m.cfg.RequestTimeout),
 			Selected: true, Focused: m.focus == 13},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 14},
+		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
+			Selected: true, Focused: m.focus == 14},
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 15},
 	}
 	return OverlayState{
 		Visible:  true,
