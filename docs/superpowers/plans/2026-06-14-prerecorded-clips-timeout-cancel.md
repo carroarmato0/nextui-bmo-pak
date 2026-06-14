@@ -495,7 +495,7 @@ var clipDefs = []clipDef{
 }
 
 func main() {
-	key := flag.String("key", os.Getenv("OPENAI_API_KEY"), "OpenAI API key (or set OPENAI_API_KEY)")
+	key := flag.String("key", "", "OpenAI API key (overrides .openai_key file and OPENAI_API_KEY env var)")
 	baseURL := flag.String("base-url", "https://api.openai.com/v1", "API base URL")
 	chatModel := flag.String("chat-model", "gpt-4o-mini", "Chat model for generating clip text")
 	ttsModel := flag.String("tts-model", "gpt-4o-mini-tts", "TTS model")
@@ -504,9 +504,20 @@ func main() {
 	outDir := flag.String("out", "internal/clips/assets/audio", "Output directory for PCM files")
 	flag.Parse()
 
-	if strings.TrimSpace(*key) == "" {
-		log.Fatal("API key required: use -key flag or set OPENAI_API_KEY env var")
+	// Key lookup order: -key flag → .openai_key file → OPENAI_API_KEY env var.
+	resolvedKey := strings.TrimSpace(*key)
+	if resolvedKey == "" {
+		if data, err := os.ReadFile(".openai_key"); err == nil {
+			resolvedKey = strings.TrimSpace(string(data))
+		}
 	}
+	if resolvedKey == "" {
+		resolvedKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if resolvedKey == "" {
+		log.Fatal("API key required: add .openai_key to project root, set OPENAI_API_KEY, or use -key flag")
+	}
+	key = &resolvedKey
 
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		log.Fatalf("create output dir: %v", err)
@@ -514,7 +525,7 @@ func main() {
 
 	client := providers.NewOpenAICompatibleClient(providers.Config{
 		BaseURL: *baseURL,
-		APIKey:  *key,
+		APIKey:  resolvedKey,
 	}, http.DefaultClient)
 
 	ctx := context.Background()
@@ -598,12 +609,18 @@ git commit -m "feat: add generate-audio tool for pre-recording BMO clip PCMs"
 
 ## Task 5: Generate and commit PCM clips
 
-> **Note:** This task requires a real OpenAI API key. The implementor must have `OPENAI_API_KEY` set in their environment or pass it via `-key`.
+> **Note:** This task requires a real OpenAI API key. Place your key in `.openai_key` at the project root (already gitignored), or set `OPENAI_API_KEY`, or pass `-key`. The tool picks them up in that order.
 
-- [ ] **Step 1: Run the generate-audio tool from the repo root**
+- [ ] **Step 1: Add your API key to .openai_key (if not already set via env)**
 
 ```bash
-go run ./cmd/generate-audio/... -key "$OPENAI_API_KEY"
+echo "sk-..." > .openai_key
+```
+
+- [ ] **Step 2: Run the generate-audio tool from the repo root**
+
+```bash
+go run ./cmd/generate-audio/...
 ```
 
 Expected output (order and exact bytes will vary):
@@ -617,7 +634,7 @@ generating mod_error...
 done
 ```
 
-- [ ] **Step 2: Verify all 7 files were created**
+- [ ] **Step 3: Verify all 7 files were created**
 
 ```bash
 ls -lh internal/clips/assets/audio/
@@ -625,7 +642,7 @@ ls -lh internal/clips/assets/audio/
 
 Expected: 7 `.pcm` files, each at least 10 kB.
 
-- [ ] **Step 3: Spot-check one clip on device (optional but recommended)**
+- [ ] **Step 4: Spot-check one clip on device (optional but recommended)**
 
 ```bash
 adb push internal/clips/assets/audio/hello.pcm /tmp/hello.pcm
@@ -634,7 +651,7 @@ adb shell "aplay -D hw:0,0 -f S16_LE -c 2 -r 16000 -t raw /tmp/hello.pcm"
 
 Expected: hear BMO saying hello in character.
 
-- [ ] **Step 4: Commit the generated files**
+- [ ] **Step 5: Commit the generated files**
 
 ```bash
 git add internal/clips/assets/audio/

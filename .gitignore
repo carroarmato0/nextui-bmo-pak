@@ -20,6 +20,9 @@ graphify-out/
 # Git worktrees
 .worktrees/
 
+# Local API keys (never commit)
+.openai_key
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
