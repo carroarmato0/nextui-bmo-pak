@@ -504,18 +504,16 @@ func main() {
 	outDir := flag.String("out", "internal/clips/assets/audio", "Output directory for PCM files")
 	flag.Parse()
 
-	// Key lookup order: -key flag → .openai_key file → OPENAI_API_KEY env var.
+	// Key lookup order: -key flag → .env file → OPENAI_API_KEY env var.
 	resolvedKey := strings.TrimSpace(*key)
 	if resolvedKey == "" {
-		if data, err := os.ReadFile(".openai_key"); err == nil {
-			resolvedKey = strings.TrimSpace(string(data))
-		}
+		resolvedKey = keyFromDotEnv(".env")
 	}
 	if resolvedKey == "" {
 		resolvedKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	}
 	if resolvedKey == "" {
-		log.Fatal("API key required: add .openai_key to project root, set OPENAI_API_KEY, or use -key flag")
+		log.Fatal("API key required: add OPENAI_API_KEY=sk-... to .env in project root, set OPENAI_API_KEY env var, or use -key flag")
 	}
 	key = &resolvedKey
 
@@ -571,6 +569,27 @@ func main() {
 	fmt.Println("done")
 }
 
+// keyFromDotEnv reads path as a .env file and returns the value of OPENAI_API_KEY.
+// Lines are expected in KEY=VALUE format; # comments and blank lines are skipped.
+// Returns "" if the file is absent or the key is not found.
+func keyFromDotEnv(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(k) == "OPENAI_API_KEY" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 // monoToStereo duplicates each S16LE sample to produce interleaved stereo.
 func monoToStereo(mono []byte) []byte {
 	stereo := make([]byte, len(mono)*2)
@@ -609,12 +628,12 @@ git commit -m "feat: add generate-audio tool for pre-recording BMO clip PCMs"
 
 ## Task 5: Generate and commit PCM clips
 
-> **Note:** This task requires a real OpenAI API key. Place your key in `.openai_key` at the project root (already gitignored), or set `OPENAI_API_KEY`, or pass `-key`. The tool picks them up in that order.
+> **Note:** This task requires a real OpenAI API key. Place it in `.env` at the project root (already gitignored), or set `OPENAI_API_KEY`, or pass `-key`. The tool picks them up in that order.
 
-- [ ] **Step 1: Add your API key to .openai_key (if not already set via env)**
+- [ ] **Step 1: Add your API key to .env (if not already set via env)**
 
 ```bash
-echo "sk-..." > .openai_key
+echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
 - [ ] **Step 2: Run the generate-audio tool from the repo root**

@@ -20,8 +20,8 @@ graphify-out/
 # Git worktrees
 .worktrees/
 
-# Local API keys (never commit)
-.openai_key
+# Local environment / API keys (never commit)
+.env
 
 # OS / editor noise
 .DS_Store
