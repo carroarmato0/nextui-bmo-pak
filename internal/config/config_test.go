@@ -193,3 +193,46 @@ func TestProactiveInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestTimeoutDefaultsTo15(t *testing.T) {
+	cfg := Default()
+	cfg.Normalize()
+	if cfg.RequestTimeout != 15 {
+		t.Fatalf("want 15, got %d", cfg.RequestTimeout)
+	}
+}
+
+func TestRequestTimeoutClampedWhenTooLow(t *testing.T) {
+	cfg := Config{RequestTimeout: 5}
+	cfg.Normalize()
+	if cfg.RequestTimeout != 15 {
+		t.Fatalf("want 15 (clamped), got %d", cfg.RequestTimeout)
+	}
+}
+
+func TestRequestTimeoutClampedWhenTooHigh(t *testing.T) {
+	cfg := Config{RequestTimeout: 999}
+	cfg.Normalize()
+	if cfg.RequestTimeout != 60 {
+		t.Fatalf("want 60 (clamped), got %d", cfg.RequestTimeout)
+	}
+}
+
+func TestSupportedRequestTimeoutsContains15And60(t *testing.T) {
+	vals := SupportedRequestTimeouts()
+	has15, has60 := false, false
+	for _, v := range vals {
+		if v == 15 {
+			has15 = true
+		}
+		if v == 60 {
+			has60 = true
+		}
+	}
+	if !has15 {
+		t.Fatal("SupportedRequestTimeouts missing 15")
+	}
+	if !has60 {
+		t.Fatal("SupportedRequestTimeouts missing 60")
+	}
+}

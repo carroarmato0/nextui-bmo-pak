@@ -119,7 +119,8 @@ type Config struct {
 	DeviceContext DeviceContext `json:"device_context"`
 	ProactiveTalk string        `json:"proactive_talk"`
 	LibraryDetail string        `json:"library_detail"`
-	LogSystemPrompt bool        `json:"log_system_prompt,omitempty"`
+	LogSystemPrompt bool `json:"log_system_prompt,omitempty"`
+	RequestTimeout  int  `json:"request_timeout,omitempty"`
 }
 
 func Default() Config {
@@ -208,6 +209,11 @@ func (c *Config) Normalize() {
 	}
 	if c.LibraryDetail == "" {
 		c.LibraryDetail = LibraryDetailFull
+	}
+	if c.RequestTimeout < 15 {
+		c.RequestTimeout = 15
+	} else if c.RequestTimeout > 60 {
+		c.RequestTimeout = 60
 	}
 }
 
@@ -329,6 +335,11 @@ func (c Config) UsesAI() bool {
 
 func (p Provider) IsConfigured() bool {
 	return strings.TrimSpace(p.Name) != "" && strings.TrimSpace(p.Model) != ""
+}
+
+// SupportedRequestTimeouts returns the cycle order used by the settings menu.
+func SupportedRequestTimeouts() []int {
+	return []int{15, 30, 45, 60}
 }
 
 // SupportedProactiveTalkLevels returns the cycle order used by the settings
