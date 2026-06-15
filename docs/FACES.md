@@ -31,7 +31,32 @@ You do not need to provide all of them — missing files use the built-in defaul
 | `speaking.svg` | Speaking | TTS playback |
 | `sleeping.svg` | Sleeping | Quota exhausted |
 | `concerned.svg` | Concerned | Error / setup required |
-| `smile.svg` | Smile | Happy / excited |
+| `smile.svg` | Smile | Gentle smile |
+| `happy.svg` | Happy | Wide grin |
+| `laugh.svg` | Laughing | Squint eyes, open mouth |
+| `content.svg` | Content | Calm, eyes closed |
+| `sad.svg` | Sad | Downturned mouth |
+| `angry.svg` | Angry | Furrowed brows |
+| `surprised.svg` | Surprised | Wide eyes, small "o" mouth |
+| `excited.svg` | Excited | Gold star eyes |
+| `love.svg` | Love | Red heart eyes |
+| `shy.svg` | Shy | Blush, wavy mouth |
+| `crying.svg` | Crying | Tear streams, wail |
+| `teary.svg` | Teary | Welling eyes, worried brows |
+| `gloomy.svg` | Gloomy | Downcast eyes, sweat drop |
+| `dizzy.svg` | Dizzy | Spiral eyes |
+| `unamused.svg` | Unamused | Half-lidded eyes, flat mouth |
+| `annoyed.svg` | Annoyed | `-_-` dash eyes/mouth |
+| `skeptical.svg` | Skeptical | One raised brow, half-lid |
+| `playful.svg` | Playful | Wink, tongue out |
+| `kiss.svg` | Kiss | `>` `<` eyes, `3` mouth |
+| `grimace.svg` | Grimace | Clenched teeth |
+| `shout.svg` | Shout | Angry brows, big open mouth |
+| `dead.svg` | Dead / KO | `x_x` eyes |
+| `glitch.svg` | Glitch | 8-bit pixel face |
+| `dismayed.svg` | Dismayed | Wide eyes, `D:` gasp |
+| `adoring.svg` | Adoring | Shiny eyes, blush, sparkles |
+| `sparkle.svg` | Sparkle | Gold 4-point sparkle eyes |
 
 ### SVG format
 
@@ -63,9 +88,11 @@ and the built-in default is used instead — BMO never shows a broken face.
 
 ### Alias names
 
-You can also use alias filenames. For example, `laugh.svg` and `excited.svg`
-both resolve to the `smile` expression when no `smile.svg` override exists.
-The lookup order is: exact filename → canonical name → built-in default.
+You can also use alias filenames. For example, `cry.svg` resolves to `crying`,
+`shocked.svg` to `surprised`, and `tongue.svg` to `playful` when no exact
+override exists. The lookup order is: exact filename → canonical name → built-in
+default. (`happy`, `laugh`, `excited`, `sad`, and `angry` are now their own
+expressions, not aliases of `smile`/`concerned`.)
 
 ### Speaking mouth (`speaking.svg`)
 
