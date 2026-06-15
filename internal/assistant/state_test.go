@@ -153,6 +153,42 @@ func TestEmotionExpressionConstants(t *testing.T) {
 	}
 }
 
+func TestMachineEmotionDirective(t *testing.T) {
+	m := NewMachine()
+	if got := m.Snapshot().Emotion; got != "" {
+		t.Fatalf("default emotion = %q, want empty", got)
+	}
+	m.SetEmotion(ExpressionExcited)
+	if got := m.Snapshot().Emotion; got != ExpressionExcited {
+		t.Fatalf("emotion = %q, want excited", got)
+	}
+}
+
+func TestMachineEmotionPreservedOnSpeak(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	m.Transition(EventListen) // idle -> listening
+	m.Transition(EventThink)  // listening -> thinking
+	m.SetEmotion(ExpressionLove)
+	m.Transition(EventSpeak) // thinking -> speaking; emotion must survive
+	if got := m.Snapshot().Emotion; got != ExpressionLove {
+		t.Fatalf("emotion after EventSpeak = %q, want love", got)
+	}
+}
+
+func TestMachineEmotionClearedOnRest(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	m.Transition(EventListen)
+	m.Transition(EventThink)
+	m.SetEmotion(ExpressionLove)
+	m.Transition(EventSpeak)
+	m.Transition(EventRest) // speaking -> idle; emotion must clear
+	if got := m.Snapshot().Emotion; got != "" {
+		t.Fatalf("emotion after EventRest = %q, want empty", got)
+	}
+}
+
 func TestRemarkFromIdleForProactiveRemarks(t *testing.T) {
 	if got := Transition(StateIdle, EventRemark); got != StateThinking {
 		t.Fatalf("Transition(idle, remark) = %q, want thinking", got)

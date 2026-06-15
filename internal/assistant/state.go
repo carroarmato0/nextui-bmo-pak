@@ -25,6 +25,7 @@ type Snapshot struct {
 	Mode            string
 	Current         State
 	Expression      Expression
+	Emotion         Expression
 	LastInteraction time.Time
 	SleepReason     SleepReason
 	Quota           QuotaStatus
@@ -108,6 +109,7 @@ type Machine struct {
 	mode            Mode
 	state           State
 	expression      Expression
+	emotion         Expression
 	lastInteraction time.Time
 	sleepReason     SleepReason
 	quota           QuotaStatus
@@ -151,6 +153,15 @@ func (m *Machine) SetExpression(expression Expression) {
 	m.expression = expression
 }
 
+// SetEmotion records the LLM-directed facial emotion for the utterance about to
+// be spoken. It is shown during the Speaking state and cleared by any non-speak
+// transition (see applyTransitionEffects), so it never leaks into a later turn.
+func (m *Machine) SetEmotion(expression Expression) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.emotion = expression
+}
+
 func (m *Machine) RecordInteraction(at time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -178,6 +189,7 @@ func (m *Machine) Snapshot() Snapshot {
 		Mode:            string(m.mode),
 		Current:         m.state,
 		Expression:      m.expression,
+		Emotion:         m.emotion,
 		LastInteraction: m.lastInteraction,
 		SleepReason:     m.sleepReason,
 		Quota:           m.quota,
@@ -266,6 +278,7 @@ func applyTransitionEffects(m *Machine, current State, next State, event Event) 
 		if current == StateSpeaking {
 			m.expression = ExpressionNeutral
 			m.sleepReason = SleepReasonNone
+			m.emotion = ""
 			return
 		}
 		m.expression = ExpressionSleeping
@@ -295,5 +308,11 @@ func applyTransitionEffects(m *Machine, current State, next State, event Event) 
 	if next == StateIdle && event == EventWake {
 		m.expression = ExpressionNeutral
 		m.sleepReason = SleepReasonNone
+	}
+
+	// A directed emotion only applies to the utterance being spoken. Any
+	// transition other than the one that starts speech clears it.
+	if event != EventSpeak {
+		m.emotion = ""
 	}
 }
