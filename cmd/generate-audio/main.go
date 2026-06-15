@@ -12,6 +12,7 @@ import (
 
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
 	"github.com/carroarmato0/nextui-bmo/internal/config"
+	"github.com/carroarmato0/nextui-bmo/internal/mod"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 )
 
@@ -33,23 +34,27 @@ var clipDefs = []clipDef{
 func main() {
 	key := flag.String("key", "", "OpenAI API key (overrides env/file)")
 	baseURL := flag.String("base-url", "https://api.openai.com/v1", "API base URL")
-	homeDir := flag.String("home-dir", "", "BMO home directory — reads config.json for voice and voice.txt for TTS instructions when set")
+	homeDir := flag.String("home-dir", "", "BMO home directory — reads config.json for voice and the active mod's voice.txt for TTS instructions when set")
 	chatModel := flag.String("chat-model", "gpt-4o-mini", "Chat model")
 	ttsModel := flag.String("tts-model", "tts-1", "TTS model")
 	voice := flag.String("voice", "alloy", "TTS voice (overridden by -home-dir config)")
-	instructions := flag.String("instructions", config.DefaultTTSInstructions, "TTS style instructions (overridden by -home-dir voice.txt)")
+	instructions := flag.String("instructions", config.DefaultTTSInstructions, "TTS style instructions (overridden by the active mod's voice.txt under -home-dir)")
 	outDir := flag.String("out", "internal/clips/assets/audio", "Output directory for PCM files")
 	flag.Parse()
 
 	// If home-dir is set, load the runtime voice and instructions so clips
-	// match what the user hears from the API.
+	// match what the user hears from the API. Instructions resolve through the
+	// active mod's voice.txt, which falls back to the built-in default when the
+	// mod ships no override — so this defaults to the project's voice prompt and
+	// only diverges when a mod explicitly customizes it.
 	if *homeDir != "" {
 		cfgPath := config.Path(*homeDir)
 		cfg, err := config.Load(cfgPath)
 		if err == nil && strings.TrimSpace(cfg.TTS.Voice) != "" {
 			*voice = cfg.TTS.Voice
 		}
-		*instructions = config.LoadPromptFile(config.VoicePath(*homeDir), config.DefaultTTSInstructions)
+		activeMod := mod.Active(mod.Discover(filepath.Join(*homeDir, "mods")), cfg.ActiveMod)
+		*instructions = config.LoadPromptFile(activeMod.VoicePath(), config.DefaultTTSInstructions)
 	}
 
 	resolvedKey := strings.TrimSpace(*key)
