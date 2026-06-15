@@ -41,6 +41,21 @@ var emotionTokenRe = regexp.MustCompile(`\[([A-Za-z_]+)\]`)
 // directive. Newlines are preserved.
 var extraSpaceRe = regexp.MustCompile(`[ \t]{2,}`)
 
+// emotionProtocolPrompt is appended to the chat persona so the model knows how
+// to drive BMO's face. Built from EmotionVocabulary so it can never advertise a
+// word the parser would not accept.
+func emotionProtocolPrompt() string {
+	names := make([]string, len(EmotionVocabulary))
+	for i, e := range EmotionVocabulary {
+		names[i] = string(e)
+	}
+	return "You have an animated face. You may begin your reply with exactly one " +
+		"directive in square brackets to set your facial expression, for example " +
+		"[happy]. The bracketed word is silent — it is never spoken aloud, only " +
+		"used to choose your face. Include it only when an emotion clearly fits; " +
+		"otherwise leave it out. Valid expressions: " + strings.Join(names, ", ") + "."
+}
+
 // ParseEmotion extracts the chat model's facial directive. It removes every
 // recognised [emotion] token from reply, tidies the whitespace the removal
 // leaves behind, and returns the spoken text plus the FIRST recognised emotion

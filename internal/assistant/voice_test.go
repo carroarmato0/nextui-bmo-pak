@@ -153,16 +153,16 @@ func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
 	}
-	if got := chat.lastChat.SystemPrompt; got != "persona one" {
-		t.Fatalf("first utterance system prompt = %q, want %q", got, "persona one")
+	if got := chat.lastChat.SystemPrompt; !strings.HasPrefix(got, "persona one") {
+		t.Fatalf("first utterance system prompt = %q, want prefix %q", got, "persona one")
 	}
 
 	current = "persona two"
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
 	}
-	if got := chat.lastChat.SystemPrompt; got != "persona two" {
-		t.Fatalf("second utterance system prompt = %q, want %q", got, "persona two")
+	if got := chat.lastChat.SystemPrompt; !strings.HasPrefix(got, "persona two") {
+		t.Fatalf("second utterance system prompt = %q, want prefix %q", got, "persona two")
 	}
 
 	// An empty source value falls back to the static prompt.
@@ -170,8 +170,8 @@ func TestSystemPromptSourceReadPerUtterance(t *testing.T) {
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
 	}
-	if got := chat.lastChat.SystemPrompt; got != "static persona" {
-		t.Fatalf("empty-source system prompt = %q, want fallback", got)
+	if got := chat.lastChat.SystemPrompt; !strings.HasPrefix(got, "static persona") {
+		t.Fatalf("empty-source system prompt = %q, want fallback prefix", got)
 	}
 }
 
@@ -396,7 +396,7 @@ func TestSpeakRemarkHappyPath(t *testing.T) {
 	if err := pipe.SpeakRemark(context.Background(), "(BMO says something about achievements)", nil); err != nil {
 		t.Fatalf("speak remark: %v", err)
 	}
-	if chat.lastChat.SystemPrompt != "persona plus device context" {
+	if !strings.HasPrefix(chat.lastChat.SystemPrompt, "persona plus device context") {
 		t.Errorf("system prompt = %q", chat.lastChat.SystemPrompt)
 	}
 	if len(chat.lastChat.Messages) != 1 || chat.lastChat.Messages[0].Content != "(BMO says something about achievements)" {
@@ -792,6 +792,26 @@ func TestProcessBatchDoesNotLogSystemPromptByDefault(t *testing.T) {
 	}
 	if strings.Contains(logs, "secret voice style") {
 		t.Errorf("TTS instructions leaked into logs with logSystemPrompt=false: %q", logs)
+	}
+}
+
+func TestProcessBatchAppendsEmotionProtocol(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	sp := chat.lastChat.SystemPrompt
+	if !strings.HasPrefix(sp, "be bmo") {
+		t.Errorf("persona not preserved as prefix: %q", sp)
+	}
+	if !strings.Contains(sp, "[happy]") || !strings.Contains(sp, "never spoken") {
+		t.Errorf("emotion protocol not appended: %q", sp)
 	}
 }
 

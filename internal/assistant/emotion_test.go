@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/carroarmato0/nextui-bmo/internal/face"
@@ -70,5 +71,22 @@ func TestEmotionVocabularyExcludesFunctionalFaces(t *testing.T) {
 				t.Errorf("vocabulary must not include functional face %q", e)
 			}
 		}
+	}
+}
+
+func TestEmotionProtocolPrompt(t *testing.T) {
+	p := emotionProtocolPrompt()
+	if !strings.Contains(p, "[happy]") {
+		t.Errorf("protocol missing [happy] example: %q", p)
+	}
+	// Lists every vocabulary name.
+	for _, e := range EmotionVocabulary {
+		if !strings.Contains(p, string(e)) {
+			t.Errorf("protocol missing vocabulary word %q", e)
+		}
+	}
+	// States the directive is silent.
+	if !strings.Contains(strings.ToLower(p), "never spoken") {
+		t.Errorf("protocol must say the directive is never spoken: %q", p)
 	}
 }

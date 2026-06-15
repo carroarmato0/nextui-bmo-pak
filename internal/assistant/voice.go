@@ -188,14 +188,20 @@ func (p *VoicePipeline) SetSystemPromptSource(source func() string) {
 	}
 }
 
-// currentSystemPrompt resolves the chat persona for the next utterance.
+// currentSystemPrompt resolves the chat persona for the next utterance and
+// appends the emotion protocol so the model can drive BMO's face. With no
+// persona configured the protocol is returned on its own.
 func (p *VoicePipeline) currentSystemPrompt() string {
+	persona := p.systemPrompt
 	if p.systemPromptSource != nil {
 		if prompt := strings.TrimSpace(p.systemPromptSource()); prompt != "" {
-			return prompt
+			persona = prompt
 		}
 	}
-	return p.systemPrompt
+	if strings.TrimSpace(persona) == "" {
+		return emotionProtocolPrompt()
+	}
+	return persona + "\n\n" + emotionProtocolPrompt()
 }
 
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio currently
