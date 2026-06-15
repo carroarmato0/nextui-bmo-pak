@@ -540,7 +540,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(assistant.ExpressionThinking)
 		case assistant.StateSpeaking:
 			errorSince = time.Time{}
-			expr = string(assistant.ExpressionSpeaking)
+			if snap.Emotion != "" {
+				expr = string(snap.Emotion)
+			} else {
+				expr = string(assistant.ExpressionSpeaking)
+			}
 		case assistant.StateSleeping:
 			errorSince = time.Time{}
 			expr = string(assistant.ExpressionSleeping)
