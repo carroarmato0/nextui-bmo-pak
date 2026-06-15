@@ -9,10 +9,10 @@ import (
 
 // ── Structure ──────────────────────────────────────────────────────────────
 
-func TestSettingsMenuHas16Items(t *testing.T) {
+func TestSettingsMenuHas17Items(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	if got := len(m.Overlay().Items); got != 16 {
-		t.Fatalf("expected 16 overlay items, got %d", got)
+	if got := len(m.Overlay().Items); got != 17 {
+		t.Fatalf("expected 17 overlay items, got %d", got)
 	}
 }
 
@@ -24,7 +24,7 @@ func TestSettingsMenuItemCodes(t *testing.T) {
 		"stt_status", "chat_status", "tts_status", "voice_status",
 		"aware_library", "aware_saves", "aware_playlog",
 		"aware_system", "aware_achievements",
-		"library_detail", "request_timeout", "proactive_talk", "restore_defaults",
+		"library_detail", "request_timeout", "proactive_talk", "mod", "restore_defaults",
 	}
 	for i, code := range want {
 		if got := items[i].Code; got != code {
@@ -222,8 +222,8 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	// restore_defaults is now at idx 15.
-	menu.Move(15)
+	// restore_defaults is now at idx 16.
+	menu.Move(16)
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -241,12 +241,12 @@ func TestSettingsMenuRestoreDefaultsIsLastSlot(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.Move(15) // restore_defaults is at idx 15
+	m.Move(16) // restore_defaults is at idx 16
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("restore defaults: %v", err)
 	}
 	if !called {
-		t.Fatal("restore defaults callback not invoked at focus 15")
+		t.Fatal("restore defaults callback not invoked at focus 16")
 	}
 }
 
@@ -348,8 +348,8 @@ func TestSettingsMenuLogSystemPromptLabelReflectsValue(t *testing.T) {
 func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	overlay := m.Overlay()
-	if len(overlay.Items) != 16 {
-		t.Fatalf("expected 16 overlay items, got %d", len(overlay.Items))
+	if len(overlay.Items) != 17 {
+		t.Fatalf("expected 17 overlay items, got %d", len(overlay.Items))
 	}
 	labels := map[string]string{}
 	for _, item := range overlay.Items {
@@ -407,5 +407,38 @@ func TestSettingsScreenProviderSummaries(t *testing.T) {
 	}
 	if got := len(screen.PTTButtons()); got != 2 {
 		t.Fatalf("PTTButtons() len = %d, want 2", got)
+	}
+}
+
+func TestSettingsMenuCyclesMod(t *testing.T) {
+	m := NewSettingsMenu(config.Default())
+	m.SetModChoices([]ModChoice{
+		{ID: "default", Label: "BMO (DEFAULT)"},
+		{ID: "evil", Label: "EVIL BMO"},
+	})
+	var changed string
+	m.SetModChangeCallback(func(id string) { changed = id })
+
+	m.Move(15) // mod selector
+	if got := m.Overlay().Items[15].Code; got != "mod" {
+		t.Fatalf("expected mod item at idx 15, got %q", got)
+	}
+	if err := m.ToggleFocused(); err != nil { // default -> evil
+		t.Fatalf("ToggleFocused: %v", err)
+	}
+	if m.Config().ActiveMod != "evil" {
+		t.Fatalf("ActiveMod = %q, want evil", m.Config().ActiveMod)
+	}
+	if changed != "evil" {
+		t.Fatalf("callback got %q, want evil", changed)
+	}
+	if got := m.Overlay().Items[15].Label; got != "MOD: EVIL BMO" {
+		t.Fatalf("mod item label = %q, want %q", got, "MOD: EVIL BMO")
+	}
+	if err := m.ToggleFocused(); err != nil { // evil -> default (wraps)
+		t.Fatalf("ToggleFocused: %v", err)
+	}
+	if m.Config().ActiveMod != "default" {
+		t.Fatalf("ActiveMod = %q, want default after wrap", m.Config().ActiveMod)
 	}
 }

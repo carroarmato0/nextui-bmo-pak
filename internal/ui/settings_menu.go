@@ -9,12 +9,21 @@ import (
 
 var logLevelOrder = []string{"debug", "info", "warn", "error"}
 
+// ModChoice is one selectable mod in the MOD cycle item. ID is persisted to
+// config.ActiveMod; Label is the already-formatted display string.
+type ModChoice struct {
+	ID    string
+	Label string
+}
+
 type SettingsMenu struct {
 	title            string
 	cfg              config.Config
 	focus            int
 	onLogLevelChange func(string)
 	onRestore        func() error
+	modChoices       []ModChoice
+	onModChange      func(string)
 }
 
 func NewSettingsMenu(cfg config.Config) *SettingsMenu {
@@ -37,6 +46,54 @@ func (m *SettingsMenu) SetRestoreDefaultsCallback(fn func() error) {
 	}
 }
 
+// SetModChoices supplies the selectable mods shown by the MOD item.
+func (m *SettingsMenu) SetModChoices(choices []ModChoice) {
+	if m != nil {
+		m.modChoices = choices
+	}
+}
+
+// SetModChangeCallback registers a function called when the active mod is
+// cycled, so the app can reload persona/voice/quotes/faces/audio in place.
+func (m *SettingsMenu) SetModChangeCallback(fn func(string)) {
+	if m != nil {
+		m.onModChange = fn
+	}
+}
+
+// cycleMod advances the active mod to the next choice, wrapping around, and
+// fires the change callback.
+func (m *SettingsMenu) cycleMod() {
+	if len(m.modChoices) == 0 {
+		return
+	}
+	idx := 0
+	for i, c := range m.modChoices {
+		if c.ID == m.cfg.ActiveMod {
+			idx = i
+			break
+		}
+	}
+	next := m.modChoices[(idx+1)%len(m.modChoices)]
+	m.cfg.ActiveMod = next.ID
+	if m.onModChange != nil {
+		m.onModChange(next.ID)
+	}
+}
+
+// modLabel returns the display label for the currently active mod.
+func (m *SettingsMenu) modLabel() string {
+	for _, c := range m.modChoices {
+		if c.ID == m.cfg.ActiveMod {
+			return c.Label
+		}
+	}
+	if len(m.modChoices) > 0 {
+		return m.modChoices[0].Label // active id not found: show the default
+	}
+	return "BMO (DEFAULT)"
+}
+
 func (m *SettingsMenu) Title() string {
 	if m == nil || strings.TrimSpace(m.title) == "" {
 		return "SETTINGS"
@@ -51,7 +108,7 @@ func (m *SettingsMenu) Move(delta int) {
 	if m == nil {
 		return
 	}
-	const count = 16
+	const count = 17
 	step := 1
 	if delta < 0 {
 		step = -1
@@ -137,6 +194,8 @@ func (m *SettingsMenu) ToggleFocused() error {
 		}
 		m.cfg.ProactiveTalk = next
 	case 15:
+		m.cycleMod()
+	case 16:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
@@ -176,7 +235,9 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: true, Focused: m.focus == 13},
 		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
 			Selected: true, Focused: m.focus == 14},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 15},
+		{Code: "mod", Label: "MOD: " + m.modLabel(),
+			Selected: true, Focused: m.focus == 15},
+		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 16},
 	}
 	return OverlayState{
 		Visible:  true,
