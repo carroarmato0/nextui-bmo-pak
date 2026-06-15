@@ -23,6 +23,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/carroarmato0/nextui-bmo/internal/hardware"
 	"github.com/carroarmato0/nextui-bmo/internal/input"
+	"github.com/carroarmato0/nextui-bmo/internal/mod"
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 	"github.com/carroarmato0/nextui-bmo/internal/renderer"
@@ -79,12 +80,23 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("validate config: %w", err)
 	}
 
+	// Mods live under $home/mods/<name>. The "default" entry overlays embedded
+	// BMO (per-asset fallback); any other folder is a self-contained character.
+	// mods/default is created so users have an obvious place to drop overrides.
+	modsRoot := filepath.Join(homeDir, "mods")
+	if err := os.MkdirAll(filepath.Join(modsRoot, mod.DefaultID), 0o755); err != nil {
+		return fmt.Errorf("create mods directory: %w", err)
+	}
+	mods := mod.Discover(modsRoot)
+	activeMod := mod.Active(mods, cfg.ActiveMod)
+
 	// Persona, voice, and quotes prompts use the override-or-default model:
 	// the built-in defaults are the source of truth; an override file is used
 	// only when it exists on disk and is non-blank. The app never creates them.
-	personaPath := config.PersonaPath(homeDir)
-	voicePath := config.VoicePath(homeDir)
-	quotesPath := config.QuotesPath(homeDir)
+	// Paths resolve against the active mod; reloadMod (below) re-points them.
+	personaPath := activeMod.PersonaPath()
+	voicePath := activeMod.VoicePath()
+	quotesPath := activeMod.QuotesPath()
 	personaPrompt := config.LoadPromptFile(personaPath, config.DefaultSystemPrompt)
 	voicePrompt := config.LoadPromptFile(voicePath, config.DefaultTTSInstructions)
 
@@ -94,6 +106,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 	defer logger.Close()
+
+	logger.Infof("active mod: %s (self-contained=%t)", activeMod.ID, activeMod.SelfContained())
 
 	for _, secret := range cfg.Secrets() {
 		logger.RegisterSecret(secret)
@@ -113,6 +127,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var activeMenu ui.Menu
 	providerMenu := ui.NewProviderMenu(cfg)
 	settingsMenu := ui.NewSettingsMenu(cfg)
+	modChoices := make([]ui.ModChoice, 0, len(mods))
+	for _, md := range mods {
+		modChoices = append(modChoices, ui.ModChoice{ID: md.ID, Label: strings.ToUpper(md.DisplayName())})
+	}
+	settingsMenu.SetModChoices(modChoices)
 	settingsMenu.SetLogLevelCallback(func(level string) {
 		logger.SetLevel(observability.ParseLevel(level))
 		logger.Infof("log level changed to %s", level)
@@ -192,7 +211,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	var clipPlayer *clips.Player
 	if audioSession != nil {
-		clipLib := clips.NewLibrary(homeDir)
+		clipLib := clips.NewLibrary(activeMod.AudioDir())
 		clipPlayer = clips.NewPlayer(audioSession, audioCfg.SampleRate, audioCfg.PlaybackChannels, clipLib)
 	}
 
@@ -229,8 +248,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				)
 			})
 			if clipPlayer != nil {
-				audioPipeline.SetTimeoutClip(clips.NewLibrary(homeDir).Load("timeout"))
-				audioPipeline.SetErrorClip(clips.NewLibrary(homeDir).Load("error"))
+				audioPipeline.SetTimeoutClip(clips.NewLibrary(activeMod.AudioDir()).Load("timeout"))
+				audioPipeline.SetErrorClip(clips.NewLibrary(activeMod.AudioDir()).Load("error"))
 			}
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 		}
@@ -246,12 +265,43 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	defer screen.Close()
 	logger.Infof("renderer ready: %s", screen.DebugInfo())
 
-	faceLib := face.NewLibrary(config.FacesDir(homeDir))
+	faceLib := face.NewLibraryMode(activeMod.FacesDir(), activeMod.SelfContained())
 	faceLib.SetLogf(logger.Warnf)
 	faceCache := face.NewCache(faceLib)
 	screen.SetFaces(faceCache)
 	// Pre-rasterize current expression synchronously; warm remaining in background.
 	go faceCache.Warm(screen.Size())
+
+	// Switching mods at runtime: re-point the prompt/quote paths (read per
+	// utterance via the source closures) and rebuild + re-warm the face cache
+	// and clip library for the new mod. This runs on the main goroutine (from
+	// the nav handler), the same goroutine as screen.Draw, so swapping the
+	// face cache is race-free.
+	reloadMod := func(id string) {
+		active := mod.Active(mods, id)
+		activeMod = active
+		personaPath = active.PersonaPath()
+		voicePath = active.VoicePath()
+		quotesPath = active.QuotesPath()
+
+		newLib := face.NewLibraryMode(active.FacesDir(), active.SelfContained())
+		newLib.SetLogf(logger.Warnf)
+		newCache := face.NewCache(newLib)
+		faceCache = newCache
+		screen.SetFaces(newCache)
+		go newCache.Warm(screen.Size())
+
+		if audioSession != nil {
+			clipLib := clips.NewLibrary(active.AudioDir())
+			clipPlayer = clips.NewPlayer(audioSession, audioCfg.SampleRate, audioCfg.PlaybackChannels, clipLib)
+			if audioPipeline != nil {
+				audioPipeline.SetTimeoutClip(clipLib.Load("timeout"))
+				audioPipeline.SetErrorClip(clipLib.Load("error"))
+			}
+		}
+		logger.Infof("switched to mod %q (self-contained=%t)", active.ID, active.SelfContained())
+	}
+	settingsMenu.SetModChangeCallback(reloadMod)
 
 	// Navigation is read from raw Linux evdev (internal/input), not SDL's
 	// GameController layer: SDL maps the TrimUI's Nintendo-style face buttons to
@@ -473,7 +523,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			(faceCache.SpeakReady() || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
-			if overrideErrs := config.CheckOverrides(homeDir); len(overrideErrs) > 0 {
+			if overrideErrs := config.CheckOverrides(activeMod.Root); len(overrideErrs) > 0 {
 				for _, e := range overrideErrs {
 					logger.Warnf("mod override error: %v", e)
 				}
