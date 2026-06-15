@@ -442,3 +442,31 @@ func TestSettingsMenuCyclesMod(t *testing.T) {
 		t.Fatalf("ActiveMod = %q, want default after wrap", m.Config().ActiveMod)
 	}
 }
+
+// A factory-fresh config has ActiveMod == "" (no mod chosen yet). The MOD item
+// must display the default entry's label, and the first cycle must advance to
+// the next mod rather than appearing to do nothing — because the default mod is
+// always the first choice, an unmatched "" resolves to that first entry.
+func TestSettingsMenuModDefaultsToFirstChoiceWhenUnset(t *testing.T) {
+	cfg := config.Default()
+	if cfg.ActiveMod != "" {
+		t.Fatalf("precondition: default ActiveMod = %q, want empty", cfg.ActiveMod)
+	}
+	m := NewSettingsMenu(cfg)
+	m.SetModChoices([]ModChoice{
+		{ID: "default", Label: "BMO (DEFAULT)"},
+		{ID: "evil", Label: "EVIL BMO"},
+	})
+
+	if got := m.Overlay().Items[15].Label; got != "MOD: BMO (DEFAULT)" {
+		t.Fatalf("unset ActiveMod label = %q, want %q", got, "MOD: BMO (DEFAULT)")
+	}
+
+	m.Move(15)
+	if err := m.ToggleFocused(); err != nil {
+		t.Fatalf("ToggleFocused: %v", err)
+	}
+	if m.Config().ActiveMod != "evil" {
+		t.Fatalf("first cycle from unset = %q, want evil", m.Config().ActiveMod)
+	}
+}
