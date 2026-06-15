@@ -14,12 +14,45 @@ const (
 	ExprSleeping  = "sleeping"
 	ExprConcerned = "concerned"
 	ExprSmile     = "smile"
+
+	// New expressions (Figma "BMO Face Templates" set).
+	ExprSad       = "sad"
+	ExprHappy     = "happy"
+	ExprLaugh     = "laugh"
+	ExprContent   = "content"
+	ExprAngry     = "angry"
+	ExprSurprised = "surprised"
+	ExprExcited   = "excited"
+	ExprLove      = "love"
+	ExprShy       = "shy"
+	ExprCrying    = "crying"
+	ExprTeary     = "teary"
+	ExprGloomy    = "gloomy"
+	ExprDizzy     = "dizzy"
+	ExprUnamused  = "unamused"
+	ExprAnnoyed   = "annoyed"
+	ExprSkeptical = "skeptical"
+	ExprPlayful   = "playful"
+	ExprKiss      = "kiss"
+	ExprGrimace   = "grimace"
+	ExprShout     = "shout"
+	ExprDead      = "dead"
+	ExprGlitch    = "glitch"
+	ExprDismayed  = "dismayed"
+	ExprAdoring   = "adoring"
+	ExprSparkle   = "sparkle"
 )
 
 // CanonicalNames lists every canonical expression name in a stable order.
 var CanonicalNames = []string{
 	ExprNeutral, ExprBlink, ExprListening, ExprThinking,
 	ExprSpeaking, ExprSleeping, ExprConcerned, ExprSmile,
+	// New expressions.
+	ExprSad, ExprHappy, ExprLaugh, ExprContent, ExprAngry, ExprSurprised,
+	ExprExcited, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
+	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
+	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
+	ExprAdoring, ExprSparkle,
 }
 
 // Canonical maps any expression alias the assistant may emit to its canonical
@@ -32,16 +65,69 @@ func Canonical(expr string) string {
 		return ExprBlink
 	case "asleep", "sleep", ExprSleeping:
 		return ExprSleeping
-	case "error", "confused", "angry", "sad", ExprConcerned:
+	// System states keep their meaning.
+	case "error", "confused", ExprConcerned:
 		return ExprConcerned
-	case "happy", "laugh", "excited", ExprSmile:
-		return ExprSmile
 	case ExprListening:
 		return ExprListening
 	case ExprThinking:
 		return ExprThinking
 	case ExprSpeaking:
 		return ExprSpeaking
+	case ExprSmile:
+		return ExprSmile
+	// Expressions that used to alias onto smile/concerned now resolve to their
+	// own assets.
+	case ExprHappy:
+		return ExprHappy
+	case ExprLaugh:
+		return ExprLaugh
+	case ExprExcited:
+		return ExprExcited
+	case ExprSad:
+		return ExprSad
+	case ExprAngry:
+		return ExprAngry
+	case ExprContent:
+		return ExprContent
+	case "surprised", "shocked", "surprise":
+		return ExprSurprised
+	case ExprLove:
+		return ExprLove
+	case ExprShy:
+		return ExprShy
+	case "crying", "cry":
+		return ExprCrying
+	case ExprTeary:
+		return ExprTeary
+	case ExprGloomy:
+		return ExprGloomy
+	case ExprDizzy:
+		return ExprDizzy
+	case ExprUnamused:
+		return ExprUnamused
+	case ExprAnnoyed:
+		return ExprAnnoyed
+	case ExprSkeptical:
+		return ExprSkeptical
+	case "playful", "tongue":
+		return ExprPlayful
+	case "kiss", "kissing":
+		return ExprKiss
+	case ExprGrimace:
+		return ExprGrimace
+	case ExprShout:
+		return ExprShout
+	case ExprDead:
+		return ExprDead
+	case ExprGlitch:
+		return ExprGlitch
+	case ExprDismayed:
+		return ExprDismayed
+	case ExprAdoring:
+		return ExprAdoring
+	case "sparkle", "sparkles":
+		return ExprSparkle
 	default:
 		return ExprNeutral
 	}
