@@ -72,3 +72,60 @@ func TestEmbeddedFacesGeometry(t *testing.T) {
 		}
 	}
 }
+
+func TestNewFacesGeometry(t *testing.T) {
+	d := [3]uint8{0x1a, 0x1a, 0x1a}  // features
+	mi := [3]uint8{0x1a, 0x78, 0x48} // mouth interior
+	gd := [3]uint8{0xf4, 0xc5, 0x31} // star/sparkle gold
+	rd := [3]uint8{0xe8, 0x44, 0x3b} // heart/tongue red
+	th := [3]uint8{0xe4, 0xe4, 0xe4} // teeth
+
+	type point struct {
+		x, y  float64
+		c     [3]uint8
+		label string
+	}
+	cases := map[string][]point{
+		ExprSad:       {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
+		ExprHappy:     {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
+		ExprLaugh:     {{80, 76, d, "left arc eye"}, {199, 76, d, "right arc eye"}, {140, 135, mi, "mouth interior"}},
+		ExprContent:   {{80, 80, d, "left arc eye"}, {199, 80, d, "right arc eye"}},
+		ExprAngry:     {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
+		ExprSurprised: {{80, 78, d, "left big eye"}, {199, 78, d, "right big eye"}, {140, 121, mi, "mouth interior"}},
+		ExprExcited:   {{80, 78, gd, "left star eye"}, {199, 78, gd, "right star eye"}},
+		ExprLove:      {{80, 80, rd, "left heart eye"}, {199, 80, rd, "right heart eye"}},
+		ExprShy:       {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
+		ExprCrying:    {{80, 76, d, "left arc eye"}, {199, 76, d, "right arc eye"}, {140, 127, mi, "mouth interior"}},
+		ExprTeary:     {{80, 78, d, "left big eye"}, {199, 78, d, "right big eye"}},
+		ExprGloomy:    {{80, 73, d, "left arc eye"}, {199, 73, d, "right arc eye"}},
+		ExprDizzy:     {{89, 76, d, "left spiral"}, {208, 76, d, "right spiral"}},
+		ExprUnamused:  {{80, 81, d, "left eye dot"}, {199, 81, d, "right eye dot"}, {140, 118, d, "flat mouth"}},
+		ExprAnnoyed:   {{80, 78, d, "left dash eye"}, {199, 78, d, "right dash eye"}, {140, 118, d, "dash mouth"}},
+		ExprSkeptical: {{80, 78, d, "left dot eye"}, {199, 81, d, "right eye dot"}},
+		ExprPlayful:   {{80, 78, d, "left dot eye"}, {140, 129, rd, "tongue"}},
+		ExprKiss:      {{88, 78, d, "left > eye"}, {194, 78, d, "right < eye"}},
+		ExprGrimace:   {{80, 78, d, "left dash eye"}, {199, 78, d, "right dash eye"}, {118, 116, th, "teeth"}},
+		ExprShout:     {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}, {140, 130, mi, "mouth interior"}},
+		ExprDead:      {{80, 78, d, "left x eye"}, {199, 78, d, "right x eye"}, {140, 118, d, "flat mouth"}},
+		ExprGlitch:    {{76, 74, d, "left pixel eye"}, {195, 74, d, "right pixel eye"}, {144, 131, d, "pixel mouth"}},
+		ExprDismayed:  {{80, 78, d, "left big eye"}, {199, 78, d, "right big eye"}, {140, 124, mi, "gasp mouth interior"}},
+		ExprAdoring:   {{80, 78, d, "left big eye"}, {199, 78, d, "right big eye"}},
+		ExprSparkle:   {{80, 78, gd, "left sparkle eye"}, {199, 78, gd, "right sparkle eye"}},
+	}
+	for _, size := range [][2]int{{1024, 768}, {1280, 720}} {
+		w, h := size[0], size[1]
+		for name, points := range cases {
+			data, ok := defaultBytes(name)
+			if !ok {
+				t.Fatalf("no embedded SVG for %q", name)
+			}
+			buf, err := Rasterize(data, w, h)
+			if err != nil {
+				t.Fatalf("rasterize %s at %dx%d: %v", name, w, h, err)
+			}
+			for _, p := range points {
+				assertColor(t, buf, w, h, p.x, p.y, p.c[0], p.c[1], p.c[2], name+": "+p.label)
+			}
+		}
+	}
+}
