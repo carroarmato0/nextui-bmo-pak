@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
+	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 )
 
@@ -916,5 +917,33 @@ func TestResolveSpeech(t *testing.T) {
 				t.Errorf("machine emotion = %q, want %q", got, tt.wantEmo)
 			}
 		})
+	}
+}
+
+func TestEmotionVocabularySourceDrivesPromptAndParse(t *testing.T) {
+	pipe := &VoicePipeline{}
+	pipe.SetEmotionVocabularySource(func() []EmotionEntry {
+		return BuildEmotionVocabulary(nil, []string{"grumpy"}, map[string]string{"grumpy": "sulky"})
+	})
+
+	prompt := pipe.currentSystemPrompt()
+	if !strings.Contains(prompt, "grumpy — sulky") {
+		t.Fatalf("system prompt should advertise the mod vocabulary: %q", prompt)
+	}
+	if strings.Contains(prompt, "excited") {
+		t.Fatalf("self-contained vocab must not include built-in names: %q", prompt)
+	}
+
+	vocab := pipe.currentEmotionVocab()
+	clean, emo := ParseEmotion("[grumpy] hi", emotionNameSet(vocab))
+	if clean != "hi" || emo != Expression("grumpy") {
+		t.Fatalf("clean=%q emo=%q, want hi/grumpy", clean, emo)
+	}
+}
+
+func TestEmotionVocabularyDefaultsToBuiltin(t *testing.T) {
+	pipe := &VoicePipeline{}
+	if got := len(pipe.currentEmotionVocab()); got != len(face.EmotionNames()) {
+		t.Fatalf("default vocab len = %d, want %d", got, len(face.EmotionNames()))
 	}
 }

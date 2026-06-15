@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
+	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 )
 
@@ -47,6 +48,7 @@ type VoicePipeline struct {
 	// back to the corresponding static value.
 	ttsInstructionsSource func() string
 	systemPromptSource    func() string
+	emotionVocabSource    func() []EmotionEntry
 
 	sampleRate       int
 	captureChannels  int
@@ -188,6 +190,26 @@ func (p *VoicePipeline) SetSystemPromptSource(source func() string) {
 	}
 }
 
+// SetEmotionVocabularySource installs a function consulted before each utterance
+// for the active emotion vocabulary, so a mod switch updates what the model is
+// told. An empty result falls back to the built-in emotion set.
+func (p *VoicePipeline) SetEmotionVocabularySource(source func() []EmotionEntry) {
+	if p != nil {
+		p.emotionVocabSource = source
+	}
+}
+
+// currentEmotionVocab resolves the emotion vocabulary for the next utterance,
+// falling back to the built-in emotion faces when no source is installed.
+func (p *VoicePipeline) currentEmotionVocab() []EmotionEntry {
+	if p.emotionVocabSource != nil {
+		if v := p.emotionVocabSource(); len(v) > 0 {
+			return v
+		}
+	}
+	return BuildEmotionVocabulary(face.EmotionNames(), nil, nil)
+}
+
 // currentSystemPrompt resolves the chat persona for the next utterance and
 // appends the emotion protocol so the model can drive BMO's face. With no
 // persona configured the protocol is returned on its own.
@@ -198,10 +220,11 @@ func (p *VoicePipeline) currentSystemPrompt() string {
 			persona = prompt
 		}
 	}
+	proto := emotionProtocolPrompt(p.currentEmotionVocab())
 	if strings.TrimSpace(persona) == "" {
-		return emotionProtocolPrompt()
+		return proto
 	}
-	return persona + "\n\n" + emotionProtocolPrompt()
+	return persona + "\n\n" + proto
 }
 
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio currently
@@ -219,7 +242,7 @@ func (p *VoicePipeline) CurrentAmplitude() float32 {
 // then return to idle without calling TTS. The emotion is cleared automatically
 // by the next non-speak transition, so it only needs setting here.
 func (p *VoicePipeline) resolveSpeech(reply string) (spoken string, ok bool) {
-	spoken, emotion := ParseEmotion(reply)
+	spoken, emotion := ParseEmotion(reply, emotionNameSet(p.currentEmotionVocab()))
 	if spoken == "" {
 		return "", false
 	}
