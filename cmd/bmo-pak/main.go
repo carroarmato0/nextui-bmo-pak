@@ -247,6 +247,19 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					memory.PromptBlock(time.Now().UTC()),
 				)
 			})
+			// Advertise the active mod's emotions to the chat model. A
+			// self-contained mod owns its set (no built-ins); otherwise the
+			// embedded emotion faces are the base. activeMod is reassigned by the
+			// mod-switch handler, so switching mods updates this on the next
+			// utterance.
+			audioPipeline.SetEmotionVocabularySource(func() []assistant.EmotionEntry {
+				var builtin []string
+				if !activeMod.SelfContained() {
+					builtin = face.EmotionNames()
+				}
+				disk := face.EmotionFaceNamesInDir(activeMod.FacesDir())
+				return assistant.BuildEmotionVocabulary(builtin, disk, activeMod.Manifest.Emotions)
+			})
 			if clipPlayer != nil {
 				audioPipeline.SetTimeoutClip(clips.NewLibrary(activeMod.AudioDir()).Load("timeout"))
 				audioPipeline.SetErrorClip(clips.NewLibrary(activeMod.AudioDir()).Load("error"))
