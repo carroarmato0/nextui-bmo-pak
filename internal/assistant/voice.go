@@ -213,6 +213,27 @@ func (p *VoicePipeline) CurrentAmplitude() float32 {
 	return math.Float32frombits(p.ampl.Load())
 }
 
+// resolveSpeech parses a chat reply into the text BMO should speak, applying any
+// facial emotion directive to the machine as a side effect. ok is false when the
+// reply contained no speakable text (it was only a directive); the caller should
+// then return to idle without calling TTS. The emotion is cleared automatically
+// by the next non-speak transition, so it only needs setting here.
+func (p *VoicePipeline) resolveSpeech(reply string) (spoken string, ok bool) {
+	spoken, emotion := ParseEmotion(reply)
+	if spoken == "" {
+		return "", false
+	}
+	if emotion != "" {
+		if p.machine != nil {
+			p.machine.SetEmotion(emotion)
+		}
+		if p.logger != nil {
+			p.logger.Debugf("pipeline emotion: %q", emotion)
+		}
+	}
+	return spoken, true
+}
+
 func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	if p == nil {
 		return errors.New("nil voice pipeline")
@@ -304,21 +325,12 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.logger.Debugf("pipeline reply: %q", reply)
 	}
 
-	spoken, emotion := ParseEmotion(reply)
-	if spoken == "" {
-		// Reply was only a facial directive with no speakable text.
+	spoken, ok := p.resolveSpeech(reply)
+	if !ok {
 		if p.machine != nil {
 			p.machine.Transition(EventRest)
 		}
 		return nil
-	}
-	if emotion != "" {
-		if p.machine != nil {
-			p.machine.SetEmotion(emotion)
-		}
-		if p.logger != nil {
-			p.logger.Debugf("pipeline emotion: %q", emotion)
-		}
 	}
 
 	if p.logger != nil && p.logSystemPrompt {
@@ -441,15 +453,12 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		p.logger.Debugf("remark reply: %q", reply)
 	}
 
-	spoken, emotion := ParseEmotion(reply)
-	if spoken == "" {
+	spoken, ok := p.resolveSpeech(reply)
+	if !ok {
 		if p.machine != nil {
 			p.machine.Transition(EventRest)
 		}
 		return nil
-	}
-	if emotion != "" && p.machine != nil {
-		p.machine.SetEmotion(emotion)
 	}
 
 	ttsStart := time.Now()

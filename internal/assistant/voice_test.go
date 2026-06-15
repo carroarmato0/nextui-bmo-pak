@@ -840,13 +840,20 @@ func TestProcessBatchLogsSystemPromptWhenEnabled(t *testing.T) {
 	}
 }
 
+// newEmotionTestPipe builds a pipeline in AI mode whose chat returns reply.
+// Returns the tts fake (to inspect lastSpeech) and the pipeline.
+func newEmotionTestPipe(m *Machine, reply string) (*fakeProvider, *VoicePipeline) {
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: reply}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+	return tts, pipe
+}
+
 func TestProcessBatchStripsAndSetsEmotion(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
-	stt := &fakeProvider{transcript: "hello"}
-	chat := &fakeProvider{reply: "[excited] I love that idea!"}
-	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+	tts, pipe := newEmotionTestPipe(m, "[excited] I love that idea!")
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
@@ -859,10 +866,7 @@ func TestProcessBatchStripsAndSetsEmotion(t *testing.T) {
 func TestProcessBatchNoDirectiveSpeaksVerbatim(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
-	stt := &fakeProvider{transcript: "hello"}
-	chat := &fakeProvider{reply: "just a normal reply"}
-	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+	tts, pipe := newEmotionTestPipe(m, "just a normal reply")
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
@@ -875,10 +879,7 @@ func TestProcessBatchNoDirectiveSpeaksVerbatim(t *testing.T) {
 func TestProcessBatchDirectiveOnlyReplySkipsTTS(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
-	stt := &fakeProvider{transcript: "hello"}
-	chat := &fakeProvider{reply: "[happy]"}
-	tts := &fakeProvider{speech: make([]byte, 2400)}
-	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+	tts, pipe := newEmotionTestPipe(m, "[happy]")
 
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
@@ -888,5 +889,32 @@ func TestProcessBatchDirectiveOnlyReplySkipsTTS(t *testing.T) {
 	}
 	if got := m.State(); got != StateIdle {
 		t.Errorf("state = %v, want idle", got)
+	}
+}
+
+func TestResolveSpeech(t *testing.T) {
+	tests := []struct {
+		name       string
+		reply      string
+		wantSpoken string
+		wantOK     bool
+		wantEmo    Expression
+	}{
+		{"directive sets emotion", "[excited] hi there", "hi there", true, ExpressionExcited},
+		{"no directive", "hi there", "hi there", true, ""},
+		{"directive only", "[happy]", "", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMachine()
+			_, pipe := newEmotionTestPipe(m, "unused")
+			spoken, ok := pipe.resolveSpeech(tt.reply)
+			if spoken != tt.wantSpoken || ok != tt.wantOK {
+				t.Fatalf("resolveSpeech(%q) = (%q, %v), want (%q, %v)", tt.reply, spoken, ok, tt.wantSpoken, tt.wantOK)
+			}
+			if got := m.Snapshot().Emotion; got != tt.wantEmo {
+				t.Errorf("machine emotion = %q, want %q", got, tt.wantEmo)
+			}
+		})
 	}
 }
