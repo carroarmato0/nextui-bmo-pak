@@ -134,6 +134,22 @@ Skipped as duplicates of existing assets: `Rosto-01` (neutral), `Rosto-02`
    - `internal/face/assets_test.go`: add at least eye-position geometry
      assertions for each new expression (rasterized at 1024×768 and 1280×720),
      following the existing sampling pattern.
+   - **Fidelity test** (`internal/face/fidelity_test.go`): guarantees the
+     shipped faces are exactly the artifacts approved in the browser previews.
+     - The 25 approved candidate SVGs (the exact bytes the preview rendered) are
+       frozen as a committed baseline manifest
+       `internal/face/testdata/approved_expressions.json`, mapping each new
+       expression name → `sha256` of its approved SVG bytes.
+     - The test asserts, for every new expression, that
+       `sha256(defaultBytes(name))` equals the frozen hash — so any later edit
+       to an approved asset (or a regenerated/divergent file) fails loudly with
+       "no longer matches the approved preview".
+     - It also asserts each embedded asset rasterizes non-blank through
+       `face.Rasterize` at 1024×768 and 1280×720 (the device path, oksvg).
+     - Byte-identity is chosen over a golden *render* hash so the check is
+       deterministic across machines/Go/oksvg versions; because the browser
+       preview rendered these exact SVG bytes, byte-fidelity to them is fidelity
+       to what was approved.
 4. **Docs:** extend the `docs/FACES.md` face catalog table with the 25 new files.
 
 ## Out of scope (follow-ups — "later do more with them")
@@ -150,7 +166,7 @@ Skipped as duplicates of existing assets: `Rosto-01` (neutral), `Rosto-02`
 
 ## Verification
 
-- `CGO_ENABLED=0 go test ./...` green (incl. new geometry tests).
+- `CGO_ENABLED=0 go test ./...` green (incl. new geometry + fidelity tests).
 - `golangci-lint run ./...` adds no findings.
-- Each new SVG rasterizes non-blank through `face.Rasterize` at 1024×768 and
-  1280×720 (already confirmed during design).
+- The fidelity test confirms every shipped asset is byte-identical to the
+  browser-approved baseline and rasterizes non-blank at 1024×768 and 1280×720.
