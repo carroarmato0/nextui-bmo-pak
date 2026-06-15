@@ -135,6 +135,24 @@ func TestMachineTransitionPreservesStateOnUnknownEvent(t *testing.T) {
 	}
 }
 
+func TestEmotionExpressionConstants(t *testing.T) {
+	cases := map[Expression]string{
+		ExpressionSad: "sad", ExpressionHappy: "happy", ExpressionContent: "content",
+		ExpressionAngry: "angry", ExpressionSurprised: "surprised", ExpressionExcited: "excited",
+		ExpressionLove: "love", ExpressionShy: "shy", ExpressionCrying: "crying",
+		ExpressionTeary: "teary", ExpressionGloomy: "gloomy", ExpressionDizzy: "dizzy",
+		ExpressionUnamused: "unamused", ExpressionAnnoyed: "annoyed", ExpressionSkeptical: "skeptical",
+		ExpressionPlayful: "playful", ExpressionKiss: "kiss", ExpressionGrimace: "grimace",
+		ExpressionShout: "shout", ExpressionDead: "dead", ExpressionGlitch: "glitch",
+		ExpressionDismayed: "dismayed", ExpressionAdoring: "adoring", ExpressionSparkle: "sparkle",
+	}
+	for expr, want := range cases {
+		if string(expr) != want {
+			t.Errorf("constant = %q, want %q", string(expr), want)
+		}
+	}
+}
+
 func TestRemarkFromIdleForProactiveRemarks(t *testing.T) {
 	if got := Transition(StateIdle, EventRemark); got != StateThinking {
 		t.Fatalf("Transition(idle, remark) = %q, want thinking", got)

@@ -62,6 +62,33 @@ const (
 	ExpressionSmile      Expression = "smile"
 	ExpressionLaugh      Expression = "laugh"
 	ExpressionWhistle    Expression = "whistle"
+
+	// Emotional expressions backed by the Figma face set. Each resolves to its
+	// own asset via face.Canonical (see EmotionVocabulary).
+	ExpressionSad       Expression = "sad"
+	ExpressionHappy     Expression = "happy"
+	ExpressionContent   Expression = "content"
+	ExpressionAngry     Expression = "angry"
+	ExpressionSurprised Expression = "surprised"
+	ExpressionExcited   Expression = "excited"
+	ExpressionLove      Expression = "love"
+	ExpressionShy       Expression = "shy"
+	ExpressionCrying    Expression = "crying"
+	ExpressionTeary     Expression = "teary"
+	ExpressionGloomy    Expression = "gloomy"
+	ExpressionDizzy     Expression = "dizzy"
+	ExpressionUnamused  Expression = "unamused"
+	ExpressionAnnoyed   Expression = "annoyed"
+	ExpressionSkeptical Expression = "skeptical"
+	ExpressionPlayful   Expression = "playful"
+	ExpressionKiss      Expression = "kiss"
+	ExpressionGrimace   Expression = "grimace"
+	ExpressionShout     Expression = "shout"
+	ExpressionDead      Expression = "dead"
+	ExpressionGlitch    Expression = "glitch"
+	ExpressionDismayed  Expression = "dismayed"
+	ExpressionAdoring   Expression = "adoring"
+	ExpressionSparkle   Expression = "sparkle"
 )
 
 const (
