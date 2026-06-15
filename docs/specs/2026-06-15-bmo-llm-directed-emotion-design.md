@@ -34,14 +34,16 @@ Add `assistant.Expression` constants for every face expression not already
 present (24 new; `laugh` already exists). Define a curated `EmotionVocabulary`
 `[]Expression` listing the **conversational** emotions — every expression
 **except** the functional, state-driven faces: `listening`, `thinking`,
-`speaking`, `sleeping`, `blink`, `look_around`. The vocabulary drives both the
-parser whitelist and the prompt advertising, so they cannot drift apart.
+`speaking`, `sleeping`, `blink`, `look_around`. Also excluded: `whistle` — it
+has no face asset and `face.Canonical` folds it to `neutral`, so advertising it
+would offer a face BMO cannot actually show (enforced by
+`TestEmotionVocabularyResolvesToItself`). The vocabulary drives both the parser
+whitelist and the prompt advertising, so they cannot drift apart.
 
-Vocabulary (29): `neutral`, `smile`, `happy`, `laugh`, `content`, `sad`,
+Vocabulary (28): `neutral`, `smile`, `happy`, `laugh`, `content`, `sad`,
 `angry`, `surprised`, `excited`, `love`, `shy`, `crying`, `teary`, `gloomy`,
 `dizzy`, `unamused`, `annoyed`, `skeptical`, `playful`, `kiss`, `grimace`,
-`shout`, `dead`, `glitch`, `dismayed`, `adoring`, `sparkle`, `whistle`,
-`concerned`.
+`shout`, `dead`, `glitch`, `dismayed`, `adoring`, `sparkle`, `concerned`.
 
 ### (b) Machine directive
 
