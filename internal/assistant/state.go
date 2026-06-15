@@ -65,7 +65,7 @@ const (
 	ExpressionWhistle    Expression = "whistle"
 
 	// Emotional expressions backed by the Figma face set. Each resolves to its
-	// own asset via face.Canonical (see EmotionVocabulary).
+	// own asset via face.Canonical (see face.EmotionNames).
 	ExpressionSad       Expression = "sad"
 	ExpressionHappy     Expression = "happy"
 	ExpressionContent   Expression = "content"

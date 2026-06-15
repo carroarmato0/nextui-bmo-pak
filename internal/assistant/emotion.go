@@ -5,67 +5,88 @@ import (
 	"strings"
 )
 
-// EmotionVocabulary lists the conversational expressions the chat model may
-// request via an [emotion] directive. It excludes the functional, state-driven
-// faces (listening/thinking/speaking/sleeping/blink/look_around) and whistle
-// (which has no asset and folds to neutral). Every entry resolves to its own
-// face via face.Canonical — enforced by TestEmotionVocabularyResolvesToItself.
-// The list is the single source of truth for both the parser whitelist and the
-// system-prompt advertising, so the two cannot drift apart.
-var EmotionVocabulary = []Expression{
-	ExpressionNeutral, ExpressionSmile, ExpressionHappy, ExpressionLaugh,
-	ExpressionContent, ExpressionSad, ExpressionAngry, ExpressionSurprised,
-	ExpressionExcited, ExpressionLove, ExpressionShy, ExpressionCrying,
-	ExpressionTeary, ExpressionGloomy, ExpressionDizzy, ExpressionUnamused,
-	ExpressionAnnoyed, ExpressionSkeptical, ExpressionPlayful, ExpressionKiss,
-	ExpressionGrimace, ExpressionShout, ExpressionDead, ExpressionGlitch,
-	ExpressionDismayed, ExpressionAdoring, ExpressionSparkle, ExpressionConcerned,
+// EmotionEntry is one advertised emotion: a face name plus an optional human
+// description used to help the chat model choose it.
+type EmotionEntry struct {
+	Name        string
+	Description string
 }
 
-// emotionByName maps a lower-cased emotion name to its Expression for O(1)
-// whitelist lookups during parsing.
-var emotionByName = func() map[string]Expression {
-	m := make(map[string]Expression, len(EmotionVocabulary))
-	for _, e := range EmotionVocabulary {
-		m[string(e)] = e
+// BuildEmotionVocabulary combines the built-in emotion names (empty for a
+// self-contained mod) with the emotion faces the active mod ships on disk,
+// de-duplicating by name (first occurrence wins, built-ins first) and attaching
+// any description from the mod manifest. It is the single source of truth for
+// both the system-prompt advertising and the parser whitelist, so they cannot
+// drift apart.
+func BuildEmotionVocabulary(builtin, disk []string, descriptions map[string]string) []EmotionEntry {
+	seen := make(map[string]bool, len(builtin)+len(disk))
+	entries := make([]EmotionEntry, 0, len(builtin)+len(disk))
+	add := func(name string) {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		entries = append(entries, EmotionEntry{Name: name, Description: strings.TrimSpace(descriptions[name])})
+	}
+	for _, n := range builtin {
+		add(n)
+	}
+	for _, n := range disk {
+		add(n)
+	}
+	return entries
+}
+
+// emotionNameSet builds the parser whitelist from a vocabulary: lower-cased name
+// -> Expression (the name itself, which is what the renderer resolves).
+func emotionNameSet(entries []EmotionEntry) map[string]Expression {
+	m := make(map[string]Expression, len(entries))
+	for _, e := range entries {
+		m[e.Name] = Expression(e.Name)
 	}
 	return m
-}()
+}
 
-// emotionTokenRe matches a bracketed single word of letters/underscores, e.g.
-// "[happy]". Only tokens whose word is in EmotionVocabulary are treated as
-// directives; anything else (e.g. "[pauses]", "[1]") is left untouched.
-var emotionTokenRe = regexp.MustCompile(`\[([A-Za-z_]+)\]`)
+// emotionTokenRe matches a bracketed single token of the face-filename charset,
+// e.g. "[happy]" or "[side-eye]". Only tokens whose word is in the active
+// vocabulary are treated as directives; anything else is left untouched.
+var emotionTokenRe = regexp.MustCompile(`\[([A-Za-z0-9_-]+)\]`)
 
 // extraSpaceRe collapses runs of spaces/tabs left behind after removing a
 // directive. Newlines are preserved.
 var extraSpaceRe = regexp.MustCompile(`[ \t]{2,}`)
 
 // emotionProtocolPrompt is appended to the chat persona so the model knows how
-// to drive BMO's face. Built from EmotionVocabulary so it can never advertise a
-// word the parser would not accept.
-func emotionProtocolPrompt() string {
-	names := make([]string, len(EmotionVocabulary))
-	for i, e := range EmotionVocabulary {
-		names[i] = string(e)
+// to drive BMO's face. Built from the supplied vocabulary so it can never
+// advertise a word the parser would not accept. Entries with a description are
+// rendered as "name — description"; others as the bare name.
+func emotionProtocolPrompt(entries []EmotionEntry) string {
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		if e.Description != "" {
+			parts[i] = e.Name + " — " + e.Description
+		} else {
+			parts[i] = e.Name
+		}
 	}
 	return "You have an animated face. You may begin your reply with exactly one " +
 		"directive in square brackets to set your facial expression, for example " +
 		"[happy]. The bracketed word is silent — it is never spoken aloud, only " +
 		"used to choose your face. Include it only when an emotion clearly fits; " +
-		"otherwise leave it out. Valid expressions: " + strings.Join(names, ", ") + "."
+		"otherwise leave it out. Valid expressions: " + strings.Join(parts, ", ") + "."
 }
 
 // ParseEmotion extracts the chat model's facial directive. It removes every
-// recognised [emotion] token from reply, tidies the whitespace the removal
-// leaves behind, and returns the spoken text plus the FIRST recognised emotion
-// (empty Expression if none). Bracketed words that are not in the vocabulary
-// pass through unchanged.
-func ParseEmotion(reply string) (string, Expression) {
+// recognised [emotion] token (those whose lower-cased word is a key in valid)
+// from reply, tidies the whitespace the removal leaves behind, and returns the
+// spoken text plus the FIRST recognised emotion (empty Expression if none).
+// Bracketed words not in valid pass through unchanged.
+func ParseEmotion(reply string, valid map[string]Expression) (string, Expression) {
 	var first Expression
 	clean := emotionTokenRe.ReplaceAllStringFunc(reply, func(tok string) string {
-		name := strings.ToLower(tok[1 : len(tok)-1]) // strip the surrounding [ and ]
-		if emo, ok := emotionByName[name]; ok {
+		name := strings.ToLower(tok[1 : len(tok)-1]) // strip surrounding [ and ]
+		if emo, ok := valid[name]; ok {
 			if first == "" {
 				first = emo
 			}

@@ -7,26 +7,34 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/face"
 )
 
-// Every advertised emotion must resolve to its OWN face. If face.Canonical
-// folds it onto something else (or the asset is missing) the model would be
-// told about a face BMO cannot actually show.
-func TestEmotionVocabularyResolvesToItself(t *testing.T) {
-	if len(EmotionVocabulary) == 0 {
-		t.Fatal("EmotionVocabulary is empty")
+func builtinVocab() []EmotionEntry {
+	return BuildEmotionVocabulary(face.EmotionNames(), nil, nil)
+}
+
+func TestBuildEmotionVocabularyOverlay(t *testing.T) {
+	v := BuildEmotionVocabulary([]string{"happy", "sad"}, []string{"sad", "grumpy"}, map[string]string{"grumpy": "sulky"})
+	var names []string
+	for _, e := range v {
+		names = append(names, e.Name)
 	}
-	seen := map[Expression]bool{}
-	for _, e := range EmotionVocabulary {
-		if seen[e] {
-			t.Errorf("duplicate vocabulary entry %q", e)
-		}
-		seen[e] = true
-		if got := face.Canonical(string(e)); got != string(e) {
-			t.Errorf("face.Canonical(%q) = %q, want %q (not a self-resolving face)", e, got, e)
-		}
+	want := []string{"happy", "sad", "grumpy"} // builtin first, then new disk names, deduped
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	if v[2].Description != "sulky" {
+		t.Fatalf("grumpy description = %q, want sulky", v[2].Description)
+	}
+}
+
+func TestBuildEmotionVocabularySelfContained(t *testing.T) {
+	v := BuildEmotionVocabulary(nil, []string{"grumpy", "happy"}, nil)
+	if len(v) != 2 || v[0].Name != "grumpy" || v[1].Name != "happy" {
+		t.Fatalf("self-contained vocab = %+v, want [grumpy happy]", v)
 	}
 }
 
 func TestParseEmotion(t *testing.T) {
+	valid := emotionNameSet(builtinVocab())
 	tests := []struct {
 		name      string
 		in        string
@@ -48,7 +56,7 @@ func TestParseEmotion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clean, emo := ParseEmotion(tt.in)
+			clean, emo := ParseEmotion(tt.in, valid)
 			if clean != tt.wantClean {
 				t.Errorf("clean = %q, want %q", clean, tt.wantClean)
 			}
@@ -59,34 +67,47 @@ func TestParseEmotion(t *testing.T) {
 	}
 }
 
-// The functional, state-driven faces must NOT be advertised to the model.
-func TestEmotionVocabularyExcludesFunctionalFaces(t *testing.T) {
-	excluded := []Expression{
-		ExpressionListening, ExpressionThinking, ExpressionSpeaking,
-		ExpressionSleeping, ExpressionBlink, ExpressionLookAround, ExpressionWhistle,
+func TestParseEmotionCustomName(t *testing.T) {
+	valid := emotionNameSet(BuildEmotionVocabulary(nil, []string{"grumpy"}, nil))
+	clean, emo := ParseEmotion("[grumpy] go away", valid)
+	if clean != "go away" || emo != Expression("grumpy") {
+		t.Fatalf("clean=%q emo=%q, want %q/grumpy", clean, emo, "go away")
 	}
-	for _, e := range EmotionVocabulary {
-		for _, x := range excluded {
-			if e == x {
-				t.Errorf("vocabulary must not include functional face %q", e)
-			}
-		}
+	// A hyphenated custom name matches the widened token regex.
+	valid2 := emotionNameSet(BuildEmotionVocabulary(nil, []string{"side-eye"}, nil))
+	if _, e := ParseEmotion("[side-eye] hmm", valid2); e != Expression("side-eye") {
+		t.Fatalf("hyphenated custom name not parsed: %q", e)
+	}
+	// A name not in the active vocabulary passes through untouched.
+	if c, e := ParseEmotion("[grumpy] hi", emotionNameSet(builtinVocab())); c != "[grumpy] hi" || e != "" {
+		t.Fatalf("unknown custom name should pass through: clean=%q emo=%q", c, e)
 	}
 }
 
 func TestEmotionProtocolPrompt(t *testing.T) {
-	p := emotionProtocolPrompt()
+	p := emotionProtocolPrompt(builtinVocab())
 	if !strings.Contains(p, "[happy]") {
 		t.Errorf("protocol missing [happy] example: %q", p)
 	}
-	// Lists every vocabulary name.
-	for _, e := range EmotionVocabulary {
-		if !strings.Contains(p, string(e)) {
-			t.Errorf("protocol missing vocabulary word %q", e)
+	for _, e := range builtinVocab() {
+		if !strings.Contains(p, e.Name) {
+			t.Errorf("protocol missing vocabulary word %q", e.Name)
 		}
 	}
-	// States the directive is silent.
 	if !strings.Contains(strings.ToLower(p), "never spoken") {
 		t.Errorf("protocol must say the directive is never spoken: %q", p)
+	}
+}
+
+func TestEmotionProtocolPromptDescriptions(t *testing.T) {
+	p := emotionProtocolPrompt([]EmotionEntry{
+		{Name: "grumpy", Description: "sulky and irritable"},
+		{Name: "happy"},
+	})
+	if !strings.Contains(p, "grumpy — sulky and irritable") {
+		t.Errorf("protocol missing described entry: %q", p)
+	}
+	if !strings.Contains(p, "happy") {
+		t.Errorf("protocol missing bare entry: %q", p)
 	}
 }
