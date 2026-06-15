@@ -26,6 +26,7 @@ type Cache struct {
 	w, h        int
 	frames      map[string][]uint32
 	failed      map[string]bool
+	resolved    map[string]string
 	speak       *speakSet
 	speakFailed bool
 }
@@ -55,6 +56,12 @@ func (c *Cache) Warm(w, h int) {
 		if name == ExprSpeaking {
 			continue
 		}
+		c.warmFrame(name, w, h)
+	}
+
+	// Pre-rasterize the active mod's custom emotion faces so a custom name does
+	// not stutter on first use. warmFrame is idempotent for names already warmed.
+	for _, name := range EmotionFaceNamesInDir(c.lib.dir) {
 		c.warmFrame(name, w, h)
 	}
 }
@@ -140,21 +147,31 @@ func (c *Cache) warmSpeak(w, h int) {
 // Frame returns the cached ARGB buffer for expr at w×h, rasterizing on first
 // access. Returns nil only if both the override and embedded default fail.
 func (c *Cache) Frame(expr string, w, h int) []uint32 {
-	canonical := Canonical(expr)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.resizeLocked(w, h)
-	if buf, ok := c.frames[canonical]; ok {
+	if c.resolved == nil {
+		c.resolved = make(map[string]string)
+	}
+	key, ok := c.resolved[expr]
+	if !ok {
+		// Resolve performs one os.Stat; cached per distinct expr so the render
+		// loop never re-stats on a hit. resolved is size-independent, so it is
+		// intentionally not cleared on resize.
+		key = c.lib.Resolve(expr)
+		c.resolved[expr] = key
+	}
+	if buf, ok := c.frames[key]; ok {
 		return buf
 	}
-	if c.failed[canonical] {
+	if c.failed[key] {
 		return nil
 	}
-	buf := c.renderLocked(canonical, w, h)
+	buf := c.renderLocked(key, w, h)
 	if buf != nil {
-		c.frames[canonical] = buf
+		c.frames[key] = buf
 	} else {
-		c.failed[canonical] = true
+		c.failed[key] = true
 	}
 	return buf
 }

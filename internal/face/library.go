@@ -94,3 +94,16 @@ func (l *Library) Bytes(expr string) ([]byte, bool) {
 	}
 	return data, false
 }
+
+// Resolve returns the cache key / load name for expr: the raw (sanitized) name
+// when a matching on-disk face exists, so a self-contained mod's custom-named
+// SVG renders under its own name; otherwise the canonical name.
+func (l *Library) Resolve(expr string) string {
+	raw := strings.ToLower(strings.TrimSpace(expr))
+	if l.dir != "" && fileNameRe.MatchString(raw) {
+		if _, err := os.Stat(filepath.Join(l.dir, raw+".svg")); err == nil {
+			return raw
+		}
+	}
+	return Canonical(raw)
+}

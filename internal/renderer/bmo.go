@@ -287,7 +287,7 @@ func (r *Renderer) Draw(frame FrameState) error {
 	}
 
 	canonical := face.Canonical(frame.Expression)
-	if !r.blitFace(canonical, frame, phase) {
+	if !r.blitFace(frame.Expression, frame, phase) {
 		r.drawPlainFace(layout)
 	}
 
@@ -327,12 +327,12 @@ func (r *Renderer) Size() (int, int) {
 
 // blitFace copies the cached SVG face for the given expression into r.pixels.
 // Returns false if the cache is absent or returns no frame (falls back to drawPlainFace).
-func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) bool {
+func (r *Renderer) blitFace(expr string, frame FrameState, phase float64) bool {
 	if r.faces == nil {
 		return false
 	}
 	w, h := int(r.W), int(r.H)
-	if canonical == face.ExprSpeaking {
+	if face.Canonical(expr) == face.ExprSpeaking {
 		t := math.Sqrt(math.Min(1, float64(frame.SpeakAmplitude)))
 		if frame.SpeakAmplitude <= 0 {
 			t = 0.45 + 0.35*math.Sin(phase*8.0)
@@ -347,7 +347,7 @@ func (r *Renderer) blitFace(canonical string, frame FrameState, phase float64) b
 		}
 		return true
 	}
-	buf := r.faces.Frame(canonical, w, h)
+	buf := r.faces.Frame(expr, w, h)
 	if buf == nil || len(buf) != len(r.pixels) {
 		return false
 	}

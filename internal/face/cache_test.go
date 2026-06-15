@@ -85,3 +85,35 @@ func TestCacheCorruptOverrideFallsBack(t *testing.T) {
 	// The embedded neutral has dark eyes — confirm we got the real fallback, not zeros.
 	assertColor(t, buf, 320, 240, 80, 78, 0x1a, 0x1a, 0x1a, "fallback neutral eye")
 }
+
+func TestFrameRendersCustomName(t *testing.T) {
+	dir := t.TempDir()
+	neutral := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#0000ff"/></svg>`
+	grumpy := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#00ff00"/></svg>`
+	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(neutral), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(grumpy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := NewCache(NewLibraryMode(dir, true))
+
+	g := c.Frame("grumpy", 28, 21)
+	if g == nil {
+		t.Fatal("custom expression grumpy did not render")
+	}
+	n := c.Frame("neutral", 28, 21)
+	if n == nil {
+		t.Fatal("neutral did not render")
+	}
+	same := true
+	for i := range g {
+		if g[i] != n[i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("grumpy frame equals neutral frame; custom name was folded to neutral")
+	}
+}

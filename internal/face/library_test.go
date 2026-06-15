@@ -110,3 +110,34 @@ func TestNonSelfContainedStillFallsBackToEmbedded(t *testing.T) {
 		t.Fatal("expected embedded neutral bytes")
 	}
 }
+
+func TestResolveRawWhenFileExists(t *testing.T) {
+	dir := t.TempDir()
+	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#0f0"/></svg>`
+	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(svg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibraryMode(dir, true)
+	if got := lib.Resolve("grumpy"); got != "grumpy" {
+		t.Fatalf("Resolve(grumpy) = %q, want grumpy", got)
+	}
+	// No happy.svg on disk: falls back to the canonical name.
+	if got := lib.Resolve("happy"); got != "happy" {
+		t.Fatalf("Resolve(happy) = %q, want happy", got)
+	}
+	// Alias with no disk file resolves through Canonical.
+	if got := lib.Resolve("shocked"); got != ExprSurprised {
+		t.Fatalf("Resolve(shocked) = %q, want %q", got, ExprSurprised)
+	}
+}
+
+func TestResolveCanonicalWhenNoDir(t *testing.T) {
+	lib := NewLibrary(filepath.Join(t.TempDir(), "missing"))
+	if got := lib.Resolve("cry"); got != ExprCrying {
+		t.Fatalf("Resolve(cry) = %q, want %q", got, ExprCrying)
+	}
+	// Unsafe names never hit disk and fold to neutral via Canonical.
+	if got := lib.Resolve("../etc/passwd"); got != ExprNeutral {
+		t.Fatalf("Resolve(traversal) = %q, want %q", got, ExprNeutral)
+	}
+}
