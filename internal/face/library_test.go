@@ -34,12 +34,12 @@ func TestLibraryDiskOverrideWins(t *testing.T) {
 func TestLibraryAliasResolution(t *testing.T) {
 	dir := t.TempDir()
 	custom := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#111"/></svg>`
-	// Write under the canonical name "smile", but look up via alias "happy"
-	if err := os.WriteFile(filepath.Join(dir, "smile.svg"), []byte(custom), 0o644); err != nil {
+	// Write under the canonical name "crying", but look up via alias "cry"
+	if err := os.WriteFile(filepath.Join(dir, "crying.svg"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	lib := NewLibrary(dir)
-	data, fromDisk := lib.Bytes("happy")
+	data, fromDisk := lib.Bytes("cry")
 	if !fromDisk || string(data) != custom {
 		t.Fatalf("expected disk override for alias, fromDisk=%v", fromDisk)
 	}
