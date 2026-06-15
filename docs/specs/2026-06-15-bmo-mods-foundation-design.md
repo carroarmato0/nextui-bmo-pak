@@ -93,6 +93,7 @@ resolving mod assets.
 
 ```json
 {
+  "apiVersion": 1,
   "name": "Evil BMO",
   "author": "someone",
   "description": "BMO's mischievous twin",
@@ -100,19 +101,24 @@ resolving mod assets.
 }
 ```
 
+`apiVersion` is the mod-format compatibility version (see "API Versioning"
+below); `version` is the *mod author's* own free-form release string, distinct
+from it.
+
 Malformed or partial `mod.json` is tolerated: parse errors are logged and the
 mod still appears using folder-name defaults. The manifest is the reserved home
 for emotion hints introduced in the later emotion-vocabulary spec; this spec
-adds only `name`, `author`, `description`, `version`.
+adds only `apiVersion`, `name`, `author`, `description`, `version`.
 
 ### Proposed `internal/mod` shape
 
 ```go
 type Manifest struct {
+    APIVersion  int    `json:"apiVersion"`  // mod-format version; 0/absent => 1
     Name        string `json:"name"`
     Author      string `json:"author"`
     Description string `json:"description"`
-    Version     string `json:"version"`
+    Version     string `json:"version"`     // author's own release string
 }
 
 type Mod struct {
@@ -136,6 +142,32 @@ func Load(modsRoot, id string) Mod        // resolve the active mod by id
 Existing consumers (`config.LoadPromptFile`, `face.NewLibrary`,
 `clips.NewLibrary`, quote parsing) keep their current signatures and are fed the
 resolved paths/dirs by the active `Mod`.
+
+## API Versioning
+
+`mod.json` carries an integer `apiVersion` describing which mod-format contract
+the mod was authored against. BMO ships a compile-time constant
+`mod.CurrentAPIVersion` (starts at `1`). This lets us make
+compatibility-breaking changes to the mod format later without breaking mods
+authored for an earlier version.
+
+Policy:
+
+- **Absent means `1`, forever.** A mod with no `mod.json`, or a manifest that
+  omits `apiVersion` (parses as `0`), is treated as `apiVersion: 1`. The default
+  is *frozen* — it never tracks the latest version. Today's zero-config mods are
+  therefore implicitly v1 and keep working unchanged when a future v2 ships.
+- **Equal or older → load.** A mod whose `apiVersion <= CurrentAPIVersion`
+  loads, with version-specific compatibility behavior applied as needed (no such
+  behavior exists at v1; this is the seam for the future).
+- **Newer → degrade and warn.** A mod whose `apiVersion > CurrentAPIVersion`
+  was authored for a newer BMO. It still appears in the Mod menu but is flagged
+  (e.g. "needs newer BMO") and loaded best-effort; the mismatch is logged. We do
+  not hard-refuse, so a forward-built mod that happens to be compatible still
+  works.
+
+At v1 there are no shims; this section establishes the contract and the single
+constant that future specs increment.
 
 ## Config and Settings Integration
 
@@ -190,6 +222,8 @@ face filenames.
 - `mod.Discover` ordering (`default` first, then alphabetical) and tolerance of
   non-directory entries / dotfiles.
 - Manifest parsing: valid, partial, missing, and malformed `mod.json`.
+- `apiVersion` handling: absent/`0` → treated as `1`; equal/older → loads;
+  newer than `CurrentAPIVersion` → flagged + loaded best-effort, not refused.
 - `config` round-trip with `ActiveMod` (default `""`, named value, and a named
   value whose folder is absent → falls back to default).
 - Face library `selfContained` behavior: missing expression folds to mod neutral
