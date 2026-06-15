@@ -7,7 +7,12 @@ import (
 	"text/template"
 )
 
-const speakLevels = 12
+// speakLevels is the number of mouth-openness frames in the talking animation
+// (level 0 = closed, plus speakLevels-1 open levels). Each level is a full SVG
+// rasterization during warm-up, so this directly sets the warm cost; 6 keeps
+// the speaking face ready within ~1s on the slow Mali GPU while still reading
+// as smooth lip movement.
+const speakLevels = 6
 
 // SpeakParams holds the computed mouth geometry for a single openness level.
 type SpeakParams struct {
@@ -54,11 +59,17 @@ func speakParams(t float64) SpeakParams {
 		r, r, left, bottom-r, left, top+r,
 		r, r, tlx, tby)
 
-	// Tongue: upper half-ellipse centred on bottom edge.
+	// Tongue: a bump sitting on the bottom edge, bulging up into the mouth.
+	// A quadratic Bézier is used instead of an elliptical arc because the arc's
+	// rx equals exactly half its chord (the degenerate half-ellipse case), and
+	// rasterizers disagree on which way such an arc sweeps — oksvg (the device
+	// renderer) bulged it *downward*, so the tongue stuck out below the mouth.
+	// The Bézier control point above the edge makes the bulge direction
+	// unambiguous and identical across rasterizers; it peaks ty above the edge.
 	tr := 19.0 * h / 36.0
 	ty := 0.18 * h
-	tongue := fmt.Sprintf("M %.2f %.2f A %.2f %.2f 0 0 1 %.2f %.2f Z",
-		140-tr, bottom, tr, ty, 140+tr, bottom)
+	tongue := fmt.Sprintf("M %.2f %.2f Q %.2f %.2f %.2f %.2f Z",
+		140-tr, bottom, 140.0, bottom-2*ty, 140+tr, bottom)
 
 	return SpeakParams{
 		MouthH:       h,

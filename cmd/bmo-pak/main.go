@@ -304,19 +304,46 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	running := true // declared here so handleNav can close over it
 
+	// shuttingDown is set when the user exits; the goodbye clip plays in the
+	// clip player's own goroutine while the face loop keeps rendering so the
+	// mouth animation is visible. goodbyeDone closes when the clip has played
+	// out, which is the signal to actually exit.
+	var shuttingDown bool
+	var shuttingDownAt time.Time
+	var goodbyeDone <-chan struct{}
+
+	// beginShutdown starts BMO's farewell: it kicks off the goodbye clip in the
+	// player's goroutine and leaves the face loop running so the mouth animates
+	// until goodbyeDone closes. Used by both exit buttons (B and MENU). Calling
+	// it again while already shutting down force-quits immediately.
+	beginShutdown := func() {
+		if shuttingDown {
+			running = false
+			return
+		}
+		shuttingDown = true
+		shuttingDownAt = time.Now()
+		if clipPlayer != nil {
+			goodbyeDone = clipPlayer.PlaySequence(ctx, "goodbye")
+		} else {
+			running = false
+		}
+	}
+
 	// handleNav maps decoded evdev navigation intents to menu/overlay actions.
 	// Physical button layout (TrimUI, confirmed via getevent): A=BTN_EAST(305)
 	// is confirm/PTT (handled by the PTT path), B=BTN_SOUTH(304) cancels,
 	// Start opens settings, Y=BTN_NORTH(307) opens AI setup, Menu=BTN_MODE(316)
 	// exits to NextUI, D-pad navigates.
 	handleNav := func(action input.NavAction) {
-		// MENU (BTN_MODE) always exits to NextUI.
+		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
-			running = false
+			beginShutdown()
 			return
 		}
 
-		// B closes an open overlay; cancels in-flight batch; interrupts speech; exits otherwise.
+		// B closes an open overlay; cancels in-flight batch; interrupts speech;
+		// otherwise it exits to NextUI after playing the goodbye clip.
 		if action == input.NavCancel {
 			if activeMenu != nil {
 				setActiveMenu(nil)
@@ -325,7 +352,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			} else if audioPipeline != nil && audioPipeline.InterruptSpeech() {
 				logger.Infof("speech interrupted by B press")
 			} else {
-				running = false
+				beginShutdown()
 			}
 			return
 		}
@@ -394,18 +421,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
 
-	if clipPlayer != nil {
-		startupCtx, startupCancel := context.WithTimeout(ctx, 10*time.Second)
-		_ = clipPlayer.Play(startupCtx, "hello")
-		overrideErrs := config.CheckOverrides(homeDir)
-		for _, e := range overrideErrs {
-			logger.Warnf("mod override error: %v", e)
-		}
-		if len(overrideErrs) > 0 {
-			_ = clipPlayer.Play(startupCtx, "mod_error")
-		}
-		startupCancel()
-	}
+	// Startup clip: hold the default face for ~1 second, then — once the
+	// speaking animation is warmed so the mouth moves smoothly — play "hello".
+	startupFaceShownAt := time.Now().Add(time.Second)
+	startupClipFired := clipPlayer == nil // skip if no audio
 
 	logger.Infof("BMO ready; entering face loop")
 	for running {
@@ -441,6 +460,40 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if ev.Event == sdl.WINDOWEVENT_SIZE_CHANGED || ev.Event == sdl.WINDOWEVENT_RESIZED {
 					screen.SyncSize()
 				}
+			}
+		}
+
+		// Play the startup clips once the default face has been visible for
+		// ~1s and the speaking animation is warmed, so the mouth animates from
+		// the first word instead of stalling the render loop on a cold, under-
+		// mutex rasterization. Capped at 10s so a failed warm still plays the
+		// audio. The clips run in the player's own goroutine, so audio pacing
+		// is independent of the render loop's frame rate.
+		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
+			(faceCache.SpeakReady() || time.Since(startupFaceShownAt) > 10*time.Second) {
+			startupClipFired = true
+			names := []string{"hello"}
+			if overrideErrs := config.CheckOverrides(homeDir); len(overrideErrs) > 0 {
+				for _, e := range overrideErrs {
+					logger.Warnf("mod override error: %v", e)
+				}
+				names = append(names, "mod_error")
+			}
+			clipPlayer.PlaySequence(ctx, names...)
+		}
+
+		// Exit once the goodbye clip has played out (or after an 8s safety
+		// timeout), so the farewell is fully heard and animated before quitting.
+		if shuttingDown {
+			if goodbyeDone == nil || time.Since(shuttingDownAt) > 8*time.Second {
+				running = false
+				continue
+			}
+			select {
+			case <-goodbyeDone:
+				running = false
+				continue
+			default:
 			}
 		}
 
@@ -508,6 +561,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 		}
 
+		// Clip player overrides expression and amplitude while a pre-recorded
+		// clip is streaming (startup/goodbye/fallback). Quota and menu overlays
+		// still take priority further below.
+		clipPlaying := clipPlayer != nil && clipPlayer.Playing()
+		if clipPlaying {
+			expr = string(assistant.ExpressionSpeaking)
+		}
+
 		if snap.Quota.Exhausted {
 			expr = string(assistant.ExpressionSleeping)
 		}
@@ -527,7 +588,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 
 		var speakAmp float32
-		if audioPipeline != nil {
+		if clipPlaying {
+			speakAmp = clipPlayer.CurrentAmplitude()
+		} else if audioPipeline != nil {
 			speakAmp = audioPipeline.CurrentAmplitude()
 		}
 		frame := renderer.FrameState{
@@ -537,7 +600,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			IdlePhase:       float64(now.Sub(snap.LastInteraction)) / float64(time.Second),
 			ReducedMotion:   cfg.ReducedMotion,
 			LastInteraction: snap.LastInteraction,
-			Speaking:        snap.Current == assistant.StateSpeaking,
+			Speaking:        snap.Current == assistant.StateSpeaking || clipPlaying,
 			Listening:       snap.Current == assistant.StateListening,
 			Thinking:        snap.Current == assistant.StateThinking,
 			Overlay:         overlay,
@@ -553,11 +616,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 
 	logger.Infof("BMO shutting down")
-	if clipPlayer != nil {
-		goodbyeCtx, goodbyeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = clipPlayer.Play(goodbyeCtx, "goodbye")
-		goodbyeCancel()
-	}
 	return nil
 }
 

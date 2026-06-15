@@ -228,11 +228,11 @@ func TestProcessBatchResamplesTTSToPlaybackRate(t *testing.T) {
 	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
 		t.Fatalf("ProcessBatch() error = %v", err)
 	}
-	// The same 250ms of audio at the 16kHz playback rate: anything else plays
-	// slow/deep (24k at 16k) or fast/squeaky.
-	want := 16000 * 2 / 4
+	// 250ms at 16kHz stereo S16LE: 16000 Hz * 2 bytes * 2 ch / 4 = 16000 bytes.
+	// Using playbackChannels=2, TTS is resampled mono→mono then upmixed to stereo.
+	want := 16000 * 2 * 2 / 4
 	if got := writer.totalBytes(); got != want {
-		t.Fatalf("wrote %d bytes, want %d (24kHz TTS must be resampled to the 16kHz playback rate)", got, want)
+		t.Fatalf("wrote %d bytes, want %d (24kHz TTS must be resampled to the 16kHz stereo playback rate)", got, want)
 	}
 }
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -34,12 +33,24 @@ var clipDefs = []clipDef{
 func main() {
 	key := flag.String("key", "", "OpenAI API key (overrides env/file)")
 	baseURL := flag.String("base-url", "https://api.openai.com/v1", "API base URL")
+	homeDir := flag.String("home-dir", "", "BMO home directory — reads config.json for voice and voice.txt for TTS instructions when set")
 	chatModel := flag.String("chat-model", "gpt-4o-mini", "Chat model")
 	ttsModel := flag.String("tts-model", "tts-1", "TTS model")
-	voice := flag.String("voice", "alloy", "TTS voice")
-	instructions := flag.String("instructions", config.DefaultTTSInstructions, "TTS style instructions")
+	voice := flag.String("voice", "alloy", "TTS voice (overridden by -home-dir config)")
+	instructions := flag.String("instructions", config.DefaultTTSInstructions, "TTS style instructions (overridden by -home-dir voice.txt)")
 	outDir := flag.String("out", "internal/clips/assets/audio", "Output directory for PCM files")
 	flag.Parse()
+
+	// If home-dir is set, load the runtime voice and instructions so clips
+	// match what the user hears from the API.
+	if *homeDir != "" {
+		cfgPath := config.Path(*homeDir)
+		cfg, err := config.Load(cfgPath)
+		if err == nil && strings.TrimSpace(cfg.TTS.Voice) != "" {
+			*voice = cfg.TTS.Voice
+		}
+		*instructions = config.LoadPromptFile(config.VoicePath(*homeDir), config.DefaultTTSInstructions)
+	}
 
 	resolvedKey := strings.TrimSpace(*key)
 	if resolvedKey == "" {
@@ -69,6 +80,8 @@ func main() {
 	}, http.DefaultClient)
 
 	ctx := context.Background()
+
+	log.Printf("using voice=%q", *voice)
 
 	for _, clip := range clipDefs {
 		log.Printf("generating %s ...", clip.name)
@@ -100,7 +113,7 @@ func main() {
 
 		// TTS returns 24kHz mono S16LE; resample to 16kHz mono then upmix to stereo.
 		mono16 := audio.ResampleS16LE(speech, 24000, audio.DefaultSampleRate, 1)
-		stereo := monoToStereo(mono16)
+		stereo := audio.UpmixMonoToStereo(mono16)
 
 		outPath := filepath.Join(*outDir, clip.name+".pcm")
 		if err := os.WriteFile(outPath, stereo, 0o644); err != nil {
@@ -110,15 +123,4 @@ func main() {
 	}
 
 	fmt.Println("done")
-}
-
-func monoToStereo(mono []byte) []byte {
-	stereo := make([]byte, len(mono)*2)
-	for i := 0; i+1 < len(mono); i += 2 {
-		s := binary.LittleEndian.Uint16(mono[i : i+2])
-		j := i * 2
-		binary.LittleEndian.PutUint16(stereo[j:j+2], s)   // L
-		binary.LittleEndian.PutUint16(stereo[j+2:j+4], s) // R
-	}
-	return stereo
 }

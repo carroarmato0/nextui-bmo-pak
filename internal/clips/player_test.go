@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeWriter struct {
@@ -52,5 +53,40 @@ func TestNilPlayerPlayIsNoop(t *testing.T) {
 	var p *Player
 	if err := p.Play(context.Background(), "hello"); err != nil {
 		t.Fatalf("nil Player.Play should be no-op, got error: %v", err)
+	}
+}
+
+func TestPlaySequenceMarksPlayingSynchronouslyAndClosesDone(t *testing.T) {
+	lib := NewLibrary(t.TempDir())
+	w := &fakeWriter{}
+	p := NewPlayer(w, 16000, 2, lib)
+
+	done := p.PlaySequence(context.Background(), "hello")
+	// Playing must be observable immediately, before the goroutine is
+	// scheduled, so the render loop shows the speaking face on the next frame.
+	if !p.Playing() {
+		t.Fatal("expected Playing() true synchronously after PlaySequence")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("PlaySequence did not finish in time")
+	}
+	if p.Playing() {
+		t.Fatal("expected Playing() false after done")
+	}
+	if w.totalBytes() == 0 {
+		t.Fatal("expected PCM writes for hello clip")
+	}
+}
+
+func TestPlaySequenceNilPlayerClosesDone(t *testing.T) {
+	var p *Player
+	done := p.PlaySequence(context.Background(), "hello")
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("nil player PlaySequence should close done immediately")
 	}
 }

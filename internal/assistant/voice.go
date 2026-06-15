@@ -2,7 +2,6 @@ package assistant
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -319,11 +318,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 			time.Since(totalStart).Milliseconds())
 	}
 
-	// OpenAI's "pcm" speech format is fixed at 24kHz mono S16LE; resample to
-	// the device playback rate so BMO's voice plays at natural speed and
-	// pitch. (Skipping this step is the planned "funny voice" easter egg:
-	// 24kHz played at 16kHz sounds ~1.5x slower and a third deeper.)
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
+	speech = p.resampleTTS(speech)
 
 	return p.speak(ctx, speech)
 }
@@ -440,7 +435,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	if onSpoken != nil {
 		onSpoken(reply)
 	}
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
+	speech = p.resampleTTS(speech)
 
 	return p.speak(ctx, speech)
 }
@@ -484,7 +479,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 	if onSpoken != nil {
 		onSpoken(text)
 	}
-	speech = audio.ResampleS16LE(speech, ttsPCMSampleRate, p.sampleRate, p.playbackChannels)
+	speech = p.resampleTTS(speech)
 
 	return p.speak(ctx, speech)
 }
@@ -579,7 +574,7 @@ func (p *VoicePipeline) playPaced(ctx context.Context, pcm []byte) error {
 	if bytesPerChunk <= 0 {
 		return p.writer.WritePCM(pcm)
 	}
-	amps := rmsChunks(pcm, p.sampleRate, p.playbackChannels, speakChunkMs)
+	amps := audio.RMSChunks(pcm, p.sampleRate, p.playbackChannels, speakChunkMs)
 	lead := audio.PlaybackBufferMs / speakChunkMs
 	chunkDur := time.Duration(speakChunkMs) * time.Millisecond
 	nChunks := (len(pcm) + bytesPerChunk - 1) / bytesPerChunk
@@ -646,32 +641,14 @@ func (p *VoicePipeline) aiModeEnabled() bool {
 	return p.machine == nil || p.machine.AIEnabled()
 }
 
-// rmsChunks splits pcm into chunkMs-millisecond windows and returns the RMS
-// amplitude [0, 1] of each window. Used to drive the speaking mouth animation.
-func rmsChunks(pcm []byte, sampleRate, channels, chunkMs int) []float32 {
-	if sampleRate <= 0 || channels <= 0 || chunkMs <= 0 {
-		return nil
-	}
-	bytesPerChunk := sampleRate * channels * 2 /* 16-bit */ * chunkMs / 1000
-	if bytesPerChunk <= 0 {
-		return nil
-	}
-	var out []float32
-	for i := 0; i+bytesPerChunk <= len(pcm); i += bytesPerChunk {
-		chunk := pcm[i : i+bytesPerChunk]
-		var sum float64
-		n := 0
-		for j := 0; j+1 < len(chunk); j += 2 {
-			s := int16(binary.LittleEndian.Uint16(chunk[j : j+2]))
-			v := float64(s) / 32767.0
-			sum += v * v
-			n++
-		}
-		if n > 0 {
-			out = append(out, float32(math.Sqrt(sum/float64(n))))
-		} else {
-			out = append(out, 0)
-		}
+// resampleTTS converts the 24kHz mono S16LE output from OpenAI's "pcm" format
+// to the device playback rate and channel count. Resampling as mono then
+// upmixing avoids the 2× speed regression that results from passing
+// playbackChannels directly to ResampleS16LE on mono input.
+func (p *VoicePipeline) resampleTTS(pcm []byte) []byte {
+	out := audio.ResampleS16LE(pcm, ttsPCMSampleRate, p.sampleRate, 1)
+	if p.playbackChannels > 1 {
+		out = audio.UpmixMonoToStereo(out)
 	}
 	return out
 }

@@ -45,13 +45,28 @@ func (c *Cache) Warm(w, h int) {
 	c.resizeLocked(w, h)
 	c.mu.Unlock()
 
+	// Warm the speaking set first: it is the most expensive to build (12
+	// levels) and, unlike the static frames, a cold Speak() call rasterizes
+	// the whole set while holding the mutex — stalling the render loop. The
+	// startup "hello" clip needs it within ~1s of launch, so prioritise it.
+	c.warmSpeak(w, h)
+
 	for _, name := range CanonicalNames {
 		if name == ExprSpeaking {
 			continue
 		}
 		c.warmFrame(name, w, h)
 	}
-	c.warmSpeak(w, h)
+}
+
+// SpeakReady reports whether the speaking animation set has been rendered and
+// cached, so the render loop can show the speaking face without a blocking
+// rasterization. Used to gate startup clip playback on the animation being
+// ready.
+func (c *Cache) SpeakReady() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.speak != nil
 }
 
 // warmFrame rasterizes one expression outside the mutex, then stores the
@@ -145,7 +160,7 @@ func (c *Cache) Frame(expr string, w, h int) []uint32 {
 }
 
 // Speak returns the base frame and optional mouth-strip for openness t ∈ [0,1].
-// Level 0 returns (base, nil); levels 1-11 return (base, strip).
+// Level 0 returns (base, nil); higher levels return (base, strip).
 // Returns (nil, nil) if speaking could not be rendered.
 func (c *Cache) Speak(t float64, w, h int) ([]uint32, *Strip) {
 	c.mu.Lock()
