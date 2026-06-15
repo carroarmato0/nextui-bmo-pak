@@ -33,6 +33,7 @@ func TestParseEmotion(t *testing.T) {
 		wantEmo   Expression
 	}{
 		{"no directive", "Hello there!", "Hello there!", ""},
+		{"no directive preserves double space", "Hello  there", "Hello  there", ""},
 		{"leading directive", "[happy] Hello there!", "Hello there!", ExpressionHappy},
 		{"leading no space", "[happy]Hello", "Hello", ExpressionHappy},
 		{"embedded directive", "Oh [excited] I love it", "Oh I love it", ExpressionExcited},

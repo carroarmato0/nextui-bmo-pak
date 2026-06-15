@@ -49,7 +49,7 @@ var extraSpaceRe = regexp.MustCompile(`[ \t]{2,}`)
 func ParseEmotion(reply string) (string, Expression) {
 	var first Expression
 	clean := emotionTokenRe.ReplaceAllStringFunc(reply, func(tok string) string {
-		name := strings.ToLower(tok[1 : len(tok)-1])
+		name := strings.ToLower(tok[1 : len(tok)-1]) // strip the surrounding [ and ]
 		if emo, ok := emotionByName[name]; ok {
 			if first == "" {
 				first = emo
