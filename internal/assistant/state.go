@@ -156,10 +156,10 @@ func (m *Machine) SetExpression(expression Expression) {
 // SetEmotion records the LLM-directed facial emotion for the utterance about to
 // be spoken. It is shown during the Speaking state and cleared by any non-speak
 // transition (see applyTransitionEffects), so it never leaks into a later turn.
-func (m *Machine) SetEmotion(expression Expression) {
+func (m *Machine) SetEmotion(emotion Expression) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.emotion = expression
+	m.emotion = emotion
 }
 
 func (m *Machine) RecordInteraction(at time.Time) {
@@ -275,14 +275,12 @@ func applyTransitionEffects(m *Machine, current State, next State, event Event) 
 	case EventSpeak:
 		m.expression = ExpressionSpeaking
 	case EventRest:
-		if current == StateSpeaking {
-			m.expression = ExpressionNeutral
-			m.sleepReason = SleepReasonNone
-			m.emotion = ""
-			return
+		m.expression = ExpressionNeutral
+		m.sleepReason = SleepReasonNone
+		if current != StateSpeaking {
+			m.expression = ExpressionSleeping
+			m.sleepReason = SleepReasonUserRest
 		}
-		m.expression = ExpressionSleeping
-		m.sleepReason = SleepReasonUserRest
 	case EventWake:
 		m.expression = ExpressionNeutral
 		m.sleepReason = SleepReasonNone

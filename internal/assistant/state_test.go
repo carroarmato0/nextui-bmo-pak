@@ -189,6 +189,18 @@ func TestMachineEmotionClearedOnRest(t *testing.T) {
 	}
 }
 
+func TestMachineEmotionClearedOnFail(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	m.Transition(EventListen)
+	m.Transition(EventThink)
+	m.SetEmotion(ExpressionLove)
+	m.Transition(EventProviderFailure) // -> error; non-speak transition clears emotion
+	if got := m.Snapshot().Emotion; got != "" {
+		t.Fatalf("emotion after EventProviderFailure = %q, want empty", got)
+	}
+}
+
 func TestRemarkFromIdleForProactiveRemarks(t *testing.T) {
 	if got := Transition(StateIdle, EventRemark); got != StateThinking {
 		t.Fatalf("Transition(idle, remark) = %q, want thinking", got)
