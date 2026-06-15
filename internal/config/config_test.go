@@ -236,3 +236,29 @@ func TestSupportedRequestTimeoutsContains15And60(t *testing.T) {
 		t.Fatal("SupportedRequestTimeouts missing 60")
 	}
 }
+
+func TestActiveModRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	cfg := Default()
+	cfg.ActiveMod = "evil"
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActiveMod != "evil" {
+		t.Fatalf("ActiveMod = %q, want evil", got.ActiveMod)
+	}
+}
+
+func TestActiveModNormalizesWhitespace(t *testing.T) {
+	cfg := Default()
+	cfg.ActiveMod = "  evil  "
+	cfg.Normalize()
+	if cfg.ActiveMod != "evil" {
+		t.Fatalf("ActiveMod = %q, want trimmed 'evil'", cfg.ActiveMod)
+	}
+}

@@ -115,6 +115,7 @@ type Config struct {
 	PTTButtons    []string      `json:"ptt_buttons,omitempty"`
 	LogLevel      string        `json:"log_level"`
 	Personality   string        `json:"personality"`
+	ActiveMod     string        `json:"active_mod,omitempty"`
 	ReducedMotion bool          `json:"reduced_motion"`
 	DeviceContext DeviceContext `json:"device_context"`
 	ProactiveTalk string        `json:"proactive_talk"`
@@ -203,6 +204,7 @@ func (c *Config) Normalize() {
 	if c.Personality == "" {
 		c.Personality = DefaultPersonality
 	}
+	c.ActiveMod = strings.TrimSpace(c.ActiveMod)
 	c.ProactiveTalk = strings.ToLower(strings.TrimSpace(c.ProactiveTalk))
 	if c.ProactiveTalk == "" {
 		c.ProactiveTalk = ProactiveOff
