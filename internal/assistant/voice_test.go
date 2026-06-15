@@ -839,3 +839,54 @@ func TestProcessBatchLogsSystemPromptWhenEnabled(t *testing.T) {
 		t.Errorf("TTS instructions not in logs: %q", logs)
 	}
 }
+
+func TestProcessBatchStripsAndSetsEmotion(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "[excited] I love that idea!"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := tts.lastSpeech.Input; got != "I love that idea!" {
+		t.Errorf("TTS input = %q, want stripped text", got)
+	}
+}
+
+func TestProcessBatchNoDirectiveSpeaksVerbatim(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "just a normal reply"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if got := tts.lastSpeech.Input; got != "just a normal reply" {
+		t.Errorf("TTS input = %q, want verbatim", got)
+	}
+}
+
+func TestProcessBatchDirectiveOnlyReplySkipsTTS(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "[happy]"}
+	tts := &fakeProvider{speech: make([]byte, 2400)}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be bmo", 16000, 1, 2)
+
+	if err := pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}); err != nil {
+		t.Fatalf("ProcessBatch() error = %v", err)
+	}
+	if tts.lastSpeech.Model != "" {
+		t.Errorf("TTS called for directive-only reply; input = %q", tts.lastSpeech.Input)
+	}
+	if got := m.State(); got != StateIdle {
+		t.Errorf("state = %v, want idle", got)
+	}
+}

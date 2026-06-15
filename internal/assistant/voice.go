@@ -275,15 +275,16 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.machine.Transition(EventThink)
 	}
 
+	systemPrompt := p.currentSystemPrompt()
 	if p.logger != nil && p.logSystemPrompt {
-		p.logger.Debugf("pipeline system prompt: %q", p.currentSystemPrompt())
+		p.logger.Debugf("pipeline system prompt: %q", systemPrompt)
 	}
 
 	chatStart := time.Now()
 	chat, err := p.chat.Reply(batchCtx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: transcript}},
-		SystemPrompt: p.currentSystemPrompt(),
+		SystemPrompt: systemPrompt,
 	})
 	if err != nil {
 		return p.handleBatchError(ctx, batchCtx, err, false)
@@ -303,6 +304,23 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		p.logger.Debugf("pipeline reply: %q", reply)
 	}
 
+	spoken, emotion := ParseEmotion(reply)
+	if spoken == "" {
+		// Reply was only a facial directive with no speakable text.
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	if emotion != "" {
+		if p.machine != nil {
+			p.machine.SetEmotion(emotion)
+		}
+		if p.logger != nil {
+			p.logger.Debugf("pipeline emotion: %q", emotion)
+		}
+	}
+
 	if p.logger != nil && p.logSystemPrompt {
 		p.logger.Debugf("pipeline TTS instructions: %q", p.currentTTSInstructions())
 	}
@@ -311,7 +329,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
-		Input:        reply,
+		Input:        spoken,
 		Format:       "pcm",
 		Instructions: p.currentTTSInstructions(),
 	})
@@ -320,7 +338,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
-			time.Since(ttsStart).Milliseconds(), len(speech), len(reply),
+			time.Since(ttsStart).Milliseconds(), len(speech), len(spoken),
 			time.Since(totalStart).Milliseconds())
 	}
 
@@ -423,11 +441,22 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		p.logger.Debugf("remark reply: %q", reply)
 	}
 
+	spoken, emotion := ParseEmotion(reply)
+	if spoken == "" {
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	if emotion != "" && p.machine != nil {
+		p.machine.SetEmotion(emotion)
+	}
+
 	ttsStart := time.Now()
 	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
-		Input:        reply,
+		Input:        spoken,
 		Format:       "pcm",
 		Instructions: p.currentTTSInstructions(),
 	})
@@ -436,10 +465,10 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
-			time.Since(ttsStart).Milliseconds(), len(speech), len(reply))
+			time.Since(ttsStart).Milliseconds(), len(speech), len(spoken))
 	}
 	if onSpoken != nil {
-		onSpoken(reply)
+		onSpoken(spoken)
 	}
 	speech = p.resampleTTS(speech)
 
