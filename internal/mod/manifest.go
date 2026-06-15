@@ -23,6 +23,8 @@ type Manifest struct {
 	Author      string `json:"author"`      // shown in Settings
 	Description string `json:"description"` // shown in Settings
 	Version     string `json:"version"`     // author's own free-form release string
+
+	Emotions map[string]string `json:"emotions,omitempty"` // emotion name -> LLM description
 }
 
 // EffectiveAPIVersion returns the declared apiVersion, treating absent (0) as

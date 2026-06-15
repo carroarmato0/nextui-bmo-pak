@@ -61,3 +61,28 @@ func TestCurrentAPIVersionIsOne(t *testing.T) {
 		t.Fatalf("CurrentAPIVersion = %d, want 1", CurrentAPIVersion)
 	}
 }
+
+func TestLoadManifestEmotions(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"name":"Evil BMO","emotions":{"grumpy":"sulky and irritable","ecstatic":"overjoyed"}}`
+	if err := os.WriteFile(filepath.Join(dir, "mod.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := LoadManifest(dir)
+	if got := m.Emotions["grumpy"]; got != "sulky and irritable" {
+		t.Fatalf("Emotions[grumpy] = %q", got)
+	}
+	if got := m.Emotions["ecstatic"]; got != "overjoyed" {
+		t.Fatalf("Emotions[ecstatic] = %q", got)
+	}
+}
+
+func TestLoadManifestNoEmotions(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.json"), []byte(`{"name":"x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m := LoadManifest(dir); m.Emotions != nil {
+		t.Fatalf("Emotions should be nil when absent, got %v", m.Emotions)
+	}
+}
