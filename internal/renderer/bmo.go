@@ -33,6 +33,24 @@ type FrameState struct {
 	SpeakAmplitude  float32 // RMS amplitude [0,1] during TTS playback; drives mouth height
 }
 
+// exprTracker remembers when the current expression became active so time
+// "once" animations can measure elapsed seconds since the cut.
+type exprTracker struct {
+	expr  string
+	start float64
+}
+
+// epoch returns seconds elapsed since expr became the active expression,
+// resetting to 0 the first tick a new expression appears.
+func (e *exprTracker) epoch(expr string, clock float64) float64 {
+	if expr != e.expr {
+		e.expr = expr
+		e.start = clock
+		return 0
+	}
+	return clock - e.start
+}
+
 type OverlayState struct {
 	Visible  bool
 	Title    string
@@ -125,6 +143,8 @@ type Renderer struct {
 	H      int32
 	stride int
 	faces  *face.Cache
+	anims  *face.Engine
+	exprTr exprTracker
 }
 
 type rgba struct {
@@ -320,52 +340,41 @@ func (r *Renderer) SetFaces(c *face.Cache) {
 	r.faces = c
 }
 
+// SetAnimations installs the declarative animation engine. Call before the
+// render loop and on mod switch.
+func (r *Renderer) SetAnimations(e *face.Engine) {
+	r.anims = e
+}
+
 // Size returns the current output dimensions.
 func (r *Renderer) Size() (int, int) {
 	return int(r.W), int(r.H)
 }
 
-// blitFace copies the cached SVG face for the given expression into r.pixels.
-// Returns false if the cache is absent or returns no frame (falls back to drawPlainFace).
+// blitFace copies the current face for expr into r.pixels: an animation frame
+// from the engine when expr is animated and ready, otherwise the cached static
+// SVG face. Returns false if neither produced a usable frame (caller falls back
+// to drawPlainFace).
 func (r *Renderer) blitFace(expr string, frame FrameState, phase float64) bool {
+	if r.anims != nil {
+		epoch := r.exprTr.epoch(expr, phase)
+		if buf, ok := r.anims.AnimFrame(expr, int(r.W), int(r.H), phase, epoch, frame.SpeakAmplitude); ok {
+			if len(buf) != len(r.pixels) {
+				return false
+			}
+			copy(r.pixels, buf)
+			return true
+		}
+	}
 	if r.faces == nil {
 		return false
 	}
-	w, h := int(r.W), int(r.H)
-	if face.Canonical(expr) == face.ExprSpeaking {
-		t := math.Sqrt(math.Min(1, float64(frame.SpeakAmplitude)))
-		if frame.SpeakAmplitude <= 0 {
-			t = 0.45 + 0.35*math.Sin(phase*8.0)
-		}
-		base, strip := r.faces.Speak(t, w, h)
-		if base == nil || len(base) != len(r.pixels) {
-			return false
-		}
-		copy(r.pixels, base)
-		if strip != nil {
-			r.blitStrip(strip)
-		}
-		return true
-	}
-	buf := r.faces.Frame(expr, w, h)
+	buf := r.faces.Frame(expr, int(r.W), int(r.H))
 	if buf == nil || len(buf) != len(r.pixels) {
 		return false
 	}
 	copy(r.pixels, buf)
 	return true
-}
-
-// blitStrip overlays a mouth-band strip onto r.pixels.
-func (r *Renderer) blitStrip(strip *face.Strip) {
-	if strip == nil || strip.X < 0 || strip.Y < 0 ||
-		strip.X+strip.W > int(r.W) || strip.Y+strip.H > int(r.H) ||
-		len(strip.Pix) < strip.W*strip.H {
-		return
-	}
-	for row := 0; row < strip.H; row++ {
-		dst := (strip.Y+row)*r.stride + strip.X
-		copy(r.pixels[dst:dst+strip.W], strip.Pix[row*strip.W:(row+1)*strip.W])
-	}
 }
 
 // drawPlainFace is the last-resort fallback: body teal + screen mint, no face elements.
