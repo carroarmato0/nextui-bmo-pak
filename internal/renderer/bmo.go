@@ -235,6 +235,17 @@ func (r *Renderer) ensureBuffer(w, h int32) error {
 	return nil
 }
 
+// Blank fills the framebuffer with black and presents it. Called on shutdown so
+// the app does not leave its last rendered frame sitting in the scanout buffer
+// after SDL teardown (which otherwise lingers until the launcher repaints).
+func (r *Renderer) Blank() error {
+	if r == nil || r.ren == nil {
+		return fmt.Errorf("renderer is nil")
+	}
+	r.fillRectColor(0, 0, r.W, r.H, rgba{0, 0, 0, 255})
+	return r.present()
+}
+
 func (r *Renderer) Close() {
 	if r == nil {
 		return

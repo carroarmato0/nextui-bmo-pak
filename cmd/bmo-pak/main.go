@@ -699,6 +699,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 
 	logger.Infof("BMO shutting down")
+	// Clear the framebuffer before SDL teardown so BMO's last frame does not
+	// linger in the scanout buffer; without this the launcher's menu does not
+	// reclaim the screen and the frozen face stays visible after exit.
+	if err := screen.Blank(); err != nil {
+		logger.Warnf("blank framebuffer on exit: %v", err)
+	}
 	return nil
 }
 
