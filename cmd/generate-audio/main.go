@@ -50,8 +50,8 @@ func main() {
 	if *homeDir != "" {
 		cfgPath := config.Path(*homeDir)
 		cfg, err := config.Load(cfgPath)
-		if err == nil && strings.TrimSpace(cfg.TTS.Voice) != "" {
-			*voice = cfg.TTS.Voice
+		if err == nil && strings.TrimSpace(cfg.TTS.Current().Voice) != "" {
+			*voice = cfg.TTS.Current().Voice
 		}
 		activeMod := mod.Active(mod.Discover(filepath.Join(*homeDir, "mods")), cfg.ActiveMod)
 		*instructions = config.LoadPromptFile(activeMod.VoicePath(), config.DefaultTTSInstructions)

@@ -12,6 +12,22 @@ const (
 	providerKindTTS  = "tts"
 )
 
+// setActiveAPIKey writes key into the active provider of the set (or the first
+// provider when Active is unresolved). No-op on an empty set.
+func setActiveAPIKey(s *config.ProviderSet, key string) {
+	if len(s.Providers) == 0 {
+		return
+	}
+	idx := 0
+	for i, p := range s.Providers {
+		if p.Name == s.Active {
+			idx = i
+			break
+		}
+	}
+	s.Providers[idx].APIKey = key
+}
+
 // providerSummaryLabel renders a one-line, read-only summary of a provider for
 // the Settings menu. Providers (model, endpoint, key) are configured in
 // config.json, not in the UI.

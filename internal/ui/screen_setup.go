@@ -47,9 +47,9 @@ func NewSetupScreen(cfg config.Config) *SetupScreen {
 func (s *SetupScreen) SelectIdleOnly() {
 	s.cfg.Mode = config.ModeIdle
 	s.cfg.SetupComplete = false
-	s.cfg.STT = config.Provider{}
-	s.cfg.Chat = config.Provider{}
-	s.cfg.TTS = config.Provider{}
+	s.cfg.STT = config.ProviderSet{}
+	s.cfg.Chat = config.ProviderSet{}
+	s.cfg.TTS = config.ProviderSet{}
 }
 
 func (s *SetupScreen) SelectAIMode() {
@@ -58,13 +58,14 @@ func (s *SetupScreen) SelectAIMode() {
 }
 
 func (s *SetupScreen) SetProvider(kind string, provider config.Provider) {
+	set := config.ProviderSet{Active: provider.Name, Providers: []config.Provider{provider}}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case providerKindSTT:
-		s.cfg.STT = provider
+		s.cfg.STT = set
 	case providerKindChat:
-		s.cfg.Chat = provider
+		s.cfg.Chat = set
 	case providerKindTTS:
-		s.cfg.TTS = provider
+		s.cfg.TTS = set
 	}
 }
 
@@ -150,11 +151,11 @@ func (s *SetupScreen) SetAPIKey(kind, key string) error {
 	key = strings.TrimSpace(key)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case providerKindSTT:
-		s.cfg.STT.APIKey = key
+		setActiveAPIKey(&s.cfg.STT, key)
 	case providerKindChat:
-		s.cfg.Chat.APIKey = key
+		setActiveAPIKey(&s.cfg.Chat, key)
 	case providerKindTTS:
-		s.cfg.TTS.APIKey = key
+		setActiveAPIKey(&s.cfg.TTS, key)
 	default:
 		return fmt.Errorf("unknown provider kind %q", kind)
 	}
@@ -167,11 +168,11 @@ func (s *SetupScreen) ProviderSummary(kind string) string {
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case providerKindSTT:
-		return providerSummaryLabel("STT", s.cfg.STT)
+		return providerSummaryLabel("STT", s.cfg.STT.Current())
 	case providerKindChat:
-		return providerSummaryLabel("CHAT", s.cfg.Chat)
+		return providerSummaryLabel("CHAT", s.cfg.Chat.Current())
 	case providerKindTTS:
-		return providerSummaryLabel("TTS", s.cfg.TTS)
+		return providerSummaryLabel("TTS", s.cfg.TTS.Current())
 	default:
 		return ""
 	}
@@ -185,9 +186,9 @@ func (s *SetupScreen) Save() error {
 		return err
 	}
 	if s.cfg.Mode == config.ModeIdle {
-		s.cfg.STT = config.Provider{}
-		s.cfg.Chat = config.Provider{}
-		s.cfg.TTS = config.Provider{}
+		s.cfg.STT = config.ProviderSet{}
+		s.cfg.Chat = config.ProviderSet{}
+		s.cfg.TTS = config.ProviderSet{}
 	}
 	s.cfg.SetupComplete = true
 	return nil

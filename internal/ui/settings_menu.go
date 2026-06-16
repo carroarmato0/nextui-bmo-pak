@@ -215,10 +215,10 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: m.cfg.LogSystemPrompt, Focused: m.focus == 1, Hidden: !isDebug},
 		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
 			Selected: true, Focused: m.focus == 2},
-		{Code: "stt_status", Label: providerModelLabel("STT", m.cfg.STT), Disabled: !isAI},
-		{Code: "chat_status", Label: providerModelLabel("CHAT", m.cfg.Chat), Disabled: !isAI},
-		{Code: "tts_status", Label: providerModelLabel("TTS", m.cfg.TTS), Disabled: !isAI},
-		{Code: "voice_status", Label: voiceStatusLabel(m.cfg.TTS), Disabled: !isAI},
+		{Code: "stt_status", Label: providerModelLabel("STT", m.cfg.STT.Current()), Disabled: !isAI},
+		{Code: "chat_status", Label: providerModelLabel("CHAT", m.cfg.Chat.Current()), Disabled: !isAI},
+		{Code: "tts_status", Label: providerModelLabel("TTS", m.cfg.TTS.Current()), Disabled: !isAI},
+		{Code: "voice_status", Label: voiceStatusLabel(m.cfg.TTS.Current()), Disabled: !isAI},
 		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
 			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 7},
 		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
@@ -273,13 +273,14 @@ func (m *SettingsMenu) SetProvider(kind string, provider config.Provider) {
 	if m == nil {
 		return
 	}
+	set := config.ProviderSet{Active: provider.Name, Providers: []config.Provider{provider}}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case providerKindSTT:
-		m.cfg.STT = provider
+		m.cfg.STT = set
 	case providerKindChat:
-		m.cfg.Chat = provider
+		m.cfg.Chat = set
 	case providerKindTTS:
-		m.cfg.TTS = provider
+		m.cfg.TTS = set
 	}
 }
 

@@ -283,9 +283,9 @@ func TestSettingsMenuAIStatusEnabledWhenAI(t *testing.T) {
 
 func TestSettingsMenuAIStatusShowsModelOnly(t *testing.T) {
 	cfg := config.Default()
-	cfg.STT = config.Provider{Name: "openai-compatible", Model: "whisper-1", APIKey: "sk-s"}
-	cfg.Chat = config.Provider{Name: "openai-compatible", Model: "gpt-4o-mini"}
-	cfg.TTS = config.Provider{Name: "openai-compatible", Model: "tts-1", Voice: "nova", APIKey: "sk-t"}
+	cfg.STT = config.ProviderSet{Active: "openai-compatible", Providers: []config.Provider{{Name: "openai-compatible", Model: "whisper-1", APIKey: "sk-s"}}}
+	cfg.Chat = config.ProviderSet{Active: "openai-compatible", Providers: []config.Provider{{Name: "openai-compatible", Model: "gpt-4o-mini"}}}
+	cfg.TTS = config.ProviderSet{Active: "openai-compatible", Providers: []config.Provider{{Name: "openai-compatible", Model: "tts-1", Voice: "nova", APIKey: "sk-t"}}}
 	m := NewSettingsMenu(cfg)
 	items := m.Overlay().Items
 	if got := items[3].Label; got != "STT: whisper-1" {
@@ -304,7 +304,7 @@ func TestSettingsMenuAIStatusShowsModelOnly(t *testing.T) {
 
 func TestSettingsMenuVoiceStatusNotSetWhenNoVoice(t *testing.T) {
 	cfg := config.Default()
-	cfg.TTS = config.Provider{Name: "openai-compatible", Model: "tts-1"}
+	cfg.TTS = config.ProviderSet{Active: "openai-compatible", Providers: []config.Provider{{Name: "openai-compatible", Model: "tts-1"}}}
 	m := NewSettingsMenu(cfg)
 	if got := m.Overlay().Items[6].Label; got != "VOICE: NOT SET" {
 		t.Errorf("voice_status label = %q, want %q", got, "VOICE: NOT SET")

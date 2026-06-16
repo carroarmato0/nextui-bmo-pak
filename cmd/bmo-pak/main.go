@@ -227,10 +227,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		} else {
 			defer audioRouter.Close()
 
-			sttClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.STT.BaseURL, APIKey: cfg.STT.APIKey}, http.DefaultClient)
-			chatClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.Chat.BaseURL, APIKey: cfg.Chat.APIKey}, http.DefaultClient)
-			ttsClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: cfg.TTS.BaseURL, APIKey: cfg.TTS.APIKey}, http.DefaultClient)
-			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, cfg.STT.Model, cfg.Chat.Model, cfg.TTS.Model, cfg.TTS.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels, audioCfg.PlaybackChannels)
+			sttP := cfg.STT.Current()
+			chatP := cfg.Chat.Current()
+			ttsP := cfg.TTS.Current()
+			sttClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: sttP.BaseURL, APIKey: sttP.APIKey}, http.DefaultClient)
+			chatClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: chatP.BaseURL, APIKey: chatP.APIKey}, http.DefaultClient)
+			ttsClient := providers.NewOpenAICompatibleClient(providers.Config{BaseURL: ttsP.BaseURL, APIKey: ttsP.APIKey}, http.DefaultClient)
+			audioPipeline = assistant.NewVoicePipeline(machine, audioRouter, sttClient, chatClient, ttsClient, sttP.Model, chatP.Model, ttsP.Model, ttsP.Voice, personaPrompt, audioCfg.SampleRate, audioCfg.Channels, audioCfg.PlaybackChannels)
 			audioPipeline.SetLogger(logger)
 			audioPipeline.SetTTSInstructions(voicePrompt)
 			// Re-read both override files before each utterance so they can
