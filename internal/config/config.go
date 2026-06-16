@@ -89,6 +89,63 @@ type Provider struct {
 	APIKey  string `json:"api_key,omitempty"`
 }
 
+// ProviderSet is a list of interchangeable providers for one capability
+// (STT, chat, or TTS) plus the name of the active selection. The active
+// provider is resolved by Current(); the user cycles it from the settings
+// menu. There is intentionally no migration from the old single-object
+// layout — existing config.json files are updated by hand.
+type ProviderSet struct {
+	Active    string     `json:"active"`
+	Providers []Provider `json:"providers"`
+}
+
+// Current returns the provider whose Name matches Active. If Active is empty
+// or names no provider, it falls back to the first provider. If the set is
+// empty it returns a zero Provider.
+func (s ProviderSet) Current() Provider {
+	if len(s.Providers) == 0 {
+		return Provider{}
+	}
+	for _, p := range s.Providers {
+		if p.Name == s.Active {
+			return p
+		}
+	}
+	return s.Providers[0]
+}
+
+// Cycle moves Active forward (delta>0) or backward (delta<0) by one index,
+// wrapping around. It is a no-op when there are fewer than two providers.
+// If Active does not currently name a provider, cycling starts from index 0.
+func (s *ProviderSet) Cycle(delta int) {
+	if s == nil || len(s.Providers) < 2 {
+		return
+	}
+	idx := 0
+	for i, p := range s.Providers {
+		if p.Name == s.Active {
+			idx = i
+			break
+		}
+	}
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	n := len(s.Providers)
+	idx = ((idx+step)%n + n) % n
+	s.Active = s.Providers[idx].Name
+}
+
+// Names returns the provider names in order.
+func (s ProviderSet) Names() []string {
+	out := make([]string, 0, len(s.Providers))
+	for _, p := range s.Providers {
+		out = append(out, p.Name)
+	}
+	return out
+}
+
 // DeviceContext gates which read-only device facts are collected into the
 // chat system prompt's DEVICE AWARENESS block. All categories default to
 // enabled; they are harmless reads.

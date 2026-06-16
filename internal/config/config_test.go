@@ -262,3 +262,96 @@ func TestActiveModNormalizesWhitespace(t *testing.T) {
 		t.Fatalf("ActiveMod = %q, want trimmed 'evil'", cfg.ActiveMod)
 	}
 }
+
+func TestProviderSetCurrent(t *testing.T) {
+	set := ProviderSet{
+		Active: "groq",
+		Providers: []Provider{
+			{Name: "openai", Model: "whisper-1"},
+			{Name: "groq", Model: "whisper-large-v3"},
+		},
+	}
+	if got := set.Current().Name; got != "groq" {
+		t.Fatalf("Current().Name = %q, want groq", got)
+	}
+	set.Active = "nope"
+	if got := set.Current().Name; got != "openai" {
+		t.Fatalf("Current().Name = %q, want openai (first fallback)", got)
+	}
+	set.Active = ""
+	if got := set.Current().Name; got != "openai" {
+		t.Fatalf("Current().Name = %q, want openai (empty fallback)", got)
+	}
+	empty := ProviderSet{}
+	if empty.Current() != (Provider{}) {
+		t.Fatalf("empty Current() = %#v, want zero Provider", empty.Current())
+	}
+}
+
+func TestProviderSetCycleWrapAround(t *testing.T) {
+	set := ProviderSet{
+		Active: "a",
+		Providers: []Provider{
+			{Name: "a", Model: "m1"},
+			{Name: "b", Model: "m2"},
+			{Name: "c", Model: "m3"},
+		},
+	}
+	set.Cycle(1)
+	if set.Active != "b" {
+		t.Fatalf("after Cycle(1) Active = %q, want b", set.Active)
+	}
+	set.Cycle(1)
+	set.Cycle(1)
+	if set.Active != "a" {
+		t.Fatalf("after wrapping forward Active = %q, want a", set.Active)
+	}
+	set.Cycle(-1)
+	if set.Active != "c" {
+		t.Fatalf("after Cycle(-1) Active = %q, want c (wrap backward)", set.Active)
+	}
+}
+
+func TestProviderSetCycleNoOpBelowTwo(t *testing.T) {
+	one := ProviderSet{Active: "a", Providers: []Provider{{Name: "a", Model: "m"}}}
+	one.Cycle(1)
+	if one.Active != "a" {
+		t.Fatalf("single-provider Cycle changed Active to %q", one.Active)
+	}
+	empty := ProviderSet{}
+	empty.Cycle(1)
+	if empty.Active != "" {
+		t.Fatalf("empty Cycle set Active to %q", empty.Active)
+	}
+}
+
+func TestProviderSetCycleFromUnresolvedActive(t *testing.T) {
+	set := ProviderSet{
+		Active: "",
+		Providers: []Provider{
+			{Name: "a", Model: "m1"},
+			{Name: "b", Model: "m2"},
+		},
+	}
+	set.Cycle(1)
+	if set.Active != "b" {
+		t.Fatalf("Cycle from unresolved Active = %q, want b", set.Active)
+	}
+}
+
+func TestProviderSetNames(t *testing.T) {
+	set := ProviderSet{Providers: []Provider{{Name: "a"}, {Name: "b"}, {Name: "c"}}}
+	got := set.Names()
+	want := []string{"a", "b", "c"}
+	if len(got) != len(want) {
+		t.Fatalf("Names() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Names()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if n := (ProviderSet{}).Names(); len(n) != 0 {
+		t.Fatalf("empty Names() = %v, want empty", n)
+	}
+}
