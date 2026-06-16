@@ -1,13 +1,19 @@
 {
   "name": "BMO",
-  "version": "v0.1.0",
+  "version": "v1.0.0",
   "type": "TOOL",
   "description": "Fullscreen BMO-inspired AI assistant and desk companion.",
   "author": "Carroarmato0",
   "release_filename": "BMO.pak.zip",
-  "screenshots": [],
+  "screenshots": [
+    "docs/images/banner.png",
+    "docs/images/faces/neutral.png",
+    "docs/images/faces/happy.png",
+    "docs/images/faces/speaking.png"
+  ],
   "platforms": ["tg5040", "tg5050"],
   "changelog": {
+    "v1.0.0": "First stable release: animated BMO face, LLM-directed emotion, voice assistant pipeline, and mods.",
     "v0.1.0": "Initial BMO Pak scaffold."
   }
 }

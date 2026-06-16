@@ -17,8 +17,8 @@ func TestNavActionForKey(t *testing.T) {
 		{btnDpadDown, NavDown, true},
 		{btnDpadLeft, NavLeft, true},
 		{btnDpadRight, NavRight, true},
-		{307, NavProvider, true}, // BTN_NORTH = physical Y — open AI setup
-		{308, 0, false},          // X — no longer mapped
+		{307, 0, false}, // BTN_NORTH = physical Y — no longer mapped (providers configured in config.json)
+		{308, 0, false}, // X — no longer mapped
 		{310, 0, false}, // L shoulder — no longer mapped
 		{0, 0, false},
 		{99, 0, false},

@@ -90,22 +90,67 @@ For example, on a TrimUI Smart Pro:
 /mnt/SDCARD/.userdata/tg5040/BMO/config.json
 ```
 
-### Minimal AI-mode example
+BMO ships in **idle mode** (no AI). To enable the assistant you edit
+`config.json` directly — the AI provider, model, endpoint, and API key are
+**not** configurable from the on-device UI. After editing, set `"mode": "ai"`
+(or flip the toggle in the on-device **Settings** menu, opened with **Start**).
+
+### AI providers
+
+BMO talks to three providers — **STT** (speech-to-text), **chat**, and **TTS**
+(text-to-speech) — each spoken to over the **OpenAI-compatible HTTP API**. Any
+backend that implements `/audio/transcriptions`, `/chat/completions`, and
+`/audio/speech` works (OpenAI itself, a local server, or any compatible host).
+
+Each provider block accepts these fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `name` | yes | Display label for the provider (e.g. `openai-compatible`, `local`). |
+| `model` | yes | Model id to request (e.g. `whisper-1`, `gpt-4o-mini`). |
+| `base_url` | **yes** | API endpoint, including the `/v1` suffix. There is **no** built-in default — requests fail if it is empty. |
+| `api_key` | for hosted APIs | Bearer token. Leave empty (`""`) for most local servers. |
+| `voice` | TTS only | Voice name for speech synthesis (e.g. `nova`, `alloy`). |
+
+#### Example: OpenAI
 
 ```json
 {
   "mode": "ai",
-  "stt":  { "name": "openai-compatible", "model": "whisper-1", "api_key": "sk-..." },
-  "chat": { "name": "openai-compatible", "model": "gpt-4o-mini", "api_key": "sk-..." },
-  "tts":  { "name": "openai-compatible", "model": "gpt-4o-mini-tts", "voice": "nova", "api_key": "sk-..." },
-  "ptt_buttons": ["A"],
+  "stt":  { "name": "openai-compatible", "model": "whisper-1",        "base_url": "https://api.openai.com/v1", "api_key": "sk-..." },
+  "chat": { "name": "openai-compatible", "model": "gpt-4o-mini",      "base_url": "https://api.openai.com/v1", "api_key": "sk-..." },
+  "tts":  { "name": "openai-compatible", "model": "gpt-4o-mini-tts",  "base_url": "https://api.openai.com/v1", "api_key": "sk-...", "voice": "nova" },
+  "ptt_buttons": ["BTN_EAST"],
   "active_mod": "",
   "reduced_motion": false
 }
 ```
 
-You can also configure everything on-device: press **Start** to open Settings,
-or **Y** to open the AI Setup wizard.
+#### Example: local / self-hosted (OpenAI-compatible)
+
+Point `base_url` at your own server — for example a local LLM runtime
+(Ollama, LM Studio, llama.cpp, vLLM, …) or any OpenAI-compatible host on your
+network. Use the LAN IP of the host machine (not `localhost`, which on the
+device refers to the device itself). Most local servers ignore the key, so
+`api_key` can be left empty.
+
+```json
+{
+  "mode": "ai",
+  "stt":  { "name": "local", "model": "whisper-1",   "base_url": "http://192.168.1.50:8080/v1", "api_key": "" },
+  "chat": { "name": "local", "model": "llama3.1",    "base_url": "http://192.168.1.50:11434/v1", "api_key": "" },
+  "tts":  { "name": "local", "model": "tts-1",       "base_url": "http://192.168.1.50:8080/v1", "api_key": "", "voice": "alloy" },
+  "ptt_buttons": ["BTN_EAST"],
+  "active_mod": "",
+  "reduced_motion": false
+}
+```
+
+You can mix and match — e.g. a local chat model with hosted STT/TTS — by giving
+each provider its own `base_url` and `api_key`.
+
+`ptt_buttons` lists the push-to-talk button(s) by Linux event name
+(`BTN_EAST` is the physical **A** button); the default is `["BTN_EAST"]`.
 
 ### Controls
 
@@ -114,7 +159,6 @@ or **Y** to open the AI Setup wizard.
 | A | Push-to-talk / confirm |
 | B | Cancel / exit |
 | Start | Open/close Settings |
-| Y | Open AI Setup |
 | Menu | Exit to NextUI |
 
 ---
