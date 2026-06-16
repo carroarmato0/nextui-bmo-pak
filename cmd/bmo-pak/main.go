@@ -482,6 +482,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
 	var errorSince time.Time
+	var flog faceLogger
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -650,6 +651,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			}
 		}
 		machine.SetExpression(assistant.Expression(expr))
+
+		// log the active face once per change (debug only)
+		if msg, ok := flog.note(expr, faceCache.Source(expr), animEngine.Has(expr)); ok {
+			logger.Debugf("%s", msg)
+		}
 
 		var overlay *renderer.OverlayState
 		if activeMenu != nil {
