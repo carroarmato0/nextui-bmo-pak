@@ -285,6 +285,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// Pre-rasterize current expression synchronously; warm remaining in background.
 	go faceCache.Warm(screen.Size())
 
+	animEngine := buildAnimationEngine(faceLib, activeMod, logger.Warnf)
+	screen.SetAnimations(animEngine)
+	{
+		w, h := screen.Size()
+		go animEngine.Prewarm(face.ExprSpeaking, w, h)
+	}
+
 	// Switching mods at runtime: re-point the prompt/quote paths (read per
 	// utterance via the source closures) and rebuild + re-warm the face cache
 	// and clip library for the new mod. This runs on the main goroutine (from
@@ -303,6 +310,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		faceCache = newCache
 		screen.SetFaces(newCache)
 		go newCache.Warm(screen.Size())
+
+		animEngine = buildAnimationEngine(newLib, active, logger.Warnf)
+		screen.SetAnimations(animEngine)
+		{
+			w, h := screen.Size()
+			go animEngine.Prewarm(face.ExprSpeaking, w, h)
+		}
 
 		if audioSession != nil {
 			clipLib := clips.NewLibrary(active.AudioDir())
@@ -533,7 +547,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// audio. The clips run in the player's own goroutine, so audio pacing
 		// is independent of the render loop's frame rate.
 		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
-			(faceCache.SpeakReady() || time.Since(startupFaceShownAt) > 10*time.Second) {
+			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
 			if overrideErrs := config.CheckOverrides(activeMod.Root); len(overrideErrs) > 0 {
@@ -708,6 +722,27 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 		Items:    items,
 		Footer:   src.Footer,
 	}
+}
+
+// buildAnimationEngine assembles the effective animation set for the active mod
+// and returns an engine over lib. Overlay mods inherit the embedded defaults;
+// self-contained mods own their set. Mod-declared animations win by name.
+// Parse errors are logged and the offending entry is skipped.
+func buildAnimationEngine(lib *face.Library, m mod.Mod, logf func(string, ...any)) *face.Engine {
+	defs := map[string]face.AnimationDef{}
+	if !m.SelfContained() {
+		for k, v := range face.DefaultAnimations() {
+			defs[k] = v
+		}
+	}
+	modDefs, errs := face.ParseAnimations(m.Manifest.Animations)
+	for _, e := range errs {
+		logf("face: %v", e)
+	}
+	for k, v := range modDefs {
+		defs[k] = v
+	}
+	return face.NewEngine(lib, defs)
 }
 
 func acquireLock(path string) (release func(), ok bool) {

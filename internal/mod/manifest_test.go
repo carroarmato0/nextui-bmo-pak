@@ -86,3 +86,25 @@ func TestLoadManifestNoEmotions(t *testing.T) {
 		t.Fatalf("Emotions should be nil when absent, got %v", m.Emotions)
 	}
 }
+
+func TestLoadManifestAnimations(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"name":"Evil","animations":{"speaking":{"frames":["m0","m1"],"driver":"amplitude"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "mod.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := LoadManifest(dir)
+	if _, ok := m.Animations["speaking"]; !ok {
+		t.Fatal("speaking animation not parsed")
+	}
+}
+
+func TestLoadManifestNoAnimations(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.json"), []byte(`{"name":"x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m := LoadManifest(dir); m.Animations != nil {
+		t.Fatalf("expected nil animations, got %v", m.Animations)
+	}
+}

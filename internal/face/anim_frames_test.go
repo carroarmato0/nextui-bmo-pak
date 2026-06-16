@@ -1,0 +1,72 @@
+package face
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+const tinyRedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" fill="#ff0000"/></svg>`
+
+func writeSVG(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name+".svg"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildFramesList(t *testing.T) {
+	dir := t.TempDir()
+	writeSVG(t, dir, "f0", tinyRedSVG)
+	writeSVG(t, dir, "f1", tinyRedSVG)
+	lib := NewLibraryMode(dir, true) // self-contained: only on-disk frames
+	def := AnimationDef{Frames: []string{"f0", "f1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}}
+	frames, err := buildFrames(lib, def, 4, 4)
+	if err != nil {
+		t.Fatalf("buildFrames: %v", err)
+	}
+	if len(frames) != 2 || len(frames[0]) != 16 {
+		t.Fatalf("frames=%d size=%d", len(frames), len(frames[0]))
+	}
+}
+
+func TestBuildFramesTemplate(t *testing.T) {
+	dir := t.TempDir()
+	// width grows with V so steps differ
+	tmpl := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0" y="0" width="{{.V}}" height="10" fill="#0000ff"/></svg>`
+	writeSVG(t, dir, "bar", tmpl)
+	lib := NewLibraryMode(dir, true)
+	def := AnimationDef{
+		Template: &TemplateSource{File: "bar", Param: "V", From: 1, To: 10, Steps: 3},
+		Driver:   Driver{Kind: DriverTime, FPS: 4, Mode: "loop"},
+	}
+	frames, err := buildFrames(lib, def, 8, 8)
+	if err != nil {
+		t.Fatalf("buildFrames: %v", err)
+	}
+	if len(frames) != 3 {
+		t.Fatalf("frames=%d want 3", len(frames))
+	}
+}
+
+func TestRawBytesPrefersOverrideThenEmbedded(t *testing.T) {
+	dir := t.TempDir()
+	writeSVG(t, dir, "speaking_0", tinyRedSVG)
+	lib := NewLibrary(dir) // overlay: embedded fallback enabled
+	data, ok := lib.rawBytes("speaking_0")
+	if !ok || len(data) == 0 {
+		t.Fatal("override speaking_0 not found")
+	}
+	// neutral is embedded; rawBytes finds it by literal name with no override.
+	if d, ok := NewLibrary(t.TempDir()).rawBytes("neutral"); !ok || len(d) == 0 {
+		t.Fatal("embedded neutral not found by rawBytes")
+	}
+}
+
+func TestBuildFramesMissingFrameErrors(t *testing.T) {
+	lib := NewLibraryMode(t.TempDir(), true)
+	def := AnimationDef{Frames: []string{"nope"}, Driver: Driver{Kind: DriverAmplitude}}
+	if _, err := buildFrames(lib, def, 4, 4); err == nil {
+		t.Fatal("expected error for missing frame")
+	}
+}
