@@ -168,7 +168,7 @@ func parseDriver(data []byte) (Driver, error) {
 		switch curve {
 		case "", curveLinear:
 			curve = curveLinear
-		case "sqrt":
+		case curveSqrt:
 			// ok
 		default:
 			return Driver{}, fmt.Errorf("unknown curve %q", curve)

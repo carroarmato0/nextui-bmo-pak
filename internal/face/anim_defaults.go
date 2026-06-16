@@ -11,8 +11,8 @@ func DefaultAnimations() map[string]AnimationDef {
 			Frames: []string{"speaking_0", "speaking_1", "speaking_2", "speaking_3", "speaking_4", "speaking_5"},
 			Driver: Driver{
 				Kind:  DriverAmplitude,
-				Curve: "sqrt",
-				Idle:  &Idle{FPS: 13, Mode: "pingpong"},
+				Curve: curveSqrt,
+				Idle:  &Idle{FPS: 13, Mode: modePingpong},
 			},
 		},
 	}
