@@ -61,7 +61,6 @@ const (
 	ExpressionConcerned  Expression = "concerned"
 	ExpressionLookAround Expression = "look_around"
 	ExpressionSmile      Expression = "smile"
-	ExpressionLaugh      Expression = "laugh"
 	ExpressionWhistle    Expression = "whistle"
 
 	// Emotional expressions backed by the Figma face set. Each resolves to its

@@ -18,7 +18,6 @@ const (
 	// New expressions (Figma "BMO Face Templates" set).
 	ExprSad       = "sad"
 	ExprHappy     = "happy"
-	ExprLaugh     = "laugh"
 	ExprContent   = "content"
 	ExprAngry     = "angry"
 	ExprSurprised = "surprised"
@@ -48,7 +47,7 @@ var CanonicalNames = []string{
 	ExprNeutral, ExprBlink, ExprListening, ExprThinking,
 	ExprSpeaking, ExprSleeping, ExprConcerned, ExprSmile,
 	// New expressions.
-	ExprSad, ExprHappy, ExprLaugh, ExprContent, ExprAngry, ExprSurprised,
+	ExprSad, ExprHappy, ExprContent, ExprAngry, ExprSurprised,
 	ExprExcited, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
 	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
 	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
@@ -80,8 +79,6 @@ func Canonical(expr string) string {
 	// own assets.
 	case ExprHappy:
 		return ExprHappy
-	case ExprLaugh:
-		return ExprLaugh
 	case ExprExcited:
 		return ExprExcited
 	case ExprSad:

@@ -25,7 +25,7 @@ func TestIdleSchedulerProducesVariety(t *testing.T) {
 		seen[step.Expression] = struct{}{}
 	}
 
-	for _, want := range []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionLaugh, ExpressionSleeping} {
+	for _, want := range []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionContent, ExpressionSleeping} {
 		if _, ok := seen[want]; !ok {
 			t.Fatalf("missing expression %q from variety set: %#v", want, seen)
 		}
@@ -44,8 +44,8 @@ func TestIdleSchedulerBlinkIsFrequentAtShortIdleTimes(t *testing.T) {
 	if counts[ExpressionBlink] < 25 {
 		t.Fatalf("blink count too low: %+v", counts)
 	}
-	if counts[ExpressionBlink] <= counts[ExpressionLaugh] {
-		t.Fatalf("blink should be more frequent than laugh: %+v", counts)
+	if counts[ExpressionBlink] <= counts[ExpressionContent] {
+		t.Fatalf("blink should be more frequent than content: %+v", counts)
 	}
 }
 
@@ -58,7 +58,7 @@ func TestIdleSchedulerLargeActionsAreRare(t *testing.T) {
 		counts[step.Expression]++
 	}
 
-	large := counts[ExpressionLaugh] + counts[ExpressionSleeping]
+	large := counts[ExpressionContent] + counts[ExpressionSleeping]
 	if large == 0 {
 		t.Fatalf("expected some large actions, got %+v", counts)
 	}

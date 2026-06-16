@@ -12,7 +12,7 @@ import (
 // set, in the same stable order as CanonicalNames. Each shipped asset must
 // stay byte-identical to the artifact approved in the browser preview.
 var newExpressions = []string{
-	ExprSad, ExprHappy, ExprLaugh, ExprContent, ExprAngry, ExprSurprised,
+	ExprSad, ExprHappy, ExprContent, ExprAngry, ExprSurprised,
 	ExprExcited, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
 	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
 	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,

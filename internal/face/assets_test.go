@@ -88,7 +88,6 @@ func TestNewFacesGeometry(t *testing.T) {
 	cases := map[string][]point{
 		ExprSad:       {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
 		ExprHappy:     {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
-		ExprLaugh:     {{80, 76, d, "left arc eye"}, {199, 76, d, "right arc eye"}, {140, 135, mi, "mouth interior"}},
 		ExprContent:   {{80, 80, d, "left arc eye"}, {199, 80, d, "right arc eye"}},
 		ExprAngry:     {{80, 78, d, "left dot eye"}, {199, 78, d, "right dot eye"}},
 		ExprSurprised: {{80, 78, d, "left big eye"}, {199, 78, d, "right big eye"}, {140, 121, mi, "mouth interior"}},

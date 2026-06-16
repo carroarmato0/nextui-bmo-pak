@@ -65,8 +65,8 @@ func (s *IdleScheduler) poolFor(idleFor time.Duration) ([]Expression, time.Durat
 	case idleFor < 8*time.Second:
 		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionNeutral, ExpressionSmile, ExpressionBlink, ExpressionBlink, ExpressionWhistle}, 3000 * time.Millisecond
 	case idleFor < 25*time.Second:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionNeutral, ExpressionLaugh}, 4500 * time.Millisecond
+		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionNeutral, ExpressionContent}, 4500 * time.Millisecond
 	default:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionLaugh, ExpressionSleeping, ExpressionBlink, ExpressionBlink}, 6000 * time.Millisecond
+		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionContent, ExpressionSleeping, ExpressionBlink, ExpressionBlink}, 6000 * time.Millisecond
 	}
 }
