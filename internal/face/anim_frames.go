@@ -60,3 +60,21 @@ func renderAnimTemplate(data []byte, param string, val float64) ([]byte, error) 
 	}
 	return buf.Bytes(), nil
 }
+
+// renderRestSVG executes a templated SVG with empty data (its resting state).
+// If the bytes contain no template syntax, they are returned unchanged. On any
+// parse/execute error the input is returned unchanged so callers degrade safely.
+func renderRestSVG(data []byte) []byte {
+	if !bytes.Contains(data, []byte("{{")) {
+		return data
+	}
+	tmpl, err := template.New("rest").Parse(string(data))
+	if err != nil {
+		return data
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, map[string]any{}); err != nil {
+		return data
+	}
+	return buf.Bytes()
+}

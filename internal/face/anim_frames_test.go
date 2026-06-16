@@ -1,6 +1,7 @@
 package face
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,5 +69,29 @@ func TestBuildFramesMissingFrameErrors(t *testing.T) {
 	def := AnimationDef{Frames: []string{"nope"}, Driver: Driver{Kind: DriverAmplitude}}
 	if _, err := buildFrames(lib, def, 4, 4); err == nil {
 		t.Fatal("expected error for missing frame")
+	}
+}
+
+func TestRenderRestSVGExecutesTemplate(t *testing.T) {
+	in := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">` +
+		`{{$m := or .m 0.0}}<rect x="0" y="{{$m}}" width="10" height="10"/></svg>`)
+	out := renderRestSVG(in)
+	if bytes.Contains(out, []byte("{{")) {
+		t.Fatalf("template syntax left in output: %s", out)
+	}
+	// At rest, m=0 → the y attribute renders as "0".
+	if !bytes.Contains(out, []byte(`y="0"`)) {
+		t.Fatalf("rest value not 0: %s", out)
+	}
+	if _, err := Rasterize(out, 80, 60); err != nil {
+		t.Fatalf("rest SVG must rasterize: %v", err)
+	}
+}
+
+func TestRenderRestSVGPassesThroughPlain(t *testing.T) {
+	in := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect/></svg>`)
+	out := renderRestSVG(in)
+	if !bytes.Equal(in, out) {
+		t.Fatalf("plain SVG should pass through unchanged")
 	}
 }
