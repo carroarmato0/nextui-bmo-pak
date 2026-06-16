@@ -25,6 +25,11 @@ type Manifest struct {
 	Version     string `json:"version"`     // author's own free-form release string
 
 	Emotions map[string]string `json:"emotions,omitempty"` // emotion name -> LLM description
+
+	// Animations maps an expression name to its raw animation JSON. Parsing of
+	// the inner shape is deferred to internal/face (ParseAnimations) so this
+	// package stays free of rendering concerns and tolerant of unknown fields.
+	Animations map[string]json.RawMessage `json:"animations,omitempty"`
 }
 
 // EffectiveAPIVersion returns the declared apiVersion, treating absent (0) as
