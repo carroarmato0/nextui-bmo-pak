@@ -166,9 +166,9 @@ type Config struct {
 	SetupComplete bool          `json:"setup_complete,omitempty"`
 	Mode          string        `json:"mode"`
 	InputTrigger  string        `json:"input_trigger,omitempty"`
-	STT           Provider      `json:"stt"`
-	Chat          Provider      `json:"chat"`
-	TTS           Provider      `json:"tts"`
+	STT           ProviderSet   `json:"stt"`
+	Chat          ProviderSet   `json:"chat"`
+	TTS           ProviderSet   `json:"tts"`
 	PTTButtons    []string      `json:"ptt_buttons,omitempty"`
 	LogLevel      string        `json:"log_level"`
 	Personality   string        `json:"personality"`
@@ -274,6 +274,24 @@ func (c *Config) Normalize() {
 	} else if c.RequestTimeout > 60 {
 		c.RequestTimeout = 60
 	}
+	normalizeProviderSet(&c.STT)
+	normalizeProviderSet(&c.Chat)
+	normalizeProviderSet(&c.TTS)
+}
+
+// normalizeProviderSet trims provider name/model/voice/base_url and resolves a
+// default Active (the first provider's name) when Active is empty.
+func normalizeProviderSet(s *ProviderSet) {
+	for i := range s.Providers {
+		s.Providers[i].Name = strings.TrimSpace(s.Providers[i].Name)
+		s.Providers[i].Model = strings.TrimSpace(s.Providers[i].Model)
+		s.Providers[i].Voice = strings.TrimSpace(s.Providers[i].Voice)
+		s.Providers[i].BaseURL = strings.TrimSpace(s.Providers[i].BaseURL)
+	}
+	s.Active = strings.TrimSpace(s.Active)
+	if s.Active == "" && len(s.Providers) > 0 {
+		s.Active = s.Providers[0].Name
+	}
 }
 
 func (c Config) Validate() error {
@@ -303,13 +321,13 @@ func (c Config) Validate() error {
 	}
 
 	if cfg.Mode == ModeAI {
-		if err := validateAIProvider("stt", cfg.STT); err != nil {
+		if err := validateProviderSet("stt", cfg.STT); err != nil {
 			return err
 		}
-		if err := validateAIProvider("chat", cfg.Chat); err != nil {
+		if err := validateProviderSet("chat", cfg.Chat); err != nil {
 			return err
 		}
-		if err := validateAIProvider("tts", cfg.TTS); err != nil {
+		if err := validateProviderSet("tts", cfg.TTS); err != nil {
 			return err
 		}
 	}
@@ -363,27 +381,62 @@ func validateAIProvider(kind string, p Provider) error {
 	return fmt.Errorf("%w: %s provider missing %s", ErrInvalid, kind, strings.Join(missing, ", "))
 }
 
+// validateProviderSet checks that an AI-mode provider set has at least one
+// provider, that a non-empty Active names an existing provider, and that the
+// resolved Current() provider has the required name/model.
+func validateProviderSet(kind string, s ProviderSet) error {
+	if len(s.Providers) == 0 {
+		return fmt.Errorf("%w: %s has no providers", ErrInvalid, kind)
+	}
+	if s.Active != "" {
+		found := false
+		for _, p := range s.Providers {
+			if p.Name == s.Active {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("%w: %s active %q names no provider", ErrInvalid, kind, s.Active)
+		}
+	}
+	return validateAIProvider(kind, s.Current())
+}
+
 func (c Config) Redacted() Config {
 	cfg := c
-	cfg.STT.APIKey = ""
-	cfg.Chat.APIKey = ""
-	cfg.TTS.APIKey = ""
+	cfg.STT = redactProviderSet(c.STT)
+	cfg.Chat = redactProviderSet(c.Chat)
+	cfg.TTS = redactProviderSet(c.TTS)
 	return cfg
+}
+
+// redactProviderSet returns a deep copy of the set with every APIKey cleared.
+func redactProviderSet(s ProviderSet) ProviderSet {
+	out := ProviderSet{Active: s.Active}
+	out.Providers = make([]Provider, len(s.Providers))
+	copy(out.Providers, s.Providers)
+	for i := range out.Providers {
+		out.Providers[i].APIKey = ""
+	}
+	return out
 }
 
 func (c Config) Secrets() []string {
 	secrets := make([]string, 0, 3)
 	seen := map[string]struct{}{}
-	for _, value := range []string{c.STT.APIKey, c.Chat.APIKey, c.TTS.APIKey} {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
+	for _, set := range []ProviderSet{c.STT, c.Chat, c.TTS} {
+		for _, p := range set.Providers {
+			value := strings.TrimSpace(p.APIKey)
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			secrets = append(secrets, value)
 		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		secrets = append(secrets, value)
 	}
 	return secrets
 }
