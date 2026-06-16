@@ -8,7 +8,18 @@ import (
 
 func TestEmotionNamesExcludeFunctional(t *testing.T) {
 	names := EmotionNames()
-	if want := len(CanonicalNames) - len(FunctionalNames); len(names) != want {
+	// want = canonical names that are not functional faces. speaking is a
+	// functional face that is intentionally absent from CanonicalNames (its
+	// standalone asset is retired and it folds to neutral), so count the
+	// functionals actually present in CanonicalNames rather than assuming every
+	// functional name is canonical.
+	want := 0
+	for _, n := range CanonicalNames {
+		if !isFunctional(n) {
+			want++
+		}
+	}
+	if len(names) != want {
 		t.Fatalf("EmotionNames len = %d, want %d", len(names), want)
 	}
 	in := map[string]bool{}

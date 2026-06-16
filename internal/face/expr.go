@@ -45,7 +45,7 @@ const (
 // CanonicalNames lists every canonical expression name in a stable order.
 var CanonicalNames = []string{
 	ExprNeutral, ExprBlink, ExprListening, ExprThinking,
-	ExprSpeaking, ExprSleeping, ExprConcerned, ExprSmile,
+	ExprSleeping, ExprConcerned, ExprSmile,
 	// New expressions.
 	ExprSad, ExprHappy, ExprContent, ExprAngry, ExprSurprised,
 	ExprExcited, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
@@ -72,7 +72,7 @@ func Canonical(expr string) string {
 	case ExprThinking:
 		return ExprThinking
 	case ExprSpeaking:
-		return ExprSpeaking
+		return ExprNeutral
 	case ExprSmile:
 		return ExprSmile
 	// Expressions that used to alias onto smile/concerned now resolve to their

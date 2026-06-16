@@ -21,7 +21,7 @@ func TestCanonical(t *testing.T) {
 		{"smile", ExprSmile},
 		{"listening", ExprListening},
 		{"thinking", ExprThinking},
-		{"speaking", ExprSpeaking},
+		{"speaking", ExprNeutral}, // speaking folds to the templated neutral face
 		{"look_around", ExprNeutral},
 		// Reassigned: these no longer fold into smile/concerned.
 		{"happy", ExprHappy},
