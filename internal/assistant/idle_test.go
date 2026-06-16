@@ -67,6 +67,26 @@ func TestIdleSchedulerLargeActionsAreRare(t *testing.T) {
 	}
 }
 
+func TestIdlePoolsIncludeCoreEmotions(t *testing.T) {
+	s := NewIdleScheduler(1)
+	seen := map[Expression]bool{}
+	for i := 0; i < 4000; i++ {
+		// Sample across the time bands by advancing idleFor.
+		step := s.Next(time.Duration(i%40) * time.Second)
+		seen[step.Expression] = true
+	}
+	for _, want := range []Expression{
+		ExpressionContent, ExpressionExcited, ExpressionConcerned, ExpressionHappy,
+	} {
+		if !seen[want] {
+			t.Errorf("idle pools never produced %q", want)
+		}
+	}
+	if seen["laugh"] {
+		t.Error("laugh must no longer appear in idle pools")
+	}
+}
+
 func TestIdleSchedulerInterruptResetsExpression(t *testing.T) {
 	s := NewIdleScheduler(23)
 	first := s.Next(20 * time.Second)
