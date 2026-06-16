@@ -718,11 +718,12 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 		})
 	}
 	return &renderer.OverlayState{
-		Visible:  true,
-		Title:    src.Title,
-		Subtitle: append([]string(nil), src.Subtitle...),
-		Items:    items,
-		Footer:   src.Footer,
+		Visible:    true,
+		Title:      src.Title,
+		Subtitle:   append([]string(nil), src.Subtitle...),
+		Items:      items,
+		Footer:     src.Footer,
+		FocusIndex: src.FocusIndex,
 	}
 }
 

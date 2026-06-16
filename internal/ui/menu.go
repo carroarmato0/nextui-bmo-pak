@@ -14,11 +14,12 @@ type OverlayItem struct {
 }
 
 type OverlayState struct {
-	Visible  bool
-	Title    string
-	Subtitle []string
-	Items    []OverlayItem
-	Footer   string
+	Visible    bool
+	Title      string
+	Subtitle   []string
+	Items      []OverlayItem
+	Footer     string
+	FocusIndex int
 }
 
 type Menu interface {

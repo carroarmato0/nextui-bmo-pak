@@ -52,11 +52,12 @@ func (e *exprTracker) epoch(expr string, clock float64) float64 {
 }
 
 type OverlayState struct {
-	Visible  bool
-	Title    string
-	Subtitle []string
-	Items    []OverlayItem
-	Footer   string
+	Visible    bool
+	Title      string
+	Subtitle   []string
+	Items      []OverlayItem
+	Footer     string
+	FocusIndex int
 }
 
 type OverlayItem struct {

@@ -266,12 +266,27 @@ func (m *SettingsMenu) Overlay() OverlayState {
 			Selected: true, Focused: m.focus == 15},
 		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 16},
 	}
+	// FocusIndex is the index into the VISIBLE (non-Hidden) row list so the
+	// renderer's scroll viewport stays correct when the debug-only
+	// log_system_prompt row is hidden.
+	focusVisible := 0
+	visible := 0
+	for i := range items {
+		if items[i].Hidden {
+			continue
+		}
+		if i == m.focus {
+			focusVisible = visible
+		}
+		visible++
+	}
 	return OverlayState{
-		Visible:  true,
-		Title:    m.title,
-		Subtitle: []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"},
-		Footer:   "START OR B TO CLOSE",
-		Items:    items,
+		Visible:    true,
+		Title:      m.title,
+		Subtitle:   []string{"UP/DOWN: NAVIGATE", "LEFT/RIGHT: CYCLE (AUTO-SAVED)"},
+		Footer:     "START OR B TO CLOSE",
+		Items:      items,
+		FocusIndex: focusVisible,
 	}
 }
 
