@@ -515,6 +515,27 @@ func (r *Renderer) drawText(x, y, scale int32, c rgba, text string) {
 	}
 }
 
+// overlayWindow returns the scroll offset (index of the first rendered visible
+// row) such that focus stays inside [offset, offset+maxRows). It clamps so the
+// window never runs past the content. Degenerate inputs yield 0.
+func overlayWindow(total, maxRows, focus int) int {
+	if total <= maxRows || maxRows <= 0 || total <= 0 {
+		return 0
+	}
+	offset := 0
+	if focus >= maxRows {
+		offset = focus - maxRows + 1
+	}
+	maxOffset := total - maxRows
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return offset
+}
+
 func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	panelW := clampInt32(layout.W*78/100, 360, layout.W-2*layout.Margin)
 	panelH := clampInt32(layout.H*76/100, 260, layout.H-2*layout.Margin)
@@ -532,14 +553,43 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 		top += 24 // subtitle line is 14px (7 rows × 2px); 10px gap between lines
 	}
 	top += 18
-	for _, item := range overlay.Items {
-		if item.Hidden {
+
+	const rowStride = int32(26) // normalized stride for every visible row
+
+	// Collect visible rows (Hidden excluded) so scrolling math is stable.
+	visibleIdx := make([]int, 0, len(overlay.Items))
+	for i := range overlay.Items {
+		if overlay.Items[i].Hidden {
 			continue
 		}
+		visibleIdx = append(visibleIdx, i)
+	}
+
+	footerY := panelY + panelH - 28
+	// Reserve a row of headroom above the footer for the ▼ affordance.
+	contentBottom := footerY - rowStride
+	maxRows := int((contentBottom - top) / rowStride)
+	if maxRows < 1 {
+		maxRows = 1
+	}
+
+	offset := overlayWindow(len(visibleIdx), maxRows, overlay.FocusIndex)
+	end := offset + maxRows
+	if end > len(visibleIdx) {
+		end = len(visibleIdx)
+	}
+
+	// ▲ when rows exist above the window.
+	if offset > 0 {
+		r.drawUpTriangle(left, top-12, rgba{176, 213, 206, 255})
+	}
+
+	for _, vi := range visibleIdx[offset:end] {
+		item := overlay.Items[vi]
 		if item.Disabled {
 			r.fillRectColor(left, top+3, 10, 10, rgba{40, 65, 70, 255})
 			r.drawText(left+20, top, 2, rgba{95, 115, 115, 255}, item.Label)
-			top += 22
+			top += rowStride
 			continue
 		}
 		boxColor := rgba{79, 139, 141, 255}
@@ -559,10 +609,36 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 			labelColor = rgba{255, 241, 145, 255}
 		}
 		r.drawText(left+20, top, 2, labelColor, item.Label)
-		top += 26
+		top += rowStride
 	}
+
+	// ▼ when rows exist below the window.
+	if end < len(visibleIdx) {
+		r.drawDownTriangle(left, top, rgba{176, 213, 206, 255})
+	}
+
 	if strings.TrimSpace(overlay.Footer) != "" {
-		r.drawText(left, panelY+panelH-28, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
+		r.drawText(left, footerY, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
+	}
+}
+
+// drawUpTriangle draws a small upward-pointing filled triangle with its apex
+// near (x,y). Used as a "more content above" scroll affordance.
+func (r *Renderer) drawUpTriangle(x, y int32, c rgba) {
+	const h = int32(8)
+	for row := int32(0); row < h; row++ {
+		half := row
+		r.fillRectColor(x+h-half, y+row, 2*half+1, 1, c)
+	}
+}
+
+// drawDownTriangle draws a small downward-pointing filled triangle with its
+// apex near (x, y+h). Used as a "more content below" scroll affordance.
+func (r *Renderer) drawDownTriangle(x, y int32, c rgba) {
+	const h = int32(8)
+	for row := int32(0); row < h; row++ {
+		half := h - 1 - row
+		r.fillRectColor(x+h-half, y+row, 2*half+1, 1, c)
 	}
 }
 
