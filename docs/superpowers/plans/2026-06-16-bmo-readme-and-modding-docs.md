@@ -595,11 +595,11 @@ Expected: no matches (grep exit 1). Historical references under `docs/specs/` an
 
 Run:
 ```bash
-CGO_ENABLED=0 go build ./...
-CGO_ENABLED=0 go test ./...
+CGO_ENABLED=1 go build ./...   # full build needs CGO (SDL); CGO=0 fails on internal/renderer by design
+CGO_ENABLED=1 go test ./...
 golangci-lint run ./...
 ```
-Expected: build OK, tests pass, no lint findings.
+Expected: build OK, tests pass, no lint findings. (The doc-only changes don't touch Go code beyond `cmd/render-faces`, which is pure-Go and also passes under `CGO_ENABLED=0 go test ./cmd/render-faces/`.)
 
 - [ ] **Step 3: Cross-check every spoke is linked from the hub and every doc has the breadcrumb**
 
