@@ -32,4 +32,10 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Local AI tooling state (per-machine, not shared)
 .superpowers/
+.claude/
+.headroom/
+.remember/
+.serena/
