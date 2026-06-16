@@ -470,3 +470,73 @@ func TestSettingsMenuModDefaultsToFirstChoiceWhenUnset(t *testing.T) {
 		t.Fatalf("first cycle from unset = %q, want evil", m.Config().ActiveMod)
 	}
 }
+
+func (m *SettingsMenu) focusForTest(i int)     { m.focus = i }
+func (m *SettingsMenu) focusIndexForTest() int { return m.focus }
+
+func TestSettingsMenuProviderRowsFocusableWhenAI(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mode = config.ModeAI
+	cfg.STT = config.ProviderSet{Active: "a", Providers: []config.Provider{{Name: "a", Model: "whisper-1"}, {Name: "b", Model: "whisper-large"}}}
+	cfg.Chat = config.ProviderSet{Providers: []config.Provider{{Name: "c", Model: "gpt-4o-mini"}}}
+	cfg.TTS = config.ProviderSet{Providers: []config.Provider{{Name: "t", Model: "tts-1", Voice: "nova"}}}
+	m := NewSettingsMenu(cfg)
+
+	reachable := map[int]bool{}
+	for i := 0; i < 30; i++ {
+		reachable[m.focusIndexForTest()] = true
+		m.Move(1)
+	}
+	for _, idx := range []int{3, 4, 5} {
+		if !reachable[idx] {
+			t.Errorf("row %d not focusable in AI mode", idx)
+		}
+	}
+	if reachable[6] {
+		t.Error("voice row 6 should remain non-focusable")
+	}
+}
+
+func TestSettingsMenuCycleChangesActiveProvider(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mode = config.ModeAI
+	cfg.STT = config.ProviderSet{Active: "a", Providers: []config.Provider{{Name: "a", Model: "whisper-1"}, {Name: "b", Model: "whisper-large"}}}
+	cfg.Chat = config.ProviderSet{Providers: []config.Provider{{Name: "c", Model: "gpt-4o-mini"}}}
+	cfg.TTS = config.ProviderSet{Providers: []config.Provider{{Name: "t", Model: "tts-1"}}}
+	m := NewSettingsMenu(cfg)
+	m.focusForTest(3)
+
+	if err := m.Cycle(1); err != nil {
+		t.Fatalf("Cycle(1) error = %v", err)
+	}
+	if got := m.Config().STT.Active; got != "b" {
+		t.Fatalf("after Cycle(1) STT.Active = %q, want b", got)
+	}
+	if err := m.Cycle(-1); err != nil {
+		t.Fatalf("Cycle(-1) error = %v", err)
+	}
+	if got := m.Config().STT.Active; got != "a" {
+		t.Fatalf("after Cycle(-1) STT.Active = %q, want a", got)
+	}
+	if got := m.Overlay().Items[3].Label; got != "STT: whisper-1" {
+		t.Fatalf("stt label = %q, want STT: whisper-1", got)
+	}
+	m.focusForTest(3)
+	_ = m.Cycle(1)
+	if got := m.Overlay().Items[3].Label; got != "STT: whisper-large" {
+		t.Fatalf("stt label after cycle = %q, want STT: whisper-large", got)
+	}
+}
+
+func TestSettingsMenuCycleNonProviderDelegatesForward(t *testing.T) {
+	cfg := config.Default()
+	m := NewSettingsMenu(cfg)
+	m.focusForTest(13) // request_timeout
+	before := m.Config().RequestTimeout
+	if err := m.Cycle(-1); err != nil { // negative still advances forward
+		t.Fatalf("Cycle(-1) error = %v", err)
+	}
+	if m.Config().RequestTimeout == before {
+		t.Fatalf("Cycle on timeout row did not advance (still %d)", before)
+	}
+}

@@ -120,8 +120,12 @@ func (m *SettingsMenu) Move(delta int) {
 }
 
 func (m *SettingsMenu) shouldSkip(idx int) bool {
-	if idx >= 3 && idx <= 6 {
-		return true
+	isAI := m.cfg.Mode == config.ModeAI
+	if idx >= 3 && idx <= 5 {
+		return !isAI // provider rows focusable only in AI mode
+	}
+	if idx == 6 {
+		return true // voice is a read-only status row
 	}
 	if idx == 1 && strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) != "debug" {
 		return true
@@ -203,6 +207,29 @@ func (m *SettingsMenu) ToggleFocused() error {
 		return fmt.Errorf("unsupported focus %d", m.focus)
 	}
 	return nil
+}
+
+// Cycle changes the focused setting. For provider rows (stt/chat/tts) it moves
+// the active provider forward (delta>0) or backward (delta<0). For every other
+// row it ignores the sign and advances forward, matching ToggleFocused, so the
+// renderer's LEFT and RIGHT both cycle non-provider items as before.
+func (m *SettingsMenu) Cycle(delta int) error {
+	if m == nil {
+		return fmt.Errorf("nil settings menu")
+	}
+	switch m.focus {
+	case 3:
+		m.cfg.STT.Cycle(delta)
+		return nil
+	case 4:
+		m.cfg.Chat.Cycle(delta)
+		return nil
+	case 5:
+		m.cfg.TTS.Cycle(delta)
+		return nil
+	default:
+		return m.ToggleFocused()
+	}
 }
 
 func (m *SettingsMenu) Overlay() OverlayState {
