@@ -30,9 +30,6 @@ func (c *Cache) Warm(w, h int) {
 	c.mu.Unlock()
 
 	for _, name := range CanonicalNames {
-		if name == ExprSpeaking {
-			continue
-		}
 		c.warmFrame(name, w, h)
 	}
 
@@ -51,7 +48,7 @@ func (c *Cache) warmFrame(name string, w, h int) {
 	if data == nil {
 		return
 	}
-	buf, err := Rasterize(data, w, h) // expensive – NO lock held
+	buf, err := Rasterize(renderRestSVG(data), w, h) // expensive – NO lock held
 	if err != nil {
 		if !fromDisk {
 			return
@@ -60,7 +57,7 @@ func (c *Cache) warmFrame(name string, w, h int) {
 		if !ok {
 			return
 		}
-		buf, err = Rasterize(def, w, h)
+		buf, err = Rasterize(renderRestSVG(def), w, h)
 		if err != nil {
 			return
 		}
@@ -126,14 +123,14 @@ func (c *Cache) renderLocked(canonical string, w, h int) []uint32 {
 	if data == nil {
 		return nil
 	}
-	buf, err := Rasterize(data, w, h)
+	buf, err := Rasterize(renderRestSVG(data), w, h)
 	if err == nil {
 		return buf
 	}
 	if fromDisk {
 		c.lib.logf("face: override %s.svg failed to rasterize (%v); using default", canonical, err)
 		if def, ok := defaultBytes(canonical); ok {
-			buf, err = Rasterize(def, w, h)
+			buf, err = Rasterize(renderRestSVG(def), w, h)
 			if err == nil {
 				return buf
 			}

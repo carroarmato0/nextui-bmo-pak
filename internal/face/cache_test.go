@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestCacheFrameRendersTemplatedNeutral(t *testing.T) {
+	lib := NewLibrary(t.TempDir()) // embedded defaults only
+	c := NewCache(lib)
+	buf := c.Frame(ExprNeutral, 80, 60)
+	if buf == nil {
+		t.Fatal("neutral frame nil — templated face failed to rasterize at rest")
+	}
+	if len(buf) != 80*60 {
+		t.Fatalf("frame size=%d want %d", len(buf), 80*60)
+	}
+}
+
 func TestCacheFrameReturnsBuffer(t *testing.T) {
 	c := NewCache(NewLibrary(""))
 	buf := c.Frame(ExprNeutral, 320, 240)
