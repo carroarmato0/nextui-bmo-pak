@@ -4,7 +4,9 @@
 //
 //	go run ./cmd/gen-speaking-frames
 //
-//go:generate go run ../gen-speaking-frames
+// It writes to internal/face/assets relative to the working directory, so it
+// must be run from the repo root (no //go:generate directive, which would run
+// from this file's own directory and write the assets to the wrong place).
 package main
 
 import (
