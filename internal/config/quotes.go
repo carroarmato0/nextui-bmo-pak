@@ -45,4 +45,40 @@ I dreamed I was a real boy again.
 Victory is delicious!
 Do not worry. BMO is here.
 Let us make a wish together!
-I am small, but I am mighty!`
+I am small, but I am mighty!
+Victory!
+It's BMO time!
+Please be gentle with BMO!
+Don't shake me too hard.
+Easy on the merchandise.
+Push in my buttons.
+Word.
+Poneage!
+I have been defeated, but not deleted!
+Bow to your sensei.
+Total domination!
+What do you think about the stars in the sky?
+What is your favorite color of ice cream?
+Would you rather be a Dracula or a Frankenstein?
+What do you think about the weather today?
+Have you ever committed a crime...of passion?
+What would you do with $100 bill?
+What would you do with three magic wishes from three magic fishes?
+What would you do if you fell in love with a Martian?
+How are you today?
+What do you think of my face?
+Do you know any good jokes?
+What is it like to be a living human person?
+What video game do you like the best?
+What's it like to have a nose?
+If you were a robot, what kind of robot would you be?
+How do you feel about seedless watermelon?
+How do you feel about giant spiders?
+What would happen if you ate a spicy meatball?
+That does not compute.
+Interest level dropping.
+Interest level: low.
+So bored...
+Did you say something?
+You've been talking to Loraine, haven't you?
+I'd rather be eating up a pizza.`
