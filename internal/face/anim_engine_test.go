@@ -93,3 +93,32 @@ func TestEngineConcurrentAccessRaceClean(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestSpeakingEmotionAnimates is the regression guard for WS1: with an emotion
+// set and a positive amplitude signal, the engine must return an animated frame
+// distinct from the rest frame. Before WS1, emotions had no animation defs so
+// the mouth never moved while speaking.
+func TestSpeakingEmotionAnimates(t *testing.T) {
+	lib := NewLibrary(t.TempDir())
+	eng := NewEngine(lib, DefaultAnimations())
+	w, h := 80, 60
+	eng.Prewarm(ExprNeutral, w, h)
+	// Build is async; spin until ready (bounded).
+	for i := 0; i < 200 && !eng.Ready(ExprNeutral); i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !eng.Ready(ExprNeutral) {
+		t.Fatal("neutral animation never became ready")
+	}
+	rest, ok := eng.AnimFrame(ExprNeutral, w, h, 0, 0, 0) // silence
+	if !ok {
+		t.Fatal("rest AnimFrame not ok")
+	}
+	loud, ok := eng.AnimFrame(ExprNeutral, w, h, 0, 0, 1.0) // full voice
+	if !ok {
+		t.Fatal("loud AnimFrame not ok")
+	}
+	if equalFrame(rest, loud) {
+		t.Fatal("mouth did not move between silence and full voice (regression)")
+	}
+}
