@@ -108,6 +108,23 @@ func (l *Library) Resolve(expr string) string {
 	return Canonical(raw)
 }
 
+// Source reports where expr's rendered bytes come from: "mod-override" when an
+// on-disk faces/<name>.svg (or, for a self-contained mod, its own neutral fold)
+// supplies them, "embedded-default" when the built-in asset is used, or "none"
+// when nothing resolves (self-contained mod with no matching face). It performs
+// the same lookup as Bytes and does no logging.
+func (l *Library) Source(expr string) string {
+	data, fromDisk := l.Bytes(expr)
+	switch {
+	case fromDisk:
+		return "mod-override"
+	case data != nil:
+		return "embedded-default"
+	default:
+		return "none"
+	}
+}
+
 // rawBytes returns SVG bytes for a literal (non-canonicalized) name: a
 // faces/<name>.svg override if present, else the embedded assets/<name>.svg.
 // Used by the animation engine, where frame and template names are literal

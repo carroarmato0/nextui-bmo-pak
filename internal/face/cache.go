@@ -106,6 +106,14 @@ func (c *Cache) Frame(expr string, w, h int) []uint32 {
 	return buf
 }
 
+// Source reports the origin of expr's rendered bytes — "mod-override",
+// "embedded-default", or "none" — by delegating to the backing Library. It
+// does no logging and is safe to call from the render loop on the same
+// goroutine that calls Frame.
+func (c *Cache) Source(expr string) string {
+	return c.lib.Source(expr)
+}
+
 // resizeLocked clears the cache if the target size has changed.
 func (c *Cache) resizeLocked(w, h int) {
 	if c.w == w && c.h == h && c.frames != nil {

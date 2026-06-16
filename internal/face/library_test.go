@@ -141,3 +141,67 @@ func TestResolveCanonicalWhenNoDir(t *testing.T) {
 		t.Fatalf("Resolve(traversal) = %q, want %q", got, ExprNeutral)
 	}
 }
+
+const sourceTestSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#123"/></svg>`
+
+func TestSourceEmbeddedDefault(t *testing.T) {
+	lib := NewLibrary(filepath.Join(t.TempDir(), "missing"))
+	if got := lib.Source(ExprNeutral); got != "embedded-default" {
+		t.Fatalf("Source = %q, want embedded-default", got)
+	}
+}
+
+func TestSourceModOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(sourceTestSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibrary(dir)
+	if got := lib.Source("neutral"); got != "mod-override" {
+		t.Fatalf("Source = %q, want mod-override", got)
+	}
+}
+
+func TestSourceOverrideViaAlias(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "crying.svg"), []byte(sourceTestSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibrary(dir)
+	if got := lib.Source("cry"); got != "mod-override" {
+		t.Fatalf("Source = %q, want mod-override", got)
+	}
+}
+
+func TestSourceSelfContainedFoldsToModNeutral(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(sourceTestSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibraryMode(dir, true)
+	if got := lib.Source("sad"); got != "mod-override" {
+		t.Fatalf("Source = %q, want mod-override (folded to mod neutral)", got)
+	}
+}
+
+func TestSourceSelfContainedNoFaceIsNone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "happy.svg"), []byte(sourceTestSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibraryMode(dir, true)
+	if got := lib.Source("sad"); got != "none" {
+		t.Fatalf("Source = %q, want none", got)
+	}
+}
+
+func TestSourceBlankOverrideFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte("   \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibrary(dir)
+	if got := lib.Source(ExprNeutral); got != "embedded-default" {
+		t.Fatalf("Source = %q, want embedded-default (blank ignored)", got)
+	}
+}

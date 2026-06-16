@@ -98,3 +98,19 @@ func TestFrameRendersCustomName(t *testing.T) {
 		t.Fatal("grumpy frame equals neutral frame; custom name was folded to neutral")
 	}
 }
+
+func TestCacheSourceDelegates(t *testing.T) {
+	dir := t.TempDir()
+	custom := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#321"/></svg>`
+	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := NewCache(NewLibraryMode(dir, true))
+	if got := c.Source("grumpy"); got != "mod-override" {
+		t.Fatalf("Source = %q, want mod-override", got)
+	}
+	embedded := NewCache(NewLibrary(""))
+	if got := embedded.Source(ExprNeutral); got != "embedded-default" {
+		t.Fatalf("Source = %q, want embedded-default", got)
+	}
+}
