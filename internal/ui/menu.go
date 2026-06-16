@@ -25,6 +25,7 @@ type Menu interface {
 	Title() string
 	Move(delta int)
 	ToggleFocused() error
+	Cycle(delta int) error
 	Save() (config.Config, error)
 	Overlay() OverlayState
 }

@@ -466,8 +466,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
 				ed.CancelEdit()
 			}
-			if err := activeMenu.ToggleFocused(); err != nil {
-				logger.Debugf("toggle focused: %v", err)
+			delta := 1
+			if action == input.NavLeft {
+				delta = -1
+			}
+			if err := activeMenu.Cycle(delta); err != nil {
+				logger.Debugf("cycle focused: %v", err)
 			}
 			// Cancel if ToggleFocused entered edit mode (API key item).
 			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
