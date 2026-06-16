@@ -25,8 +25,36 @@ func TestDefaultCoreAnimations(t *testing.T) {
 			t.Fatalf("%s: core defs must have NO idle (rest at silence)", name)
 		}
 	}
-	if _, ok := defs[ExprSpeaking]; ok {
-		t.Fatal("standalone speaking def should be retired")
+}
+
+func TestDefaultSpeakingAnimation(t *testing.T) {
+	defs := DefaultAnimations()
+	sp, ok := defs[ExprSpeaking]
+	if !ok {
+		t.Fatal("speaking default missing")
+	}
+	if sp.Template != nil {
+		t.Fatal("speaking should be a discrete-frame def, not a template")
+	}
+	if sp.Steps() != 6 {
+		t.Fatalf("speaking steps=%d want 6", sp.Steps())
+	}
+	if sp.Driver.Kind != DriverAmplitude || sp.Driver.Curve != curveSqrt || sp.Driver.Idle == nil {
+		t.Fatalf("driver=%+v", sp.Driver)
+	}
+}
+
+func TestDefaultSpeakingFramesRasterizeAndDiffer(t *testing.T) {
+	lib := NewLibrary(t.TempDir()) // overlay: embedded assets only
+	frames, err := buildFrames(lib, DefaultAnimations()[ExprSpeaking], 80, 60)
+	if err != nil {
+		t.Fatalf("buildFrames: %v", err)
+	}
+	if len(frames) != 6 {
+		t.Fatalf("frames=%d want 6", len(frames))
+	}
+	if equalFrame(frames[0], frames[5]) {
+		t.Fatal("closed and open speaking frames are identical")
 	}
 }
 

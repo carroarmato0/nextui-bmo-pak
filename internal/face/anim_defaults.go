@@ -23,5 +23,17 @@ func DefaultAnimations() map[string]AnimationDef {
 		ExprConcerned: tmpl(ExprConcerned),
 		ExprSad:       tmpl(ExprSad),
 		ExprAngry:     tmpl(ExprAngry),
+		// speaking is the dedicated talking face: vertical-bar eyes and an open
+		// mouth with teeth and tongue. Six discrete frames (closed→open) are
+		// driven by voice amplitude, with a gentle ping-pong idle oscillation
+		// (~1.3 Hz) when amplitude is unavailable (e.g. pre-recorded clips).
+		ExprSpeaking: {
+			Frames: []string{"speaking_0", "speaking_1", "speaking_2", "speaking_3", "speaking_4", "speaking_5"},
+			Driver: Driver{
+				Kind:  DriverAmplitude,
+				Curve: curveSqrt,
+				Idle:  &Idle{FPS: 13, Mode: modePingpong},
+			},
+		},
 	}
 }

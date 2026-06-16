@@ -291,7 +291,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	screen.SetAnimations(animEngine)
 	{
 		w, h := screen.Size()
-		go animEngine.Prewarm(face.ExprNeutral, w, h)
+		go animEngine.Prewarm(face.ExprSpeaking, w, h)
 	}
 
 	// Switching mods at runtime: re-point the prompt/quote paths (read per
@@ -317,7 +317,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		screen.SetAnimations(animEngine)
 		{
 			w, h := screen.Size()
-			go animEngine.Prewarm(face.ExprNeutral, w, h)
+			go animEngine.Prewarm(face.ExprSpeaking, w, h)
 		}
 
 		if audioSession != nil {
@@ -544,7 +544,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// audio. The clips run in the player's own goroutine, so audio pacing
 		// is independent of the render loop's frame rate.
 		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
-			(animEngine.Ready(face.ExprNeutral) || time.Since(startupFaceShownAt) > 10*time.Second) {
+			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
 			if overrideErrs := config.CheckOverrides(activeMod.Root); len(overrideErrs) > 0 {
@@ -617,7 +617,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if snap.Emotion != "" {
 				expr = string(snap.Emotion)
 			} else {
-				expr = string(assistant.ExpressionNeutral)
+				expr = string(assistant.ExpressionSpeaking)
 			}
 		case assistant.StateSleeping:
 			errorSince = time.Time{}
@@ -644,7 +644,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// still take priority further below.
 		clipPlaying := clipPlayer != nil && clipPlayer.Playing()
 		if clipPlaying {
-			expr = string(assistant.ExpressionNeutral)
+			expr = string(assistant.ExpressionSpeaking)
 		}
 
 		if snap.Quota.Exhausted {
