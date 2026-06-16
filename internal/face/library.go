@@ -107,3 +107,23 @@ func (l *Library) Resolve(expr string) string {
 	}
 	return Canonical(raw)
 }
+
+// rawBytes returns SVG bytes for a literal (non-canonicalized) name: a
+// faces/<name>.svg override if present, else the embedded assets/<name>.svg.
+// Used by the animation engine, where frame and template names are literal
+// asset names rather than expression aliases. Self-contained libraries do not
+// fall back to embedded assets.
+func (l *Library) rawBytes(name string) ([]byte, bool) {
+	if !fileNameRe.MatchString(name) {
+		return nil, false
+	}
+	if l.dir != "" {
+		if data, err := os.ReadFile(filepath.Join(l.dir, name+".svg")); err == nil && len(bytes.TrimSpace(data)) > 0 {
+			return data, true
+		}
+	}
+	if l.selfContained {
+		return nil, false
+	}
+	return defaultBytes(name)
+}
