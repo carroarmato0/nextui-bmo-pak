@@ -2,18 +2,26 @@ package face
 
 // DefaultAnimations returns the built-in animation set baked into the binary.
 // Overlay mods inherit these; self-contained mods do not (they declare their
-// own). The speaking mouth is six frames driven by lip-sync amplitude, with a
-// gentle idle oscillation (~1.3 Hz, matching the previous sine fallback) when
-// amplitude is unavailable.
+// own). Each core-set emotion is a six-step template whose mouth is driven by
+// the voice amplitude on param "m" (0 = rest, 1 = fully open). With NO Idle the
+// amplitude driver rests at frame 0 during silence and opens the mouth as the
+// signal rises, so the same face that shows the emotion also "talks". Built-in
+// faces are therefore the reference implementation modders copy.
 func DefaultAnimations() map[string]AnimationDef {
+	tmpl := func(file string) AnimationDef {
+		return AnimationDef{
+			Template: &TemplateSource{File: file, Param: "m", From: 0, To: 1, Steps: 6},
+			Driver:   Driver{Kind: DriverAmplitude, Curve: curveSqrt},
+		}
+	}
 	return map[string]AnimationDef{
-		ExprSpeaking: {
-			Frames: []string{"speaking_0", "speaking_1", "speaking_2", "speaking_3", "speaking_4", "speaking_5"},
-			Driver: Driver{
-				Kind:  DriverAmplitude,
-				Curve: curveSqrt,
-				Idle:  &Idle{FPS: 13, Mode: modePingpong},
-			},
-		},
+		ExprNeutral:   tmpl(ExprNeutral),
+		ExprHappy:     tmpl(ExprHappy),
+		ExprSmile:     tmpl(ExprSmile),
+		ExprExcited:   tmpl(ExprExcited),
+		ExprContent:   tmpl(ExprContent),
+		ExprConcerned: tmpl(ExprConcerned),
+		ExprSad:       tmpl(ExprSad),
+		ExprAngry:     tmpl(ExprAngry),
 	}
 }

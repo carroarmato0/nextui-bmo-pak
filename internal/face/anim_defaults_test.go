@@ -2,38 +2,47 @@ package face
 
 import "testing"
 
-func TestDefaultSpeakingAnimation(t *testing.T) {
+func TestDefaultCoreAnimations(t *testing.T) {
 	defs := DefaultAnimations()
-	sp, ok := defs[ExprSpeaking]
-	if !ok {
-		t.Fatal("speaking default missing")
+	for _, name := range []string{
+		ExprNeutral, ExprHappy, ExprSmile, ExprExcited,
+		ExprContent, ExprConcerned, ExprSad, ExprAngry,
+	} {
+		d, ok := defs[name]
+		if !ok {
+			t.Fatalf("%s: default animation missing", name)
+		}
+		if d.Template == nil {
+			t.Fatalf("%s: expected a template def", name)
+		}
+		if d.Template.Param != "m" || d.Template.Steps != 6 {
+			t.Fatalf("%s: template=%+v", name, *d.Template)
+		}
+		if d.Driver.Kind != DriverAmplitude || d.Driver.Curve != curveSqrt {
+			t.Fatalf("%s: driver=%+v", name, d.Driver)
+		}
+		if d.Driver.Idle != nil {
+			t.Fatalf("%s: core defs must have NO idle (rest at silence)", name)
+		}
 	}
-	if sp.Steps() != 6 {
-		t.Fatalf("speaking steps=%d want 6", sp.Steps())
-	}
-	if sp.Driver.Kind != DriverAmplitude || sp.Driver.Curve != "sqrt" || sp.Driver.Idle == nil {
-		t.Fatalf("driver=%+v", sp.Driver)
+	if _, ok := defs[ExprSpeaking]; ok {
+		t.Fatal("standalone speaking def should be retired")
 	}
 }
 
-func TestDefaultSpeakingFramesRasterizeAndDiffer(t *testing.T) {
-	lib := NewLibrary(t.TempDir()) // overlay: embedded assets only
-	frames, err := buildFrames(lib, DefaultAnimations()[ExprSpeaking], 80, 60)
-	if err != nil {
-		t.Fatalf("buildFrames: %v", err)
-	}
-	if len(frames) != 6 {
-		t.Fatalf("frames=%d want 6", len(frames))
-	}
-	// Every frame is a full buffer (Rasterize already rejects blank frames).
-	for i, f := range frames {
-		if len(f) != 80*60 {
-			t.Fatalf("frame %d size=%d want %d", i, len(f), 80*60)
+func TestDefaultCoreFramesRasterizeAndDiffer(t *testing.T) {
+	lib := NewLibrary(t.TempDir())
+	for _, name := range []string{ExprNeutral, ExprHappy, ExprSad} {
+		frames, err := buildFrames(lib, DefaultAnimations()[name], 80, 60)
+		if err != nil {
+			t.Fatalf("%s: buildFrames: %v", name, err)
 		}
-	}
-	// Closed (step 0) and fully-open (step 5) mouths must differ.
-	if equalFrame(frames[0], frames[5]) {
-		t.Fatal("closed and open speaking frames are identical")
+		if len(frames) != 6 {
+			t.Fatalf("%s: frames=%d want 6", name, len(frames))
+		}
+		if equalFrame(frames[0], frames[5]) {
+			t.Fatalf("%s: rest and open frames identical", name)
+		}
 	}
 }
 
