@@ -8,12 +8,14 @@ import (
 	"testing"
 )
 
-// newExpressions are the 25 faces added from the Figma "BMO Face Templates"
-// set, in the same stable order as CanonicalNames. Each shipped asset must
-// stay byte-identical to the artifact approved in the browser preview.
+// newExpressions are the still-static faces from the Figma "BMO Face Templates"
+// set, in the same stable order as CanonicalNames. Each shipped asset must stay
+// byte-identical to the artifact approved in the browser preview. The core-set
+// emotions (happy, content, angry, sad, excited) are now param-driven templates
+// rather than frozen byte-art, so they are guarded by the animation tests
+// instead of this manifest.
 var newExpressions = []string{
-	ExprSad, ExprHappy, ExprContent, ExprAngry, ExprSurprised,
-	ExprExcited, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
+	ExprSurprised, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
 	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
 	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
 	ExprAdoring, ExprSparkle,

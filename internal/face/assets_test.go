@@ -62,7 +62,7 @@ func TestEmbeddedFacesGeometry(t *testing.T) {
 			if !ok {
 				t.Fatalf("no embedded SVG for %q", name)
 			}
-			buf, err := Rasterize(data, w, h)
+			buf, err := Rasterize(renderRestSVG(data), w, h)
 			if err != nil {
 				t.Fatalf("rasterize %s at %dx%d: %v", name, w, h, err)
 			}
@@ -118,7 +118,7 @@ func TestNewFacesGeometry(t *testing.T) {
 			if !ok {
 				t.Fatalf("no embedded SVG for %q", name)
 			}
-			buf, err := Rasterize(data, w, h)
+			buf, err := Rasterize(renderRestSVG(data), w, h)
 			if err != nil {
 				t.Fatalf("rasterize %s at %dx%d: %v", name, w, h, err)
 			}
