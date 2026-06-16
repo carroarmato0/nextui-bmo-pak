@@ -1404,10 +1404,51 @@ git commit -m "refactor(face): remove bespoke speaking animation path"
 
 ### Task 9: Wire the engine in `cmd/bmo-pak`
 
+> **Sequencing correction (found during execution):** `cmd/bmo-pak/main.go` calls `faceCache.SpeakReady()` to gate startup-clip playback. That method is deleted in Task 8, so **Task 9 runs before Task 8** and additionally (a) adds `Engine.Ready(expr)` to `internal/face/anim_engine.go`, and (b) replaces the `SpeakReady()` gate with the engine's readiness. After Task 9, nothing references `SpeakReady`, so Task 8's deletion is clean.
+
 **Files:**
+- Modify: `internal/face/anim_engine.go` (add `Ready`)
 - Modify: `cmd/bmo-pak/main.go`
 
-**Context:** Build the effective animation set (embedded defaults unless self-contained, overlaid with the mod's parsed `animations`, mod winning), install the engine at startup and on mod switch, and prewarm `speaking` so the first utterance animates immediately.
+**Context:** Build the effective animation set (embedded defaults unless self-contained, overlaid with the mod's parsed `animations`, mod winning), install the engine at startup and on mod switch, prewarm `speaking` so the first utterance animates immediately, and gate the startup clip on the engine's speaking-readiness.
+
+- [ ] **Step 0: Add `Engine.Ready` (face package) with a test**
+
+Add to `internal/face/anim_engine.go`:
+
+```go
+// Ready reports whether expr's animation is built and resident at the current
+// size, i.e. AnimFrame will return frames. False for static or not-yet-built.
+func (e *Engine) Ready(expr string) bool {
+	key := normExpr(expr)
+	if _, ok := e.defs[key]; !ok {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.ready && e.expr == key
+}
+```
+
+Add to `internal/face/anim_engine_test.go`:
+
+```go
+func TestEngineReadyReflectsBuild(t *testing.T) {
+	e := newTestEngine(t)
+	if e.Ready("talk") {
+		t.Fatal("not built yet")
+	}
+	waitReady(t, e, "talk", 4, 4)
+	if !e.Ready("talk") {
+		t.Fatal("should be ready after build")
+	}
+	if e.Ready("neutral") {
+		t.Fatal("static expr is never ready")
+	}
+}
+```
+
+Run: `CGO_ENABLED=0 go test ./internal/face/ -run TestEngineReady -v` → PASS.
 
 - [ ] **Step 1: Add a helper to build the engine**
 
@@ -1449,6 +1490,8 @@ After the existing startup block (`faceCache := face.NewCache(faceLib)` … `go 
 	}
 ```
 
+`animEngine` must be reassignable from `reloadMod`, so declare it with `:=` here at function scope (it is captured by the `reloadMod` closure below, same as `faceCache`).
+
 - [ ] **Step 3: Rebuild the engine on mod switch**
 
 Inside `reloadMod`, after `go newCache.Warm(screen.Size())` (around line 305), add:
@@ -1462,6 +1505,24 @@ Inside `reloadMod`, after `go newCache.Warm(screen.Size())` (around line 305), a
 		}
 ```
 
+- [ ] **Step 3b: Swap the startup-clip gate off `SpeakReady`**
+
+`cmd/bmo-pak/main.go:~536` currently gates the startup clip on `faceCache.SpeakReady()`. Replace that call with the engine's readiness so Task 8 can delete `SpeakReady`. Change:
+
+```go
+		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
+			(faceCache.SpeakReady() || time.Since(startupFaceShownAt) > 10*time.Second) {
+```
+
+to:
+
+```go
+		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
+			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
+```
+
+(The gate's intent is unchanged: fire once the speaking mouth is warm, or after the 10s cap.)
+
 - [ ] **Step 4: Build**
 
 Run: `CGO_ENABLED=1 go build ./cmd/bmo-pak/`
@@ -1471,7 +1532,7 @@ Expected: builds. Confirm `face` and `mod` are already imported in `main.go` (th
 
 ```bash
 golangci-lint run ./cmd/bmo-pak/...
-git add cmd/bmo-pak/main.go
+git add internal/face/anim_engine.go internal/face/anim_engine_test.go cmd/bmo-pak/main.go
 git commit -m "feat(bmo-pak): install declarative animation engine with live reload"
 ```
 
