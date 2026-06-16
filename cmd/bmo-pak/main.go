@@ -125,7 +125,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	logger.Infof("initial screen: %s", initialScreen)
 
 	var activeMenu ui.Menu
-	providerMenu := ui.NewProviderMenu(cfg)
 	settingsMenu := ui.NewSettingsMenu(cfg)
 	modChoices := make([]ui.ModChoice, 0, len(mods))
 	for _, md := range mods {
@@ -146,7 +145,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	})
 	setActiveMenu := func(menu ui.Menu) { activeMenu = menu }
 	if initialScreen == ui.ScreenSetup {
-		logger.Infof("setup flow required; press MENU to exit to NextUI, Start to open settings, Y for AI setup")
+		logger.Infof("setup flow required; press MENU to exit to NextUI, Start to open settings")
 	}
 
 	machine := assistant.NewMachine()
@@ -289,7 +288,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	screen.SetAnimations(animEngine)
 	{
 		w, h := screen.Size()
-		go animEngine.Prewarm(face.ExprSpeaking, w, h)
+		go animEngine.Prewarm(face.ExprNeutral, w, h)
 	}
 
 	// Switching mods at runtime: re-point the prompt/quote paths (read per
@@ -315,7 +314,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		screen.SetAnimations(animEngine)
 		{
 			w, h := screen.Size()
-			go animEngine.Prewarm(face.ExprSpeaking, w, h)
+			go animEngine.Prewarm(face.ExprNeutral, w, h)
 		}
 
 		if audioSession != nil {
@@ -410,8 +409,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// handleNav maps decoded evdev navigation intents to menu/overlay actions.
 	// Physical button layout (TrimUI, confirmed via getevent): A=BTN_EAST(305)
 	// is confirm/PTT (handled by the PTT path), B=BTN_SOUTH(304) cancels,
-	// Start opens settings, Y=BTN_NORTH(307) opens AI setup, Menu=BTN_MODE(316)
-	// exits to NextUI, D-pad navigates.
+	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates.
+	// Y=BTN_NORTH(307) is unmapped — AI providers are configured in config.json.
 	handleNav := func(action input.NavAction) {
 		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
@@ -441,16 +440,6 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				setActiveMenu(nil)
 			} else {
 				setActiveMenu(settingsMenu)
-			}
-			return
-		}
-
-		// Y opens/closes the AI setup overlay.
-		if action == input.NavProvider {
-			if activeMenu == providerMenu {
-				setActiveMenu(nil)
-			} else {
-				setActiveMenu(providerMenu)
 			}
 			return
 		}
@@ -547,7 +536,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// audio. The clips run in the player's own goroutine, so audio pacing
 		// is independent of the render loop's frame rate.
 		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
-			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
+			(animEngine.Ready(face.ExprNeutral) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
 			if overrideErrs := config.CheckOverrides(activeMod.Root); len(overrideErrs) > 0 {
@@ -620,7 +609,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if snap.Emotion != "" {
 				expr = string(snap.Emotion)
 			} else {
-				expr = string(assistant.ExpressionSpeaking)
+				expr = string(assistant.ExpressionNeutral)
 			}
 		case assistant.StateSleeping:
 			errorSince = time.Time{}
@@ -647,7 +636,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// still take priority further below.
 		clipPlaying := clipPlayer != nil && clipPlayer.Playing()
 		if clipPlaying {
-			expr = string(assistant.ExpressionSpeaking)
+			expr = string(assistant.ExpressionNeutral)
 		}
 
 		if snap.Quota.Exhausted {
