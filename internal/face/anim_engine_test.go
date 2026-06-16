@@ -61,6 +61,20 @@ func TestEngineBuildsAndServesFrames(t *testing.T) {
 	}
 }
 
+func TestEngineReadyReflectsBuild(t *testing.T) {
+	e := newTestEngine(t)
+	if e.Ready("talk") {
+		t.Fatal("not built yet")
+	}
+	waitReady(t, e, "talk", 4, 4)
+	if !e.Ready("talk") {
+		t.Fatal("should be ready after build")
+	}
+	if e.Ready("neutral") {
+		t.Fatal("static expr is never ready")
+	}
+}
+
 func TestEngineConcurrentAccessRaceClean(t *testing.T) {
 	e := newTestEngine(t)
 	var wg sync.WaitGroup

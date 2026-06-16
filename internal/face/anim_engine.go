@@ -93,6 +93,18 @@ func (e *Engine) ensureLocked(key string, def AnimationDef, w, h int) {
 	}()
 }
 
+// Ready reports whether expr's animation is built and resident at the current
+// size, i.e. AnimFrame will return frames. False for static or not-yet-built.
+func (e *Engine) Ready(expr string) bool {
+	key := normExpr(expr)
+	if _, ok := e.defs[key]; !ok {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.ready && e.expr == key
+}
+
 func normExpr(expr string) string {
 	return strings.ToLower(strings.TrimSpace(expr))
 }
