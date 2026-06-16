@@ -64,7 +64,7 @@ The correct binary is selected automatically at launch.
 
 ## Installation
 
-1. Download `BMO.pak.zip` from the [Releases](../../releases) page.
+1. Download `BMO.pak.zip` from the [Releases](https://github.com/carroarmato0/nextui-bmo/releases) page.
 2. Unzip the archive — you will get a `BMO.pak/` folder.
 3. Copy `BMO.pak/` onto your SD card:
    ```
