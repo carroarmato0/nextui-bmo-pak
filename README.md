@@ -25,8 +25,8 @@ or Warner Bros.*
 
 ## Features
 
-- **Animated SVG face** — 30+ expressions rendered at 60 fps, all driven by
-  a declarative animation engine.
+- **Animated SVG face** — 30+ expressions driven by a declarative animation
+  engine.
 - **LLM-directed emotion** — the chat model picks BMO's expression; the face
   updates automatically.
 - **Voice assistant pipeline** — push-to-talk → speech-to-text → chat →
@@ -133,9 +133,9 @@ See the [Modding guide](docs/MODDING.md).
 ## Building from source
 
 ```bash
-# Build & test locally
-CGO_ENABLED=1 go build ./...      # full build needs CGO (SDL)
-CGO_ENABLED=0 go test ./...
+# Build & test locally (needs CGO + SDL2 dev libraries for the renderer)
+CGO_ENABLED=1 go build ./...
+CGO_ENABLED=1 go test ./...
 golangci-lint run ./...
 
 # Cross-compile + package the pak (docker/podman)
