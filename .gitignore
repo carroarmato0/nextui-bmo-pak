@@ -2,6 +2,9 @@
 bin/
 dist/
 lib/
+# Command binaries built into the repo root (anchored so the cmd/ source dirs stay tracked)
+/generate-audio
+/bmo-pak
 .go_cache/
 .go_cache.docker-polluted/
 *.pak
