@@ -1,26 +1,28 @@
-# BMO: Faces, Persona, Voice, Quotes
+[← Modding guide](../MODDING.md) · Faces
 
-BMO's appearance and personality can be customised by placing override files
-in the BMO data directory alongside `config.json`:
+# Face SVGs
 
-```
-<dataRoot>/BMO/
-  faces/          ← SVG overrides (any subset of the files below)
-  persona.txt     ← system-prompt override
-  voice.txt       ← TTS speaking-style override
-  quotes.txt      ← verbatim quotes override
-```
-
-If a file is absent or blank, BMO falls back to its built-in default.
-A pak update always ships the latest built-in defaults; overrides are
-untouched by updates, so your customisations persist.
+BMO's expressions are SVG files placed in the mod's `faces/` directory.
+An overlay mod (the `default` mod) overrides only the files you supply —
+missing expressions fall back to the built-in BMO art. A self-contained
+mod (any named mod that ships at least one `.svg`) owns its entire face
+set; missing expressions fold to the mod's own `neutral.svg`.
 
 ---
 
-## Face SVGs (`faces/`)
+## Illustrated expressions
 
-Place any of these files in the `faces/` directory to replace that expression.
-You do not need to provide all of them — missing files use the built-in default.
+| Neutral | Happy | Surprised | Love | Sad |
+| --- | --- | --- | --- | --- |
+| ![neutral](../images/faces/neutral.png) | ![happy](../images/faces/happy.png) | ![surprised](../images/faces/surprised.png) | ![love](../images/faces/love.png) | ![sad](../images/faces/sad.png) |
+
+---
+
+## Expression catalog
+
+Place any of these files in the mod's `faces/` directory to replace that expression.
+You do not need to provide all of them — missing files use the built-in default
+(overlay mods) or the mod's own `neutral.svg` (self-contained mods).
 
 | File | Expression | When shown |
 |------|-----------|------------|
@@ -58,7 +60,9 @@ You do not need to provide all of them — missing files use the built-in defaul
 | `adoring.svg` | Adoring | Shiny eyes, blush, sparkles |
 | `sparkle.svg` | Sparkle | Gold 4-point sparkle eyes |
 
-### SVG format
+---
+
+## SVG format
 
 Every face is a **full scene** in a `280 × 210` viewBox:
 
@@ -74,9 +78,10 @@ Every face is a **full scene** in a `280 × 210` viewBox:
 ```
 
 The viewBox is stretched non-uniformly to fill the screen (no letterboxing).
-On 16:9 devices (Smart Pro 1280×720) BMO appears slightly wider than on 4:3
-devices (Brick 1024×768) — design for the 4:3 reference and it will look fine
-on both.
+The TrimUI Smart Pro and Brick (tg5040) both run at 1024×768 (4:3). Design
+faces in a 4:3 proportion and they will render correctly on device. Verify
+resolution with `adb shell cat /sys/class/graphics/fb0/modes` if you are
+unsure about a target device.
 
 **Supported elements:** `path` (all commands), `rect`, `circle`, `ellipse`,
 `line`, `polygon`, `polyline`, `g`, `defs`/`use`, `transform`,
@@ -86,7 +91,9 @@ fill/stroke/opacity, linear and radial gradients.
 stylesheets, `pattern`, embedded images. A file that fails to parse is logged
 and the built-in default is used instead — BMO never shows a broken face.
 
-### Alias names
+---
+
+## Alias names
 
 You can also use alias filenames. For example, `cry.svg` resolves to `crying`,
 `shocked.svg` to `surprised`, and `tongue.svg` to `playful` when no exact
@@ -94,13 +101,15 @@ override exists. The lookup order is: exact filename → canonical name → buil
 default. (`happy`, `laugh`, `excited`, `sad`, and `angry` are now their own
 expressions, not aliases of `smile`/`concerned`.)
 
-### Speaking mouth (`speaking.svg`)
+---
 
-The built-in `speaking.svg` is a **Go template** that is rendered at 12
+## Speaking mouth (`speaking.svg`)
+
+The built-in `speaking.svg` is a **Go template** that is rendered at multiple
 mouth-openness levels to animate the speaking mouth with audio amplitude.
 
 If your override file contains `{{` template markers, BMO treats it as a
-template and renders all 12 levels. The available parameters are:
+template and renders all levels. The available parameters are:
 
 | Parameter | Description |
 |-----------|-------------|
@@ -115,49 +124,26 @@ speech — BMO will not animate the mouth, but your design will display correctl
 
 ---
 
-## Persona (`persona.txt`)
+## Previewing your faces
 
-Plain text. Replaces the system prompt sent to the AI on every turn.
-Keep it under ~1000 characters for best results.
-
----
-
-## Voice (`voice.txt`)
-
-Plain text. Replaces the TTS speaking-style instructions.
-
----
-
-## Quotes (`quotes.txt`)
-
-One quote per line (blank lines ignored). BMO displays these while idle.
-
----
-
-## Mod pack layout
-
-A complete mod pack can be distributed as a zip:
+Maintainers render the full embedded face set with:
 
 ```
-MyMod.zip
-  faces/
-    neutral.svg
-    smile.svg
-    speaking.svg   ← static or template
-  persona.txt
-  voice.txt
-  quotes.txt
+go run ./cmd/render-faces
 ```
 
-Unzip into `<dataRoot>/BMO/` and restart BMO. Remove or blank individual
-files to revert to the built-in defaults, or use the settings menu's
-**Restore Defaults** option to delete all overrides at once.
+On-device rendering uses the `oksvg` library. ImageMagick (`rsvg`) and browsers
+may render SVG arc sweeps differently. To catch device-specific differences
+before deploying, preview via `face.Rasterize` (the same path the device uses)
+rather than a desktop SVG viewer. In particular, degenerate arc sweeps that look
+correct in ImageMagick can render opposite on the device — use Bézier curves for
+rounded shapes where precision matters.
 
 ---
 
 ## Technical notes
 
-- Face files are read on each expression change; editing a file takes effect
+- Face files are re-read on each expression change; editing a file takes effect
   at the next expression transition (no restart needed).
 - Persona, voice, and quotes are re-read before each AI interaction; changes
   take effect immediately.
