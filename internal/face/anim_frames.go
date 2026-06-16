@@ -6,6 +6,14 @@ import (
 	"text/template"
 )
 
+// animFuncs provides minimal float arithmetic for templated SVG mouths, since
+// Go's text/template has no built-in add/sub/mul.
+var animFuncs = template.FuncMap{
+	"add": func(a, b float64) float64 { return a + b },
+	"sub": func(a, b float64) float64 { return a - b },
+	"mul": func(a, b float64) float64 { return a * b },
+}
+
 // buildFrames rasterizes every step of def into a full w×h ARGB buffer.
 func buildFrames(lib *Library, def AnimationDef, w, h int) ([][]uint32, error) {
 	n := def.Steps()
@@ -50,7 +58,7 @@ func frameSVG(lib *Library, def AnimationDef, i, n int) ([]byte, error) {
 
 // renderAnimTemplate executes a Go-template SVG with a single named parameter.
 func renderAnimTemplate(data []byte, param string, val float64) ([]byte, error) {
-	tmpl, err := template.New("anim").Parse(string(data))
+	tmpl, err := template.New("anim").Funcs(animFuncs).Parse(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("parse animation template: %w", err)
 	}
@@ -68,7 +76,7 @@ func renderRestSVG(data []byte) []byte {
 	if !bytes.Contains(data, []byte("{{")) {
 		return data
 	}
-	tmpl, err := template.New("rest").Parse(string(data))
+	tmpl, err := template.New("rest").Funcs(animFuncs).Parse(string(data))
 	if err != nil {
 		return data
 	}

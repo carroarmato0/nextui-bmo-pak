@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$m := or .m 0.0}}
   <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
@@ -8,4 +8,5 @@
   <path d="M 99.67 113 A 20 20 0 0 1 118 101 L 162 101 A 20 20 0 0 1 180.33 113 Z" fill="#e4e4e4"/>
   <path d="M 99.67 113 L 180.33 113 A 20 20 0 0 1 182 121 L 182 124 A 20 20 0 0 1 162 144 L 118 144 A 20 20 0 0 1 98 124 L 98 121 A 20 20 0 0 1 99.67 113 Z" fill="#1a7848"/>
   <path d="M 116 144 A 24 8 0 0 1 164 144 Z" fill="#16ae81"/>
+  <path d="M 112 118 Q 140 {{add 118.0 (mul 28.0 $m)}} 168 118 Z" fill="#1a1a1a"/>
 </svg>

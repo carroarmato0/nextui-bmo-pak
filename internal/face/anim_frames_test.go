@@ -9,6 +9,22 @@ import (
 
 const tinyRedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" fill="#ff0000"/></svg>`
 
+func TestAnimFuncsArithmetic(t *testing.T) {
+	in := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">` +
+		`{{$m := or .m 0.0}}<rect y="{{add 125.0 (mul 22.0 $m)}}"/></svg>`)
+	rest := renderRestSVG(in)
+	if !bytes.Contains(rest, []byte(`y="125"`)) {
+		t.Fatalf("rest arithmetic wrong: %s", rest)
+	}
+	open, err := renderAnimTemplate(in, "m", 1)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !bytes.Contains(open, []byte(`y="147"`)) {
+		t.Fatalf("open arithmetic wrong: %s", open)
+	}
+}
+
 func writeSVG(t *testing.T, dir, name, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name+".svg"), []byte(body), 0o644); err != nil {
