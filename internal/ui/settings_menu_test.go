@@ -540,3 +540,30 @@ func TestSettingsMenuCycleNonProviderDelegatesForward(t *testing.T) {
 		t.Fatalf("Cycle on timeout row did not advance (still %d)", before)
 	}
 }
+
+func TestSettingsMenuProviderRowShowsFocusWhenAI(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mode = config.ModeAI
+	cfg.STT = config.ProviderSet{Active: "a", Providers: []config.Provider{{Name: "a", Model: "whisper-1"}, {Name: "b", Model: "whisper-large"}}}
+	cfg.Chat = config.ProviderSet{Providers: []config.Provider{{Name: "c", Model: "gpt-4o-mini"}}}
+	cfg.TTS = config.ProviderSet{Providers: []config.Provider{{Name: "t", Model: "tts-1", Voice: "nova"}}}
+	m := NewSettingsMenu(cfg)
+
+	for _, idx := range []int{3, 4, 5} {
+		m.focusForTest(idx)
+		items := m.Overlay().Items
+		if !items[idx].Focused {
+			t.Errorf("provider row %d (%s) not marked Focused when selected in AI mode", idx, items[idx].Code)
+		}
+		// Other provider rows must not also report focus.
+		for _, other := range []int{3, 4, 5} {
+			if other != idx && items[other].Focused {
+				t.Errorf("row %d focused while focus is on %d", other, idx)
+			}
+		}
+		// Voice row (6) must never report focus.
+		if items[6].Focused {
+			t.Errorf("voice row 6 should never be focused")
+		}
+	}
+}
