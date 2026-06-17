@@ -490,6 +490,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	nextIdleUpdate := time.Now()
 	var errorSince time.Time
 	var flog faceLogger
+	var prewarmedEmotion string
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -574,6 +575,18 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		now := time.Now().UTC()
 		snap := machine.Snapshot()
 		expr := string(snap.Expression)
+
+		// Prewarm the LLM-directed emotion's animation as soon as it is known.
+		// SetEmotion fires before the TTS network round-trip, so the 6-frame
+		// build completes during synthesis and the mouth opens on the very first
+		// speaking frame instead of lagging while the engine builds on demand.
+		if em := string(snap.Emotion); em != "" && em != prewarmedEmotion {
+			prewarmedEmotion = em
+			if animEngine.Has(em) {
+				w, h := screen.Size()
+				go animEngine.Prewarm(em, w, h)
+			}
+		}
 
 		switch snap.Current {
 		case assistant.StateIdle:
