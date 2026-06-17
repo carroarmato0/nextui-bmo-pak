@@ -7,9 +7,11 @@ import (
 	"strings"
 )
 
-// FunctionalNames are the state-driven faces the assistant never requests as an
-// emotion. They remain overridable as art, but are excluded from the emotion
-// vocabulary advertised to the chat model.
+// FunctionalNames are the state- and idle-driven faces the assistant never
+// requests as an emotion: machine states (blink, listening, thinking, speaking,
+// sleeping) plus idle-scheduler animations (look_around, whistle). They remain
+// overridable as art, but are excluded from the emotion vocabulary advertised to
+// the chat model.
 var FunctionalNames = []string{ExprBlink, ExprListening, ExprThinking, ExprSpeaking, ExprSleeping, ExprLookAround, ExprWhistle}
 
 func isFunctional(name string) bool {
