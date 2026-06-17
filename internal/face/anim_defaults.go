@@ -55,5 +55,11 @@ func DefaultAnimations() map[string]AnimationDef {
 			Template: &TemplateSource{File: ExprLookAround, Param: "x", From: -1, To: 1, Steps: 5},
 			Driver:   Driver{Kind: DriverTime, FPS: 3, Mode: modePingpong},
 		},
+		// Idle-only, no audio: pursed mouth with a music note that floats up and
+		// fades. Loop over t ∈ {0..1} at 4 fps → note rises every ~1.5s.
+		ExprWhistle: {
+			Template: &TemplateSource{File: ExprWhistle, Param: "t", From: 0, To: 1, Steps: 6},
+			Driver:   Driver{Kind: DriverTime, FPS: 4, Mode: modeLoop},
+		},
 	}
 }

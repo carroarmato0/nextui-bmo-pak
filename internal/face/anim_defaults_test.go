@@ -86,6 +86,30 @@ func equalFrame(a, b []uint32) bool {
 	return true
 }
 
+func TestDefaultWhistleAnimation(t *testing.T) {
+	def, ok := DefaultAnimations()[ExprWhistle]
+	if !ok {
+		t.Fatal("whistle default missing")
+	}
+	if def.Template == nil || def.Template.Param != "t" || def.Template.Steps != 6 {
+		t.Fatalf("template=%+v", def.Template)
+	}
+	if def.Driver.Kind != DriverTime || def.Driver.Mode != modeLoop || def.Driver.FPS != 4 {
+		t.Fatalf("driver=%+v", def.Driver)
+	}
+	lib := NewLibrary(t.TempDir())
+	frames, err := buildFrames(lib, def, 80, 60)
+	if err != nil {
+		t.Fatalf("buildFrames: %v", err)
+	}
+	if len(frames) != 6 {
+		t.Fatalf("frames=%d want 6", len(frames))
+	}
+	if equalFrame(frames[0], frames[5]) {
+		t.Fatal("note-low and note-high whistle frames are identical")
+	}
+}
+
 func TestDefaultLookAroundAnimation(t *testing.T) {
 	def, ok := DefaultAnimations()[ExprLookAround]
 	if !ok {
