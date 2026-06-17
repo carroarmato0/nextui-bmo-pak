@@ -85,3 +85,27 @@ func equalFrame(a, b []uint32) bool {
 	}
 	return true
 }
+
+func TestDefaultLookAroundAnimation(t *testing.T) {
+	def, ok := DefaultAnimations()[ExprLookAround]
+	if !ok {
+		t.Fatal("look_around default missing")
+	}
+	if def.Template == nil || def.Template.Param != "x" || def.Template.Steps != 5 {
+		t.Fatalf("template=%+v", def.Template)
+	}
+	if def.Driver.Kind != DriverTime || def.Driver.Mode != modePingpong || def.Driver.FPS != 3 {
+		t.Fatalf("driver=%+v", def.Driver)
+	}
+	lib := NewLibrary(t.TempDir())
+	frames, err := buildFrames(lib, def, 80, 60)
+	if err != nil {
+		t.Fatalf("buildFrames: %v", err)
+	}
+	if len(frames) != 5 {
+		t.Fatalf("frames=%d want 5", len(frames))
+	}
+	if equalFrame(frames[0], frames[4]) {
+		t.Fatal("eyes-left and eyes-right frames are identical")
+	}
+}

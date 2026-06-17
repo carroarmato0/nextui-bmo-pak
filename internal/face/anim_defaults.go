@@ -49,5 +49,11 @@ func DefaultAnimations() map[string]AnimationDef {
 				Idle:  &Idle{FPS: 13, Mode: modePingpong},
 			},
 		},
+		// Idle-only, no audio: a gentle horizontal eye scan. Pingpong over
+		// x ∈ {-1,-0.5,0,0.5,1} at 3 fps gives a ~2.7s left↔right sweep.
+		ExprLookAround: {
+			Template: &TemplateSource{File: ExprLookAround, Param: "x", From: -1, To: 1, Steps: 5},
+			Driver:   Driver{Kind: DriverTime, FPS: 3, Mode: modePingpong},
+		},
 	}
 }
