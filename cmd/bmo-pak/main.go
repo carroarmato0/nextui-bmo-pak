@@ -118,6 +118,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 	defer logger.Close()
 
+	// oksvg (the SVG rasterizer) emits "Cannot process svg element ..." notices
+	// through Go's standard logger, which defaults to stderr — on device the same
+	// pipe to NextUI/minui as stdout. If that consumer stalls, those writes would
+	// block a rasterize goroutine. Send them to our structured logger's
+	// best-effort console sink instead so the device pipe can never wedge them.
+	log.SetOutput(logger.ConsoleWriter())
+	log.SetFlags(0)
+
 	logger.Infof("active mod: %s (self-contained=%t)", activeMod.ID, activeMod.SelfContained())
 
 	for _, secret := range cfg.Secrets() {
