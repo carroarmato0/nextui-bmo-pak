@@ -55,7 +55,9 @@ func renderOne(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	buf, err := face.Rasterize(svg, width, height)
+	// Assets may be Go-template SVGs whose param-driven attributes are only valid
+	// XML once executed; render the resting state before rasterizing.
+	buf, err := face.Rasterize(face.RenderRest(svg), width, height)
 	if err != nil {
 		return err
 	}

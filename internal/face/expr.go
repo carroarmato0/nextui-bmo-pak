@@ -40,6 +40,11 @@ const (
 	ExprDismayed  = "dismayed"
 	ExprAdoring   = "adoring"
 	ExprSparkle   = "sparkle"
+
+	// Idle-only animated faces. Never requested by the model (see
+	// FunctionalNames); driven by the idle scheduler in internal/assistant.
+	ExprLookAround = "look_around"
+	ExprWhistle    = "whistle"
 )
 
 // CanonicalNames lists every canonical expression name in a stable order.
@@ -52,6 +57,8 @@ var CanonicalNames = []string{
 	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
 	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
 	ExprAdoring, ExprSparkle,
+	// Idle-only animated faces (functional; excluded from the LLM vocab).
+	ExprLookAround, ExprWhistle,
 }
 
 // Canonical maps any expression alias the assistant may emit to its canonical
@@ -125,6 +132,10 @@ func Canonical(expr string) string {
 		return ExprAdoring
 	case "sparkle", "sparkles":
 		return ExprSparkle
+	case ExprLookAround, "lookaround":
+		return ExprLookAround
+	case ExprWhistle:
+		return ExprWhistle
 	default:
 		return ExprNeutral
 	}

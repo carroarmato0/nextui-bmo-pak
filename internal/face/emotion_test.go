@@ -40,6 +40,26 @@ func TestEmotionNamesExcludeFunctional(t *testing.T) {
 	}
 }
 
+func TestWhistleLookAroundAreFunctionalIdleFaces(t *testing.T) {
+	canon := map[string]bool{}
+	for _, n := range CanonicalNames {
+		canon[n] = true
+	}
+	for _, n := range []string{ExprLookAround, ExprWhistle} {
+		if !canon[n] {
+			t.Errorf("%q must be in CanonicalNames (warms static fallback)", n)
+		}
+		if !isFunctional(n) {
+			t.Errorf("%q must be functional (excluded from the LLM vocab)", n)
+		}
+	}
+	for _, n := range EmotionNames() {
+		if n == ExprLookAround || n == ExprWhistle {
+			t.Errorf("EmotionNames must not advertise idle face %q to the model", n)
+		}
+	}
+}
+
 func TestEmotionFaceNamesInDir(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string) {

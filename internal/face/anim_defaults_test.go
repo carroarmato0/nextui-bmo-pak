@@ -85,3 +85,45 @@ func equalFrame(a, b []uint32) bool {
 	}
 	return true
 }
+
+// TestDefaultIdleAnimations covers the time-driven idle faces (look_around,
+// whistle) that play during silence: each must be a template animation on a
+// DriverTime, build the expected number of frames, and visibly differ between
+// its first and last frame (the eye scan / the rising note actually move).
+func TestDefaultIdleAnimations(t *testing.T) {
+	cases := []struct {
+		name  string
+		param string
+		steps int
+		mode  string
+		fps   float64
+	}{
+		{ExprLookAround, "x", 5, modePingpong, 3},
+		{ExprWhistle, "t", 6, modeLoop, 4},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			def, ok := DefaultAnimations()[tc.name]
+			if !ok {
+				t.Fatalf("%s default missing", tc.name)
+			}
+			if def.Template == nil || def.Template.Param != tc.param || def.Template.Steps != tc.steps {
+				t.Fatalf("template=%+v", def.Template)
+			}
+			if def.Driver.Kind != DriverTime || def.Driver.Mode != tc.mode || def.Driver.FPS != tc.fps {
+				t.Fatalf("driver=%+v", def.Driver)
+			}
+			lib := NewLibrary(t.TempDir())
+			frames, err := buildFrames(lib, def, 80, 60)
+			if err != nil {
+				t.Fatalf("buildFrames: %v", err)
+			}
+			if len(frames) != tc.steps {
+				t.Fatalf("frames=%d want %d", len(frames), tc.steps)
+			}
+			if equalFrame(frames[0], frames[len(frames)-1]) {
+				t.Fatal("first and last idle frames are identical (no motion)")
+			}
+		})
+	}
+}
