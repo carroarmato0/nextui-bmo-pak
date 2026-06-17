@@ -105,6 +105,15 @@ func renderAnimTemplate(data []byte, param string, val float64) ([]byte, error) 
 	return buf.Bytes(), nil
 }
 
+// RenderRest returns the resting-state SVG for a (possibly templated) face
+// asset: the template executed with empty data, mirroring how the app rasterizes
+// a static fallback. Tooling that reads raw asset bytes (e.g. cmd/render-faces)
+// must call this first, since param-driven templates put template actions inside
+// attribute values and are not valid XML until executed.
+func RenderRest(data []byte) []byte {
+	return renderRestSVG(data)
+}
+
 // renderRestSVG executes a templated SVG with empty data (its resting state).
 // If the bytes contain no template syntax, they are returned unchanged. On any
 // parse/execute error the input is returned unchanged so callers degrade safely.
