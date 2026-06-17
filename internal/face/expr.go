@@ -57,6 +57,8 @@ var CanonicalNames = []string{
 	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
 	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
 	ExprAdoring, ExprSparkle,
+	// Idle-only animated faces (functional; excluded from the LLM vocab).
+	ExprLookAround, ExprWhistle,
 }
 
 // Canonical maps any expression alias the assistant may emit to its canonical
