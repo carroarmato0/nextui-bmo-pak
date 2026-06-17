@@ -4,5 +4,7 @@
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
   <circle cx="80"  cy="78" r="6.5" fill="#1a1a1a"/>
   <circle cx="199" cy="78" r="6.5" fill="#1a1a1a"/>
-  <path d="M 116 111 Q 140 {{add 125.0 (mul 22.0 $m)}} 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{if eq $m 0.0}}
+  <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{else}}{{template "talkmouth" $m}}{{end}}
 </svg>

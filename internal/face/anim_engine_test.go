@@ -23,11 +23,14 @@ func newTestEngine(t *testing.T) *Engine {
 	return NewEngine(lib, defs)
 }
 
-func waitReady(t *testing.T, e *Engine, expr string, w, h int) []uint32 {
+// testFrameDim is the square frame size used by the engine unit tests.
+const testFrameDim = 4
+
+func waitReady(t *testing.T, e *Engine, expr string) []uint32 {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if buf, ok := e.AnimFrame(expr, w, h, 0, 0, 1.0); ok {
+		if buf, ok := e.AnimFrame(expr, testFrameDim, testFrameDim, 0, 0, 1.0); ok {
 			return buf
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -55,7 +58,7 @@ func TestEngineReturnsFalseForStatic(t *testing.T) {
 
 func TestEngineBuildsAndServesFrames(t *testing.T) {
 	e := newTestEngine(t)
-	buf := waitReady(t, e, "talk", 4, 4)
+	buf := waitReady(t, e, "talk")
 	if len(buf) != 16 {
 		t.Fatalf("frame size=%d want 16", len(buf))
 	}
@@ -66,7 +69,7 @@ func TestEngineReadyReflectsBuild(t *testing.T) {
 	if e.Ready("talk") {
 		t.Fatal("not built yet")
 	}
-	waitReady(t, e, "talk", 4, 4)
+	waitReady(t, e, "talk")
 	if !e.Ready("talk") {
 		t.Fatal("should be ready after build")
 	}
@@ -92,6 +95,79 @@ func TestEngineConcurrentAccessRaceClean(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// newMultiTestEngine builds an engine with three independent animated
+// expressions (a, b, c), each a 2-frame amplitude animation.
+func newMultiTestEngine(t *testing.T) *Engine {
+	t.Helper()
+	dir := t.TempDir()
+	for _, n := range []string{"a_0", "a_1", "b_0", "b_1", "c_0", "c_1"} {
+		if err := os.WriteFile(filepath.Join(dir, n+".svg"), []byte(tinyRedSVG), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lib := NewLibraryMode(dir, true)
+	defs := map[string]AnimationDef{
+		"a": {Frames: []string{"a_0", "a_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
+		"b": {Frames: []string{"b_0", "b_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
+		"c": {Frames: []string{"c_0", "c_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
+	}
+	return NewEngine(lib, defs)
+}
+
+// TestEngineKeepsExpressionsResidentAcrossSwitch guards the rebuild-gap fix:
+// after building a second (and third) expression, an earlier one must STILL be
+// resident, so re-entering it serves a frame immediately with no rebuild gap.
+// The old single-slot engine evicted on every switch, which made the mouth lag
+// the audio whenever the rendered expression changed.
+func TestEngineKeepsExpressionsResidentAcrossSwitch(t *testing.T) {
+	e := newMultiTestEngine(t)
+	waitReady(t, e, "a")
+	waitReady(t, e, "b")
+	if !e.Ready("a") {
+		t.Fatal("expr a evicted after building b — rebuild-gap regression")
+	}
+	if _, ok := e.AnimFrame("a", testFrameDim, testFrameDim, 0, 0, 1.0); !ok {
+		t.Fatal("expr a frame not immediately available after switching to b")
+	}
+	waitReady(t, e, "c")
+	if !e.Ready("b") {
+		t.Fatal("expr b evicted after building c — rebuild-gap regression")
+	}
+}
+
+// TestEnginePinnedSurvivesEviction guards the goodbye-lag fix: a pinned
+// expression must stay resident no matter how many other animations are built
+// after it, so the clip-backed talking face never rebuilds (and lags) on exit.
+func TestEnginePinnedSurvivesEviction(t *testing.T) {
+	dir := t.TempDir()
+	names := []string{"p", "a", "b", "c", "d", "e"}
+	for _, n := range names {
+		for _, f := range []string{n + "_0", n + "_1"} {
+			if err := os.WriteFile(filepath.Join(dir, f+".svg"), []byte(tinyRedSVG), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	lib := NewLibraryMode(dir, true)
+	defs := map[string]AnimationDef{}
+	for _, n := range names {
+		defs[n] = AnimationDef{Frames: []string{n + "_0", n + "_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}}
+	}
+	e := NewEngine(lib, defs)
+	e.Pin("p")
+	waitReady(t, e, "p")
+	// Build well past the cap so an unpinned entry would be evicted.
+	for _, n := range []string{"a", "b", "c", "d", "e"} {
+		waitReady(t, e, n)
+	}
+	if !e.Ready("p") {
+		t.Fatal("pinned expr p was evicted — goodbye-lag regression")
+	}
+	if _, ok := e.AnimFrame("p", testFrameDim, testFrameDim, 0, 0, 1.0); !ok {
+		t.Fatal("pinned expr p frame not immediately available")
+	}
 }
 
 // TestSpeakingEmotionAnimates is the regression guard for WS1: with an emotion

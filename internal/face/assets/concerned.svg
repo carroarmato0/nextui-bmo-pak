@@ -6,5 +6,7 @@
   <circle cx="199" cy="82" r="6.5" fill="#1a1a1a"/>
   <path d="M 65 54 L 96 70"   stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
   <path d="M 183 70 L 214 54" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
-  <path d="M 116 111 Q 140 {{add 97.0 (mul 24.0 $m)}} 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{if eq $m 0.0}}
+  <path d="M 116 111 Q 140 97 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{else}}{{template "talkmouth" $m}}{{end}}
 </svg>

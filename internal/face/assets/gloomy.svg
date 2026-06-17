@@ -1,9 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$m := or .m 0.0}}
   <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
   <path d="M 61 80 Q 80 66 99 80" stroke="#1a1a1a" stroke-width="7" fill="none" stroke-linecap="round"/>
   <path d="M 180 80 Q 199 66 218 80" stroke="#1a1a1a" stroke-width="7" fill="none" stroke-linecap="round"/>
   <path d="M 214 52 C 219.1 58.0 217.6 63.4 214 63.4 C 210.4 63.4 208.9 58.0 214 52 Z" fill="#5bc8e8"/>
+  {{if eq $m 0.0}}
   <path d="M 116 113 Q 140 104 160 113" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{else}}{{template "talkmouth" $m}}{{end}}
 </svg>

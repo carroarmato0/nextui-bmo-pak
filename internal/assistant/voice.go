@@ -361,7 +361,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	ttsStart := time.Now()
-	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+	// Use batchCtx so the request timeout and a B-press cancel cover synthesis
+	// too — the thinking face is still showing here. With the parent ctx a slow
+	// TTS hung forever and B could not abort it.
+	speech, err := p.tts.Speak(batchCtx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        spoken,
@@ -369,7 +372,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
@@ -378,6 +381,14 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	speech = p.resampleTTS(speech)
+
+	// Synthesis is done: we are committed to speaking. Hand B over from
+	// CancelBatch (which aborts the request) to InterruptSpeech (which stops
+	// playback) by clearing the batch cancel now, so a B press during playback
+	// interrupts the audio instead of being swallowed as a no-op batch cancel.
+	p.batchMu.Lock()
+	p.batchCancel = nil
+	p.batchMu.Unlock()
 
 	return p.speak(ctx, speech)
 }
@@ -430,6 +441,31 @@ func (p *VoicePipeline) playFallbackClip(ctx context.Context, pcm []byte) error 
 // onSpoken, when non-nil, is invoked with the reply text once TTS has
 // succeeded (i.e. the remark will actually be heard), so the caller can
 // record it in the memory.
+// requestCtx bounds ctx by the per-request timeout so a hung chat/TTS cannot
+// freeze BMO on the thinking face. The caller must defer the returned cancel.
+// This is the proactive-remark counterpart to ProcessBatch's batchCtx.
+func (p *VoicePipeline) requestCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := p.requestTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+// remarkFail handles a chat/TTS error during a proactive remark. A timeout or
+// cancellation (reqCtx done while the app ctx is alive) abandons the remark
+// silently and returns to idle — the user never asked for it, so there is no
+// error clip. Anything else goes through the normal fail path.
+func (p *VoicePipeline) remarkFail(ctx, reqCtx context.Context, err error) error {
+	if reqCtx.Err() != nil && ctx.Err() == nil {
+		if p.machine != nil {
+			p.machine.Transition(EventRest)
+		}
+		return nil
+	}
+	return p.fail(err)
+}
+
 func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken func(reply string)) error {
 	if p == nil || !p.aiModeEnabled() {
 		return nil
@@ -447,19 +483,24 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		}
 	}
 
+	// Bound chat + TTS so a stalled provider can't freeze the thinking face for
+	// minutes; playback below stays on the parent ctx.
+	reqCtx, cancel := p.requestCtx(ctx)
+	defer cancel()
+
 	systemPrompt := p.currentSystemPrompt()
 	if p.logger != nil {
 		p.logger.Debugf("remark nudge: %q", nudge)
 		p.logger.Debugf("remark system prompt: %q", systemPrompt)
 	}
 	chatStart := time.Now()
-	chat, err := p.chat.Reply(ctx, providers.ChatRequest{
+	chat, err := p.chat.Reply(reqCtx, providers.ChatRequest{
 		Model:        p.chatModel,
 		Messages:     []providers.Message{{Role: "user", Content: nudge}},
 		SystemPrompt: systemPrompt,
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark Chat: %dms | tokens: %s",
@@ -485,7 +526,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	}
 
 	ttsStart := time.Now()
-	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+	speech, err := p.tts.Speak(reqCtx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        spoken,
@@ -493,7 +534,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
@@ -528,8 +569,13 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 		p.logger.Debugf("remark quote: %q", text)
 	}
 
+	// Bound TTS so a stalled provider can't freeze the thinking face; playback
+	// below stays on the parent ctx.
+	reqCtx, cancel := p.requestCtx(ctx)
+	defer cancel()
+
 	ttsStart := time.Now()
-	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+	speech, err := p.tts.Speak(reqCtx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        text,
@@ -537,7 +583,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
 		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",

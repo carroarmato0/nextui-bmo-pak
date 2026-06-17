@@ -33,6 +33,17 @@ import (
 
 const menuTitleSettings = "SETTINGS"
 
+// mouthReleaseDecay is the per-frame factor by which the mouth-amplitude
+// envelope eases toward a falling raw signal (attack is instant). At the ~60fps
+// face loop this is roughly a 100ms release time constant.
+const mouthReleaseDecay = 0.85
+
+// mouthFloorCap caps how far open the release envelope can hold excited/smile
+// during a gap: a thin opening (~level 1 of the six-step ladder). The mouth
+// still tracks the raw volume above this, so dynamics stay natural; the floor
+// only stops it snapping to the closed grin between syllables.
+const mouthFloorCap = 0.04
+
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
 		log.Fatal(err)
@@ -106,6 +117,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 	defer logger.Close()
+
+	// oksvg (the SVG rasterizer) emits "Cannot process svg element ..." notices
+	// through Go's standard logger, which defaults to stderr — on device the same
+	// pipe to NextUI/minui as stdout. If that consumer stalls, those writes would
+	// block a rasterize goroutine. Send them to our structured logger's
+	// best-effort console sink instead so the device pipe can never wedge them.
+	log.SetOutput(logger.ConsoleWriter())
+	log.SetFlags(0)
 
 	logger.Infof("active mod: %s (self-contained=%t)", activeMod.ID, activeMod.SelfContained())
 
@@ -490,6 +509,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	nextIdleUpdate := time.Now()
 	var errorSince time.Time
 	var flog faceLogger
+	var prewarmedEmotion string
+	var heldAmp float32 // smoothed mouth amplitude (fast attack, slow release)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -574,6 +595,18 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		now := time.Now().UTC()
 		snap := machine.Snapshot()
 		expr := string(snap.Expression)
+
+		// Prewarm the LLM-directed emotion's animation as soon as it is known.
+		// SetEmotion fires before the TTS network round-trip, so the 6-frame
+		// build completes during synthesis and the mouth opens on the very first
+		// speaking frame instead of lagging while the engine builds on demand.
+		if em := string(snap.Emotion); em != "" && em != prewarmedEmotion {
+			prewarmedEmotion = em
+			if animEngine.Has(em) {
+				w, h := screen.Size()
+				go animEngine.Prewarm(em, w, h)
+			}
+		}
 
 		switch snap.Current {
 		case assistant.StateIdle:
@@ -677,11 +710,34 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			overlay = convertOverlay(o)
 		}
 
-		var speakAmp float32
+		var rawAmp float32
 		if clipPlaying {
-			speakAmp = clipPlayer.CurrentAmplitude()
+			rawAmp = clipPlayer.CurrentAmplitude()
 		} else if audioPipeline != nil {
-			speakAmp = audioPipeline.CurrentAmplitude()
+			rawAmp = audioPipeline.CurrentAmplitude()
+		}
+		// Release-only envelope, kept warm every frame: rises instantly with the
+		// audio and eases down after it.
+		if rawAmp >= heldAmp {
+			heldAmp = rawAmp
+		} else {
+			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
+		}
+		// Excited and smile rest as a prominent closed grin that snapped in and
+		// out on every inter-syllable gap. Keep the mouth tracking the raw volume
+		// so it still reacts naturally, but never let it drop below a thin
+		// opening while the envelope is settling — this bridges the gaps without
+		// flattening the dynamics, then eases shut to the grin once the audio
+		// truly stops. Other emotions and the clip face use the raw RMS as-is.
+		speakAmp := rawAmp
+		if strings.EqualFold(expr, face.ExprExcited) || strings.EqualFold(expr, face.ExprSmile) {
+			floor := heldAmp
+			if floor > mouthFloorCap {
+				floor = mouthFloorCap
+			}
+			if speakAmp < floor {
+				speakAmp = floor
+			}
 		}
 		frame := renderer.FrameState{
 			Expression:      expr,
@@ -758,7 +814,12 @@ func buildAnimationEngine(lib *face.Library, m mod.Mod, logf func(string, ...any
 	for k, v := range modDefs {
 		defs[k] = v
 	}
-	return face.NewEngine(lib, defs)
+	eng := face.NewEngine(lib, defs)
+	// The talking face backs the hello/goodbye clips, which play at the start
+	// and end of a session. Pin it so a session's emotion churn cannot evict it
+	// and leave goodbye's mouth rebuilding (and lagging) while audio plays.
+	eng.Pin(face.ExprSpeaking)
+	return eng
 }
 
 func acquireLock(path string) (release func(), ok bool) {

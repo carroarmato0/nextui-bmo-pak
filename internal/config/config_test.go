@@ -185,7 +185,7 @@ func TestValidateRejectsUnknownProactiveTalk(t *testing.T) {
 func TestProactiveInterval(t *testing.T) {
 	cases := map[string]time.Duration{
 		ProactiveOff:        0,
-		ProactiveChatty:     7 * time.Minute,
+		ProactiveChatty:     3 * time.Minute,
 		ProactiveRegular:    30 * time.Minute,
 		ProactiveOccasional: time.Hour,
 		ProactiveRare:       3 * time.Hour,
