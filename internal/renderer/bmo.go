@@ -238,12 +238,27 @@ func (r *Renderer) ensureBuffer(w, h int32) error {
 // Blank fills the framebuffer with black and presents it. Called on shutdown so
 // the app does not leave its last rendered frame sitting in the scanout buffer
 // after SDL teardown (which otherwise lingers until the launcher repaints).
+//
+// It presents the black frame several times on purpose: the Brick's fbdev path
+// is single-buffered (one present clears it), but the Smart Pro's pvrsrvkm/EGL
+// backend is double/triple-buffered, so a single present only blacks the current
+// back buffer — the following swap then puts a stale buffer (still holding BMO's
+// face) back on scanout. Presenting black once per buffer in the swap chain
+// guarantees every buffer is black regardless of backend.
 func (r *Renderer) Blank() error {
 	if r == nil || r.ren == nil {
 		return fmt.Errorf("renderer is nil")
 	}
 	r.fillRectColor(0, 0, r.W, r.H, rgba{0, 0, 0, 255})
-	return r.present()
+	// 3 covers triple buffering (the deepest swap chain we expect); the extra
+	// presents are harmless on single-buffered backends.
+	var err error
+	for i := 0; i < 3; i++ {
+		if err = r.present(); err != nil {
+			return err
+		}
+	}
+	return err
 }
 
 func (r *Renderer) Close() {
