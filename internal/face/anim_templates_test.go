@@ -48,10 +48,14 @@ func TestEmotionTalkingMouthOpensWithTeeth(t *testing.T) {
 		return false
 	}
 
-	// Emotions whose natural resting mouth is a thin line (no teeth at rest).
+	// Emotions whose natural resting mouth is a thin line/curve (no teeth at
+	// rest); they open the shared teeth/tongue mouth only while speaking.
+	// Excited rests as a closed grin at the talking-mouth width so it opens
+	// vertically in place instead of snapping from a wider open grin.
 	lineMouth := map[string]bool{
 		ExprNeutral: true, ExprHappy: true, ExprSad: true,
 		ExprContent: true, ExprConcerned: true, ExprAngry: true,
+		ExprExcited: true,
 	}
 
 	for _, name := range []string{
