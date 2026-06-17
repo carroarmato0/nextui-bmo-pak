@@ -89,6 +89,20 @@ func (f *fakeProvider) Speak(ctx context.Context, req providers.SpeechRequest) (
 	return f.speech, f.err
 }
 
+// blockingTTS simulates a slow/hanging TTS that honours context cancellation:
+// it signals once entered, then blocks until the (batch) context is cancelled.
+type blockingTTS struct {
+	*fakeProvider
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingTTS) Speak(ctx context.Context, req providers.SpeechRequest) ([]byte, error) {
+	b.once.Do(func() { close(b.entered) })
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func TestVoicePipelineHappyPath(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
@@ -341,6 +355,90 @@ func TestInterruptSpeechCutsPlaybackShort(t *testing.T) {
 	}
 	if got := pipe.CurrentAmplitude(); got != 0 {
 		t.Fatalf("amplitude after interrupt = %v, want 0", got)
+	}
+}
+
+// TestCancelBatchDuringTTSReturnsToIdle guards the stuck-thinking bug: a B
+// press while TTS is synthesizing (the thinking face is still showing) must
+// abort the request and return the machine to idle. Previously TTS ran on the
+// parent context, so CancelBatch could not reach it and the face stuck.
+func TestCancelBatchDuringTTSReturnsToIdle(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	writer := &fakeWriter{}
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi there"}
+	tts := &blockingTTS{fakeProvider: &fakeProvider{}, entered: make(chan struct{})}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
+
+	result := make(chan error, 1)
+	go func() { result <- pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}) }()
+
+	select {
+	case <-tts.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("TTS synthesis never entered")
+	}
+	if got := m.State(); got != StateThinking {
+		t.Fatalf("state during TTS = %v, want thinking", got)
+	}
+	if !pipe.CancelBatch() {
+		t.Fatal("CancelBatch() = false during TTS, want true")
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("ProcessBatch() after cancel = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ProcessBatch did not return after cancel — thinking is stuck")
+	}
+	if got := m.State(); got != StateIdle {
+		t.Fatalf("state after cancel = %v, want idle", got)
+	}
+	if got := writer.writeCount(); got != 0 {
+		t.Fatalf("wrote %d audio chunks after a cancelled synthesis, want 0", got)
+	}
+}
+
+// TestCancelBatchYieldsToInterruptDuringPlayback guards the B handoff: once
+// synthesis is done and audio is playing, CancelBatch must report false so the
+// B handler falls through to InterruptSpeech instead of swallowing the press.
+func TestCancelBatchYieldsToInterruptDuringPlayback(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	writer := &fakeWriter{}
+	speech := make([]byte, 16000*2*2) // 2s mono @ 16kHz
+	for i := 0; i+1 < len(speech); i += 2 {
+		binary.LittleEndian.PutUint16(speech[i:i+2], uint16(int16(8192)))
+	}
+	stt := &fakeProvider{transcript: "hello"}
+	chat := &fakeProvider{reply: "hi"}
+	tts := &fakeProvider{speech: speech}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
+
+	result := make(chan error, 1)
+	go func() { result <- pipe.ProcessBatch(context.Background(), []byte{0x00, 0x40, 0x00, 0x40}) }()
+
+	// Wait until playback has actually started (a chunk written) so playCancel
+	// is registered — speak() sets StateSpeaking just before registering it.
+	deadline := time.Now().Add(2 * time.Second)
+	for writer.writeCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if m.State() != StateSpeaking {
+		t.Fatalf("state = %v, want speaking once playback started", m.State())
+	}
+	if pipe.CancelBatch() {
+		t.Fatal("CancelBatch() = true during playback, want false so B reaches InterruptSpeech")
+	}
+	if !pipe.InterruptSpeech() {
+		t.Fatal("InterruptSpeech() = false during playback, want true")
+	}
+	select {
+	case <-result:
+	case <-time.After(time.Second):
+		t.Fatal("ProcessBatch did not return after interrupt")
 	}
 }
 

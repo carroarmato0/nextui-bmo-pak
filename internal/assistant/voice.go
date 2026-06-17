@@ -361,7 +361,10 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	ttsStart := time.Now()
-	speech, err := p.tts.Speak(ctx, providers.SpeechRequest{
+	// Use batchCtx so the request timeout and a B-press cancel cover synthesis
+	// too — the thinking face is still showing here. With the parent ctx a slow
+	// TTS hung forever and B could not abort it.
+	speech, err := p.tts.Speak(batchCtx, providers.SpeechRequest{
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        spoken,
@@ -369,7 +372,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
-		return p.fail(err)
+		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
 		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
@@ -378,6 +381,14 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 	}
 
 	speech = p.resampleTTS(speech)
+
+	// Synthesis is done: we are committed to speaking. Hand B over from
+	// CancelBatch (which aborts the request) to InterruptSpeech (which stops
+	// playback) by clearing the batch cancel now, so a B press during playback
+	// interrupts the audio instead of being swallowed as a no-op batch cancel.
+	p.batchMu.Lock()
+	p.batchCancel = nil
+	p.batchMu.Unlock()
 
 	return p.speak(ctx, speech)
 }
