@@ -10,15 +10,15 @@ import (
 
 // newExpressions are the still-static faces from the Figma "BMO Face Templates"
 // set, in the same stable order as CanonicalNames. Each shipped asset must stay
-// byte-identical to the artifact approved in the browser preview. The core-set
-// emotions (happy, content, angry, sad, excited) are now param-driven templates
-// rather than frozen byte-art, so they are guarded by the animation tests
-// instead of this manifest.
+// byte-identical to the artifact approved in the browser preview. Emotions whose
+// resting mouth is incidental (surprised, love, shy, gloomy, unamused, annoyed,
+// skeptical, playful, dismayed, adoring, sparkle) are now param-driven templates
+// that open the shared talkmouth while speaking, so — like the core set — they
+// are guarded by the animation tests instead of this manifest. Only the
+// special-mouth faces, whose mouth IS the expression, remain frozen byte-art.
 var newExpressions = []string{
-	ExprSurprised, ExprLove, ExprShy, ExprCrying, ExprTeary, ExprGloomy,
-	ExprDizzy, ExprUnamused, ExprAnnoyed, ExprSkeptical, ExprPlayful,
-	ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch, ExprDismayed,
-	ExprAdoring, ExprSparkle,
+	ExprCrying, ExprTeary, ExprDizzy, ExprKiss,
+	ExprGrimace, ExprShout, ExprDead, ExprGlitch,
 }
 
 // TestNewExpressionFidelity guards that every shipped face is byte-identical to

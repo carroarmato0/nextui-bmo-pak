@@ -23,6 +23,20 @@ func DefaultAnimations() map[string]AnimationDef {
 		ExprConcerned: tmpl(ExprConcerned),
 		ExprSad:       tmpl(ExprSad),
 		ExprAngry:     tmpl(ExprAngry),
+		// Expressive emotions whose resting mouth is incidental: they keep their
+		// own mouth at silence and open the shared talkmouth while speaking, so the
+		// model can pick almost any emotion mid-reply and BMO still lip-syncs.
+		ExprPlayful:   tmpl(ExprPlayful),
+		ExprAdoring:   tmpl(ExprAdoring),
+		ExprSparkle:   tmpl(ExprSparkle),
+		ExprLove:      tmpl(ExprLove),
+		ExprShy:       tmpl(ExprShy),
+		ExprSurprised: tmpl(ExprSurprised),
+		ExprGloomy:    tmpl(ExprGloomy),
+		ExprAnnoyed:   tmpl(ExprAnnoyed),
+		ExprSkeptical: tmpl(ExprSkeptical),
+		ExprDismayed:  tmpl(ExprDismayed),
+		ExprUnamused:  tmpl(ExprUnamused),
 		// speaking is the dedicated talking face: vertical-bar eyes and an open
 		// mouth with teeth and tongue. Six discrete frames (closed→open) are
 		// driven by voice amplitude, with a gentle ping-pong idle oscillation
