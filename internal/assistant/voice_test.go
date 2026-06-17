@@ -871,6 +871,44 @@ func TestProcessBatchNetworkErrorPlaysErrorClip(t *testing.T) {
 	}
 }
 
+// TestSpeakRemarkTimeoutReturnsToIdle guards the proactive-remark freeze: a slow
+// or hung TTS must be bounded by the request timeout so BMO drops back to idle
+// instead of sitting frozen on the thinking face for minutes (a real 304s TTS
+// stall was observed on device). The remark is abandoned silently — no clip.
+func TestSpeakRemarkTimeoutReturnsToIdle(t *testing.T) {
+	machine := NewMachine()
+	machine.SetMode("ai")
+	w := &fakeWriter{}
+	chat := &fakeProvider{reply: "[excited] hi there"}
+	tts := &blockingTTS{fakeProvider: &fakeProvider{}, entered: make(chan struct{})}
+	p := NewVoicePipeline(machine, w, &fakeProvider{}, chat, tts,
+		"m", "m", "m", "v", "sys", 16000, 1, 2)
+	p.SetRequestTimeout(50 * time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() { done <- p.SpeakRemark(context.Background(), "say something", nil) }()
+
+	select {
+	case <-tts.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("remark TTS never entered")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SpeakRemark after timeout = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SpeakRemark hung past the request timeout — thinking is frozen")
+	}
+	if got := machine.State(); got != StateIdle {
+		t.Fatalf("state after remark timeout = %v, want idle", got)
+	}
+	if w.totalBytes() > 0 {
+		t.Fatal("expected no PCM written when the remark TTS times out")
+	}
+}
+
 func TestProcessBatchDoesNotLogSystemPromptByDefault(t *testing.T) {
 	m := NewMachine()
 	m.SetMode("ai")
