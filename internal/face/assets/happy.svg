@@ -5,7 +5,7 @@
   <circle cx="80" cy="78" r="6.5" fill="#1a1a1a"/>
   <circle cx="199" cy="78" r="6.5" fill="#1a1a1a"/>
   {{if eq $m 0.0}}
-  <path d="M 108 111 Q 140 134 172 111" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M 116 111 Q 140 131 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
   {{else if lt $m 0.3}}
   <rect x="106" y="106" width="68" height="12" rx="6" ry="6" fill="#1a1a1a"/>
   <path d="M 106.61 109.36 A 6.00 6.00 0 0 1 112.00 106.00 L 168.00 106.00 A 6.00 6.00 0 0 1 173.39 109.36 Z" fill="#e4e4e4"/>
