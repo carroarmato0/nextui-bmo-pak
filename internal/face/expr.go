@@ -40,6 +40,11 @@ const (
 	ExprDismayed  = "dismayed"
 	ExprAdoring   = "adoring"
 	ExprSparkle   = "sparkle"
+
+	// Idle-only animated faces. Never requested by the model (see
+	// FunctionalNames); driven by the idle scheduler in internal/assistant.
+	ExprLookAround = "look_around"
+	ExprWhistle    = "whistle"
 )
 
 // CanonicalNames lists every canonical expression name in a stable order.
@@ -125,6 +130,10 @@ func Canonical(expr string) string {
 		return ExprAdoring
 	case "sparkle", "sparkles":
 		return ExprSparkle
+	case ExprLookAround, "lookaround":
+		return ExprLookAround
+	case ExprWhistle:
+		return ExprWhistle
 	default:
 		return ExprNeutral
 	}

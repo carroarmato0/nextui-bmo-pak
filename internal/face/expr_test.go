@@ -22,7 +22,9 @@ func TestCanonical(t *testing.T) {
 		{"listening", ExprListening},
 		{"thinking", ExprThinking},
 		{"speaking", ExprSpeaking},
-		{"look_around", ExprNeutral},
+		{"look_around", ExprLookAround},
+		{"lookaround", ExprLookAround},
+		{"whistle", ExprWhistle},
 		// Reassigned: these no longer fold into smile/concerned.
 		{"happy", ExprHappy},
 		{"laugh", ExprNeutral}, // laugh dropped from vocabulary; folds to neutral
