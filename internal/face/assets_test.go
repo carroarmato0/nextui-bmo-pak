@@ -50,9 +50,10 @@ func TestEmbeddedFacesGeometry(t *testing.T) {
 		ExprSmile: {
 			{80, 77, dark[0], dark[1], dark[2], "left arc eye"},
 			{199, 77, dark[0], dark[1], dark[2], "right arc eye"},
-			{140, 106, 0xe4, 0xe4, 0xe4, "teeth"},
-			{140, 130, 0x1a, 0x78, 0x48, "mouth interior"},
-			{140, 141, 0x16, 0xae, 0x81, "tongue"},
+			{140, 120, dark[0], dark[1], dark[2], "grin curve apex"},
+			// Smile rests as a closed grin: the teeth/tongue mouth only
+			// appears while speaking, so the rest frame shows screen here.
+			{140, 106, screen[0], screen[1], screen[2], "no teeth at rest"},
 		},
 	}
 	for _, size := range [][2]int{{1024, 768}, {1280, 720}} {
