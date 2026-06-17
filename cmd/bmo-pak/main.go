@@ -311,6 +311,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	{
 		w, h := screen.Size()
 		go animEngine.Prewarm(face.ExprSpeaking, w, h)
+		// Build the pinned idle animations up front so the first idle whistle /
+		// look_around / sleeping moves immediately instead of holding a static
+		// frame.
+		go animEngine.Prewarm(face.ExprLookAround, w, h)
+		go animEngine.Prewarm(face.ExprWhistle, w, h)
+		go animEngine.Prewarm(face.ExprSleeping, w, h)
 	}
 
 	// Switching mods at runtime: re-point the prompt/quote paths (read per
@@ -337,6 +343,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		{
 			w, h := screen.Size()
 			go animEngine.Prewarm(face.ExprSpeaking, w, h)
+			go animEngine.Prewarm(face.ExprLookAround, w, h)
+			go animEngine.Prewarm(face.ExprWhistle, w, h)
+			go animEngine.Prewarm(face.ExprSleeping, w, h)
 		}
 
 		if audioSession != nil {
@@ -723,14 +732,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		} else {
 			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
 		}
-		// Excited and smile rest as a prominent closed grin that snapped in and
-		// out on every inter-syllable gap. Keep the mouth tracking the raw volume
-		// so it still reacts naturally, but never let it drop below a thin
+		// Excited, smile and angry rest as a prominent closed mouth that snapped
+		// in and out on every inter-syllable gap. Keep the mouth tracking the raw
+		// volume so it still reacts naturally, but never let it drop below a thin
 		// opening while the envelope is settling — this bridges the gaps without
-		// flattening the dynamics, then eases shut to the grin once the audio
+		// flattening the dynamics, then eases shut to the rest pose once the audio
 		// truly stops. Other emotions and the clip face use the raw RMS as-is.
 		speakAmp := rawAmp
-		if strings.EqualFold(expr, face.ExprExcited) || strings.EqualFold(expr, face.ExprSmile) {
+		if strings.EqualFold(expr, face.ExprExcited) || strings.EqualFold(expr, face.ExprSmile) || strings.EqualFold(expr, face.ExprAngry) {
 			floor := heldAmp
 			if floor > mouthFloorCap {
 				floor = mouthFloorCap
@@ -819,6 +828,15 @@ func buildAnimationEngine(lib *face.Library, m mod.Mod, logf func(string, ...any
 	// and end of a session. Pin it so a session's emotion churn cannot evict it
 	// and leave goodbye's mouth rebuilding (and lagging) while audio plays.
 	eng.Pin(face.ExprSpeaking)
+	// look_around, whistle and sleeping are the time-driven idle animations:
+	// unlike the amplitude faces (which rest at frame 0 during idle silence
+	// anyway), they visibly move on their own, so a rebuild gap reads as the
+	// animation "not starting". The idle rotation now cycles ~30 faces past the
+	// LRU, which would evict and re-lag them repeatedly — pin them so they stay
+	// resident and animate the instant they are shown.
+	eng.Pin(face.ExprLookAround)
+	eng.Pin(face.ExprWhistle)
+	eng.Pin(face.ExprSleeping)
 	return eng
 }
 

@@ -61,5 +61,13 @@ func DefaultAnimations() map[string]AnimationDef {
 			Template: &TemplateSource{File: ExprWhistle, Param: "t", From: 0, To: 1, Steps: 6},
 			Driver:   Driver{Kind: DriverTime, FPS: 4, Mode: modeLoop},
 		},
+		// Idle/quota-exhausted, no audio: flat eyes + three "Z"s of increasing
+		// size that drift up and to the left out of the mouth and fade — a
+		// cartoon snore that reads clearly as sleeping (vs the near-identical
+		// static content face). Loop over t ∈ {0..1} at 4 fps → ~1.5s per breath.
+		ExprSleeping: {
+			Template: &TemplateSource{File: ExprSleeping, Param: "t", From: 0, To: 1, Steps: 6},
+			Driver:   Driver{Kind: DriverTime, FPS: 4, Mode: modeLoop},
+		},
 	}
 }

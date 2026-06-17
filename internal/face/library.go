@@ -113,15 +113,22 @@ func (l *Library) Resolve(expr string) string {
 // supplies them, "embedded-default" when the built-in asset is used, or "none"
 // when nothing resolves (self-contained mod with no matching face). It performs
 // the same lookup as Bytes and does no logging.
+// Source origin strings returned by Source.
+const (
+	SourceModOverride     = "mod-override"
+	SourceEmbeddedDefault = "embedded-default"
+	SourceNone            = "none"
+)
+
 func (l *Library) Source(expr string) string {
 	data, fromDisk := l.Bytes(expr)
 	switch {
 	case fromDisk:
-		return "mod-override"
+		return SourceModOverride
 	case data != nil:
-		return "embedded-default"
+		return SourceEmbeddedDefault
 	default:
-		return "none"
+		return SourceNone
 	}
 }
 

@@ -8,16 +8,20 @@ import (
 
 func TestEmotionNamesExcludeFunctional(t *testing.T) {
 	names := EmotionNames()
-	// want = canonical names that are not functional faces. speaking is a
-	// functional face that is intentionally absent from CanonicalNames (its
-	// standalone asset is retired and it folds to neutral), so count the
-	// functionals actually present in CanonicalNames rather than assuming every
-	// functional name is canonical.
+	// want = canonical names that are neither functional nor static: a face is
+	// advertised only if it has an amplitude-driven (lip-syncing) animation.
+	// speaking is a functional face intentionally absent from CanonicalNames (its
+	// standalone asset is retired and it folds to neutral).
+	anims := DefaultAnimations()
 	want := 0
 	for _, n := range CanonicalNames {
-		if !isFunctional(n) {
-			want++
+		if isFunctional(n) {
+			continue
 		}
+		if def, ok := anims[n]; !ok || def.Driver.Kind != DriverAmplitude {
+			continue
+		}
+		want++
 	}
 	if len(names) != want {
 		t.Fatalf("EmotionNames len = %d, want %d", len(names), want)
@@ -29,6 +33,20 @@ func TestEmotionNamesExcludeFunctional(t *testing.T) {
 	for _, f := range FunctionalNames {
 		if in[f] {
 			t.Errorf("EmotionNames must not contain functional face %q", f)
+		}
+	}
+	// Static faces (no talk-mouth) must never reach the model: they would freeze
+	// mid-sentence. They stay available as idle poses only.
+	for _, s := range []string{ExprCrying, ExprTeary, ExprDizzy, ExprKiss, ExprGrimace, ExprShout, ExprDead, ExprGlitch} {
+		if in[s] {
+			t.Errorf("EmotionNames must not advertise static face %q to the model", s)
+		}
+	}
+	// Lip-syncing emotions must still be offered, including the ones with a
+	// prominent closed rest mouth.
+	for _, a := range []string{ExprHappy, ExprAngry, ExprExcited, ExprSmile, ExprLove} {
+		if !in[a] {
+			t.Errorf("EmotionNames must advertise lip-syncing face %q", a)
 		}
 	}
 	// Every emotion name must resolve to itself, or the model would be told

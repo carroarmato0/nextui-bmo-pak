@@ -5,12 +5,27 @@ import (
 	"sync"
 )
 
-// defaultEngineCap bounds how many distinct expression animations stay resident
-// at once. Each entry is up to 6 full-screen frames, so this trades memory for
-// avoiding rebuild gaps when the rendered expression switches (e.g. idle emotion
-// → speaking → emotion). The hot set in practice is {speaking, current emotion},
-// so a small cap keeps re-entry instant while bounding memory.
-const defaultEngineCap = 4
+const (
+	// minEngineCap is the smallest the adaptive residency cap will shrink to:
+	// the currently-spoken emotion plus one recent one stay warm even on a tiny
+	// budget or before the per-frame cost is known. Kept low because at the
+	// device's real 1280×720 output each 6-frame animation is ~22 MiB, and the
+	// idle face-cache + GL textures already sit at ~550 MiB on the ~1 GiB device
+	// — an over-generous floor pushed the speaking-time peak into the OOM-killer.
+	minEngineCap = 2
+	// animMemoryBudget bounds the TOTAL bytes of resident animation frames
+	// (pinned + unpinned). At 1280×720 a 6-frame animation is ~22 MiB, so holding
+	// every face resident (~500 MiB for the built-in set) would be unsafe on the
+	// ~1 GiB device. The engine derives its cap from this budget and the real
+	// frame size measured at the first build, so it self-adapts to the render
+	// resolution and to how many faces a mod actually declares — small/low-res
+	// mods keep more resident, large/high-res ones fewer — never exceeding the
+	// budget. 128 MiB ⇒ 4 pinned + ~2 unpinned ≈ 132 MiB at 1280×720, leaving
+	// headroom for the static cache, textures and TTS buffers. Note: amplitude
+	// faces are NOT built at idle (the renderer serves them from the static
+	// cache), so the unpinned slots only fill while BMO is actively speaking.
+	animMemoryBudget = 128 << 20 // 128 MiB
+)
 
 // animState holds one expression's built frames at a given size.
 type animState struct {
@@ -30,17 +45,59 @@ type Engine struct {
 	lib  *Library
 	defs map[string]AnimationDef
 
-	mu     sync.Mutex
-	cache  map[string]*animState
-	lru    []string        // unpinned expression keys, oldest first
-	pinned map[string]bool // keys exempt from eviction
-	cap    int
+	mu        sync.Mutex
+	cache     map[string]*animState
+	lru       []string        // unpinned expression keys, oldest first
+	pinned    map[string]bool // keys exempt from eviction
+	cap       int             // max unpinned residents; adaptive unless manualCap
+	budget    int             // total byte budget for resident frames (0 = unbounded)
+	perEntry  int             // bytes per resident animation, learned at first build
+	manualCap bool            // test override: skip adaptive recomputation
 }
 
 // NewEngine returns an Engine over lib with the given effective animation set
-// (keyed by lowercase expression name).
+// (keyed by lowercase expression name). The residency cap adapts to the number
+// of declared animations and the live frame size, bounded by animMemoryBudget;
+// see adaptiveCapLocked.
 func NewEngine(lib *Library, defs map[string]AnimationDef) *Engine {
-	return &Engine{lib: lib, defs: defs, cache: map[string]*animState{}, pinned: map[string]bool{}, cap: defaultEngineCap}
+	e := &Engine{lib: lib, defs: defs, cache: map[string]*animState{}, pinned: map[string]bool{}, budget: animMemoryBudget}
+	e.cap = e.adaptiveCapLocked() // provisional until the first build measures perEntry
+	return e
+}
+
+// adaptiveCapLocked computes how many unpinned animations may stay resident: as
+// many as the engine declares, bounded by the memory budget (after reserving
+// space for the pinned set) once the per-animation byte cost is known, and never
+// below minEngineCap. Until the first build measures perEntry it stays
+// conservative. Caller holds e.mu.
+func (e *Engine) adaptiveCapLocked() int {
+	if e.perEntry <= 0 {
+		return minEngineCap
+	}
+	want := len(e.defs)
+	if e.budget > 0 {
+		byBudget := e.budget/e.perEntry - len(e.pinned)
+		if byBudget < minEngineCap {
+			byBudget = minEngineCap
+		}
+		if want > byBudget {
+			want = byBudget
+		}
+	}
+	if want < minEngineCap {
+		want = minEngineCap
+	}
+	return want
+}
+
+// setCapForTest fixes the unpinned residency cap and disables adaptive
+// recomputation, so eviction tests stay deterministic regardless of frame size.
+func (e *Engine) setCapForTest(n int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.manualCap = true
+	e.cap = n
+	e.evictLocked()
 }
 
 // Pin marks expr's animation exempt from LRU eviction so it stays resident once
@@ -58,12 +115,28 @@ func (e *Engine) Pin(expr string) {
 			break
 		}
 	}
+	// Pinned frames count against the budget, so the unpinned cap shrinks as more
+	// faces are pinned.
+	if !e.manualCap {
+		e.cap = e.adaptiveCapLocked()
+		e.evictLocked()
+	}
 }
 
 // Has reports whether expr has a declared animation.
 func (e *Engine) Has(expr string) bool {
 	_, ok := e.defs[normExpr(expr)]
 	return ok
+}
+
+// IsTimeDriven reports whether expr is a self-animating (time-driven) face such
+// as whistle, look_around or sleeping. Amplitude-driven faces return false:
+// they rest at frame 0 in silence and only need the engine while speaking, so
+// the renderer can serve them from the cheap static cache when idle and avoid
+// building (and churning) their full frame set just to show a still pose.
+func (e *Engine) IsTimeDriven(expr string) bool {
+	def, ok := e.defs[normExpr(expr)]
+	return ok && def.Driver.Kind == DriverTime
 }
 
 // Prewarm asynchronously builds expr's frames at w×h so the first display is
@@ -129,6 +202,15 @@ func (e *Engine) ensureLocked(key string, def AnimationDef, w, h int) {
 		if err == nil {
 			st.frames = frames
 			st.ready = true
+			// Learn the real per-animation cost from the first successful build
+			// and size the cap to the memory budget at the live resolution.
+			if e.perEntry == 0 && len(frames) > 0 {
+				e.perEntry = st.w * st.h * 4 * len(frames)
+				if !e.manualCap {
+					e.cap = e.adaptiveCapLocked()
+					e.evictLocked()
+				}
+			}
 		}
 	}()
 }

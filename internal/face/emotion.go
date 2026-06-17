@@ -23,15 +23,27 @@ func isFunctional(name string) bool {
 	return false
 }
 
-// EmotionNames returns the built-in emotion faces: every canonical name that is
-// not a functional, state-driven face. This is the default vocabulary for the
-// embedded BMO and any mod that inherits embedded faces.
+// EmotionNames returns the built-in emotion faces the chat model may request:
+// every canonical name that is neither a functional, state-driven face nor a
+// static (non-lip-syncing) one. Faces without an amplitude-driven mouth (e.g.
+// crying, dead, dizzy, glitch, grimace, kiss, shout, teary) would sit frozen
+// while BMO talks, so they are kept out of the vocabulary; they remain valid
+// idle poses, just never something the model picks to speak behind. This is the
+// default vocabulary for the embedded BMO and any mod that inherits embedded
+// faces.
 func EmotionNames() []string {
+	anims := DefaultAnimations()
 	out := make([]string, 0, len(CanonicalNames))
 	for _, n := range CanonicalNames {
-		if !isFunctional(n) {
-			out = append(out, n)
+		if isFunctional(n) {
+			continue
 		}
+		// Only lip-syncing faces (mouth driven by voice amplitude) can talk;
+		// static faces have no animation def, idle faces are time-driven.
+		if def, ok := anims[n]; !ok || def.Driver.Kind != DriverAmplitude {
+			continue
+		}
+		out = append(out, n)
 	}
 	return out
 }

@@ -157,6 +157,9 @@ func TestEnginePinnedSurvivesEviction(t *testing.T) {
 	}
 	e := NewEngine(lib, defs)
 	e.Pin("p")
+	// Force a small cap so the unpinned builds below genuinely overflow it
+	// (tiny test frames would otherwise leave the adaptive cap large).
+	e.setCapForTest(4)
 	waitReady(t, e, "p")
 	// Build well past the cap so an unpinned entry would be evicted.
 	for _, n := range []string{"a", "b", "c", "d", "e"} {

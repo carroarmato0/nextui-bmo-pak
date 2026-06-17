@@ -368,7 +368,14 @@ func (r *Renderer) Size() (int, int) {
 // SVG face. Returns false if neither produced a usable frame (caller falls back
 // to drawPlainFace).
 func (r *Renderer) blitFace(expr string, frame FrameState, phase float64) bool {
-	if r.anims != nil {
+	// Drive the animation engine only when the face is actually moving: a
+	// self-animating time-driven idle face (whistle/look_around/sleeping), or
+	// any face while BMO is speaking (amplitude lip-sync). At idle, amplitude
+	// faces are identical to their static rest frame, so we serve them from the
+	// pre-warmed static cache instead of building (and churning through) their
+	// full frame set — which previously OOM-killed the device once the idle
+	// rotation began cycling the whole expressive set.
+	if r.anims != nil && (frame.Speaking || r.anims.IsTimeDriven(expr)) {
 		epoch := r.exprTr.epoch(expr, phase)
 		if buf, ok := r.anims.AnimFrame(expr, int(r.W), int(r.H), phase, epoch, frame.SpeakAmplitude); ok {
 			if len(buf) != len(r.pixels) {

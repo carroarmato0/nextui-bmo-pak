@@ -56,6 +56,23 @@ func (s *IdleScheduler) Next(idleFor time.Duration) IdleStep {
 	return IdleStep{Expression: picked, HoldFor: hold}
 }
 
+// idleExpressive is the full set of "bonus" emotion faces BMO can wear while
+// idling so the rotation never feels repetitive. It is every canonical emotion
+// the model can otherwise request, including the static ones (dead, glitch,
+// crying…): while idle these render as a brief held pose, while the time-driven
+// idle animations (look_around, whistle) and the amplitude faces sit at their
+// rest frame. They are interleaved with the always-present base idle faces in
+// poolFor below.
+var idleExpressive = []Expression{
+	ExpressionSmile, ExpressionHappy, ExpressionContent, ExpressionExcited,
+	ExpressionPlayful, ExpressionLove, ExpressionAdoring, ExpressionSparkle,
+	ExpressionShy, ExpressionSurprised, ExpressionKiss, ExpressionAngry,
+	ExpressionSad, ExpressionGloomy, ExpressionAnnoyed, ExpressionSkeptical,
+	ExpressionUnamused, ExpressionDismayed, ExpressionConcerned, ExpressionCrying,
+	ExpressionTeary, ExpressionDizzy, ExpressionGrimace, ExpressionShout,
+	ExpressionDead, ExpressionGlitch,
+}
+
 func (s *IdleScheduler) poolFor(idleFor time.Duration) ([]Expression, time.Duration) {
 	switch {
 	case idleFor < 2*time.Second:
@@ -63,10 +80,30 @@ func (s *IdleScheduler) poolFor(idleFor time.Duration) ([]Expression, time.Durat
 		// overridden to 400ms in Next(); this 1.8s hold is for non-blink steps.
 		return []Expression{ExpressionBlink, ExpressionNeutral, ExpressionBlink, ExpressionBlink}, 1800 * time.Millisecond
 	case idleFor < 8*time.Second:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionNeutral, ExpressionSmile, ExpressionHappy, ExpressionBlink, ExpressionWhistle}, 3000 * time.Millisecond
+		// Settling in: blinks and the signature idle animations are listed
+		// several times to stay frequent against the large expressive tail,
+		// which is mixed in (each face individually rare) for variety.
+		base := []Expression{
+			ExpressionBlink, ExpressionBlink, ExpressionBlink, ExpressionBlink,
+			ExpressionLookAround, ExpressionLookAround, ExpressionWhistle, ExpressionWhistle,
+			ExpressionNeutral, ExpressionNeutral,
+		}
+		return append(base, idleExpressive...), 3000 * time.Millisecond
 	case idleFor < 25*time.Second:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionContent, ExpressionExcited, ExpressionNeutral}, 4500 * time.Millisecond
+		base := []Expression{
+			ExpressionBlink, ExpressionBlink, ExpressionBlink, ExpressionBlink,
+			ExpressionLookAround, ExpressionLookAround, ExpressionWhistle, ExpressionWhistle,
+			ExpressionNeutral,
+		}
+		return append(base, idleExpressive...), 4500 * time.Millisecond
 	default:
-		return []Expression{ExpressionBlink, ExpressionLookAround, ExpressionSmile, ExpressionWhistle, ExpressionContent, ExpressionExcited, ExpressionConcerned, ExpressionSleeping, ExpressionBlink, ExpressionBlink}, 6000 * time.Millisecond
+		// Long idle: add dozing off; keep blinks and idle animations weighted so
+		// the dramatic expressive faces (and sleeping) stay rarer than a blink.
+		base := []Expression{
+			ExpressionBlink, ExpressionBlink, ExpressionBlink, ExpressionBlink, ExpressionBlink,
+			ExpressionLookAround, ExpressionLookAround, ExpressionWhistle, ExpressionWhistle,
+			ExpressionSleeping,
+		}
+		return append(base, idleExpressive...), 6000 * time.Millisecond
 	}
 }

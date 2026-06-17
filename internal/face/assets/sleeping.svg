@@ -1,8 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$t := or .t 0.0}}{{$dx := mul $t 18.0}}{{$dy := mul $t 26.0}}{{$op := sub 1.0 $t}}{{$op2 := mul $op 0.85}}{{$op3 := mul $op 0.7}}{{$z1x := sub 146.0 $dx}}{{$z1y := sub 92.0 $dy}}{{$z2x := sub 126.0 $dx}}{{$z2y := sub 68.0 $dy}}{{$z3x := sub 100.0 $dx}}{{$z3y := sub 42.0 $dy}}
   <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
   <line x1="65"  y1="78" x2="95"  y2="78" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round"/>
   <line x1="184" y1="78" x2="214" y2="78" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round"/>
   <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M {{printf "%.1f" $z1x}} {{printf "%.1f" $z1y}} L {{printf "%.1f" (add $z1x 10.0)}} {{printf "%.1f" $z1y}} L {{printf "%.1f" $z1x}} {{printf "%.1f" (add $z1y 10.0)}} L {{printf "%.1f" (add $z1x 10.0)}} {{printf "%.1f" (add $z1y 10.0)}}" stroke="#1a1a1a" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op}}"/>
+  <path d="M {{printf "%.1f" $z2x}} {{printf "%.1f" $z2y}} L {{printf "%.1f" (add $z2x 14.0)}} {{printf "%.1f" $z2y}} L {{printf "%.1f" $z2x}} {{printf "%.1f" (add $z2y 14.0)}} L {{printf "%.1f" (add $z2x 14.0)}} {{printf "%.1f" (add $z2y 14.0)}}" stroke="#1a1a1a" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op2}}"/>
+  <path d="M {{printf "%.1f" $z3x}} {{printf "%.1f" $z3y}} L {{printf "%.1f" (add $z3x 18.0)}} {{printf "%.1f" $z3y}} L {{printf "%.1f" $z3x}} {{printf "%.1f" (add $z3y 18.0)}} L {{printf "%.1f" (add $z3x 18.0)}} {{printf "%.1f" (add $z3y 18.0)}}" stroke="#1a1a1a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op3}}"/>
 </svg>
