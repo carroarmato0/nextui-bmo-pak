@@ -465,7 +465,7 @@ func SupportedProactiveTalkLevels() []string {
 func ProactiveInterval(level string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case ProactiveChatty:
-		return 7 * time.Minute
+		return 3 * time.Minute
 	case ProactiveRegular:
 		return 30 * time.Minute
 	case ProactiveOccasional:

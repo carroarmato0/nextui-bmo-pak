@@ -128,7 +128,7 @@ Levels (jittered: each fire schedules the next at `base ± 40%`):
 | Level | Base interval |
 |---|---|
 | Off | — (default) |
-| Chatty | ~7 min |
+| Chatty | ~3 min |
 | Regular | ~30 min |
 | Occasional | ~1 h |
 | Rare | ~3 h |
