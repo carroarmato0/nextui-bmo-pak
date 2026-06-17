@@ -586,25 +586,32 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			expr = string(currentIdleExpression)
 			if audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
-				if n, ok := deviceCtx.ProactiveNudge(); ok {
-					remarkPipeline := audioPipeline
-					go func() {
-						record := func(reply string) {
-							if err := memory.Append(devctx.MemoryEntry{When: time.Now().UTC(), Topic: n.Topic, Subject: n.Subject, Reply: reply}); err != nil {
-								logger.Warnf("memory save: %v", err)
-							}
+				remarkPipeline := audioPipeline
+				// ProactiveNudge refreshes device context (sqlite play-log,
+				// achievements cache, directory walks) when its cache is stale,
+				// which it always is by the time a remark is due. Run it inside
+				// the goroutine so that disk/DB I/O never blocks the render loop
+				// (doing it inline froze the animation for the duration).
+				go func() {
+					n, ok := deviceCtx.ProactiveNudge()
+					if !ok {
+						return
+					}
+					record := func(reply string) {
+						if err := memory.Append(devctx.MemoryEntry{When: time.Now().UTC(), Topic: n.Topic, Subject: n.Subject, Reply: reply}); err != nil {
+							logger.Warnf("memory save: %v", err)
 						}
-						var err error
-						if n.Verbatim {
-							err = remarkPipeline.SpeakVerbatim(ctx, n.Text, record)
-						} else {
-							err = remarkPipeline.SpeakRemark(ctx, n.Text, record)
-						}
-						if err != nil {
-							logger.Warnf("proactive remark failed: %v", err)
-						}
-					}()
-				}
+					}
+					var err error
+					if n.Verbatim {
+						err = remarkPipeline.SpeakVerbatim(ctx, n.Text, record)
+					} else {
+						err = remarkPipeline.SpeakRemark(ctx, n.Text, record)
+					}
+					if err != nil {
+						logger.Warnf("proactive remark failed: %v", err)
+					}
+				}()
 			}
 		case assistant.StateListening:
 			errorSince = time.Time{}
