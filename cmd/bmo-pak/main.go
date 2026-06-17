@@ -704,17 +704,22 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		} else if audioPipeline != nil {
 			rawAmp = audioPipeline.CurrentAmplitude()
 		}
-		// Fast-attack, slow-release envelope on the mouth amplitude. The raw RMS
-		// drops to ~0 in the brief gaps between syllables, which snapped the
-		// mouth shut to its closed rest frame and back open on every gap. Open
-		// instantly with the audio but ease closed, so the mouth only settles to
-		// the smile once the audio has stayed quiet for ~150ms.
+		// Fast-attack, slow-release envelope, kept warm every frame. Open
+		// instantly with the audio but ease closed.
 		if rawAmp >= heldAmp {
 			heldAmp = rawAmp
 		} else {
 			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
 		}
-		speakAmp := heldAmp
+		// Only the closed-grin emotions (excited, smile) use the smoothed
+		// amplitude: their prominent closed smile snapped in and out on every
+		// inter-syllable gap, so holding the mouth open bridges those gaps. The
+		// line-mouth emotions and the clip talking face keep the raw RMS so
+		// their lip-sync stays crisp and responsive.
+		speakAmp := rawAmp
+		if strings.EqualFold(expr, face.ExprExcited) || strings.EqualFold(expr, face.ExprSmile) {
+			speakAmp = heldAmp
+		}
 		frame := renderer.FrameState{
 			Expression:      expr,
 			Now:             now,
