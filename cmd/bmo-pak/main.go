@@ -33,12 +33,16 @@ import (
 
 const menuTitleSettings = "SETTINGS"
 
-// mouthReleaseDecay is the per-frame factor by which the smoothed mouth
-// amplitude eases toward a falling raw signal (attack is instant). At the
-// ~60fps face loop this is roughly a 100ms release time constant, enough to
-// hold the mouth open across inter-syllable gaps and close it only once the
-// audio has stayed quiet.
+// mouthReleaseDecay is the per-frame factor by which the mouth-amplitude
+// envelope eases toward a falling raw signal (attack is instant). At the ~60fps
+// face loop this is roughly a 100ms release time constant.
 const mouthReleaseDecay = 0.85
+
+// mouthFloorCap caps how far open the release envelope can hold excited/smile
+// during a gap: a thin opening (~level 1 of the six-step ladder). The mouth
+// still tracks the raw volume above this, so dynamics stay natural; the floor
+// only stops it snapping to the closed grin between syllables.
+const mouthFloorCap = 0.04
 
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
@@ -704,21 +708,28 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		} else if audioPipeline != nil {
 			rawAmp = audioPipeline.CurrentAmplitude()
 		}
-		// Fast-attack, slow-release envelope, kept warm every frame. Open
-		// instantly with the audio but ease closed.
+		// Release-only envelope, kept warm every frame: rises instantly with the
+		// audio and eases down after it.
 		if rawAmp >= heldAmp {
 			heldAmp = rawAmp
 		} else {
 			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
 		}
-		// Only the closed-grin emotions (excited, smile) use the smoothed
-		// amplitude: their prominent closed smile snapped in and out on every
-		// inter-syllable gap, so holding the mouth open bridges those gaps. The
-		// line-mouth emotions and the clip talking face keep the raw RMS so
-		// their lip-sync stays crisp and responsive.
+		// Excited and smile rest as a prominent closed grin that snapped in and
+		// out on every inter-syllable gap. Keep the mouth tracking the raw volume
+		// so it still reacts naturally, but never let it drop below a thin
+		// opening while the envelope is settling — this bridges the gaps without
+		// flattening the dynamics, then eases shut to the grin once the audio
+		// truly stops. Other emotions and the clip face use the raw RMS as-is.
 		speakAmp := rawAmp
 		if strings.EqualFold(expr, face.ExprExcited) || strings.EqualFold(expr, face.ExprSmile) {
-			speakAmp = heldAmp
+			floor := heldAmp
+			if floor > mouthFloorCap {
+				floor = mouthFloorCap
+			}
+			if speakAmp < floor {
+				speakAmp = floor
+			}
 		}
 		frame := renderer.FrameState{
 			Expression:      expr,
