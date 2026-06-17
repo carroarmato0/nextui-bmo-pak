@@ -30,16 +30,34 @@ type Engine struct {
 	lib  *Library
 	defs map[string]AnimationDef
 
-	mu    sync.Mutex
-	cache map[string]*animState
-	lru   []string // expression keys, oldest first
-	cap   int
+	mu     sync.Mutex
+	cache  map[string]*animState
+	lru    []string        // unpinned expression keys, oldest first
+	pinned map[string]bool // keys exempt from eviction
+	cap    int
 }
 
 // NewEngine returns an Engine over lib with the given effective animation set
 // (keyed by lowercase expression name).
 func NewEngine(lib *Library, defs map[string]AnimationDef) *Engine {
-	return &Engine{lib: lib, defs: defs, cache: map[string]*animState{}, cap: defaultEngineCap}
+	return &Engine{lib: lib, defs: defs, cache: map[string]*animState{}, pinned: map[string]bool{}, cap: defaultEngineCap}
+}
+
+// Pin marks expr's animation exempt from LRU eviction so it stays resident once
+// built. Used for the canonical talking face, which clips (hello/goodbye) show
+// at unpredictable times — without pinning a long session evicts it and the
+// mouth lags the clip audio while it rebuilds on demand.
+func (e *Engine) Pin(expr string) {
+	key := normExpr(expr)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pinned[key] = true
+	for i, k := range e.lru { // a pinned key never sits in the LRU list
+		if k == key {
+			e.lru = append(e.lru[:i], e.lru[i+1:]...)
+			break
+		}
+	}
 }
 
 // Has reports whether expr has a declared animation.
@@ -115,8 +133,12 @@ func (e *Engine) ensureLocked(key string, def AnimationDef, w, h int) {
 	}()
 }
 
-// touchLocked moves key to the most-recently-used end of the LRU list.
+// touchLocked moves key to the most-recently-used end of the LRU list. Pinned
+// keys are never tracked in the LRU, so they are never selected for eviction.
 func (e *Engine) touchLocked(key string) {
+	if e.pinned[key] {
+		return
+	}
 	for i, k := range e.lru {
 		if k == key {
 			e.lru = append(e.lru[:i], e.lru[i+1:]...)

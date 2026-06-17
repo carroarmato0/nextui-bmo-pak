@@ -33,6 +33,13 @@ import (
 
 const menuTitleSettings = "SETTINGS"
 
+// mouthReleaseDecay is the per-frame factor by which the smoothed mouth
+// amplitude eases toward a falling raw signal (attack is instant). At the
+// ~60fps face loop this is roughly a 100ms release time constant, enough to
+// hold the mouth open across inter-syllable gaps and close it only once the
+// audio has stayed quiet.
+const mouthReleaseDecay = 0.85
+
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
 		log.Fatal(err)
@@ -491,6 +498,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var errorSince time.Time
 	var flog faceLogger
 	var prewarmedEmotion string
+	var heldAmp float32 // smoothed mouth amplitude (fast attack, slow release)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -690,12 +698,23 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			overlay = convertOverlay(o)
 		}
 
-		var speakAmp float32
+		var rawAmp float32
 		if clipPlaying {
-			speakAmp = clipPlayer.CurrentAmplitude()
+			rawAmp = clipPlayer.CurrentAmplitude()
 		} else if audioPipeline != nil {
-			speakAmp = audioPipeline.CurrentAmplitude()
+			rawAmp = audioPipeline.CurrentAmplitude()
 		}
+		// Fast-attack, slow-release envelope on the mouth amplitude. The raw RMS
+		// drops to ~0 in the brief gaps between syllables, which snapped the
+		// mouth shut to its closed rest frame and back open on every gap. Open
+		// instantly with the audio but ease closed, so the mouth only settles to
+		// the smile once the audio has stayed quiet for ~150ms.
+		if rawAmp >= heldAmp {
+			heldAmp = rawAmp
+		} else {
+			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
+		}
+		speakAmp := heldAmp
 		frame := renderer.FrameState{
 			Expression:      expr,
 			Now:             now,
@@ -771,7 +790,12 @@ func buildAnimationEngine(lib *face.Library, m mod.Mod, logf func(string, ...any
 	for k, v := range modDefs {
 		defs[k] = v
 	}
-	return face.NewEngine(lib, defs)
+	eng := face.NewEngine(lib, defs)
+	// The talking face backs the hello/goodbye clips, which play at the start
+	// and end of a session. Pin it so a session's emotion churn cannot evict it
+	// and leave goodbye's mouth rebuilding (and lagging) while audio plays.
+	eng.Pin(face.ExprSpeaking)
+	return eng
 }
 
 func acquireLock(path string) (release func(), ok bool) {

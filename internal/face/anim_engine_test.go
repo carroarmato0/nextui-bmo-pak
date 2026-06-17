@@ -137,6 +137,39 @@ func TestEngineKeepsExpressionsResidentAcrossSwitch(t *testing.T) {
 	}
 }
 
+// TestEnginePinnedSurvivesEviction guards the goodbye-lag fix: a pinned
+// expression must stay resident no matter how many other animations are built
+// after it, so the clip-backed talking face never rebuilds (and lags) on exit.
+func TestEnginePinnedSurvivesEviction(t *testing.T) {
+	dir := t.TempDir()
+	names := []string{"p", "a", "b", "c", "d", "e"}
+	for _, n := range names {
+		for _, f := range []string{n + "_0", n + "_1"} {
+			if err := os.WriteFile(filepath.Join(dir, f+".svg"), []byte(tinyRedSVG), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	lib := NewLibraryMode(dir, true)
+	defs := map[string]AnimationDef{}
+	for _, n := range names {
+		defs[n] = AnimationDef{Frames: []string{n + "_0", n + "_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}}
+	}
+	e := NewEngine(lib, defs)
+	e.Pin("p")
+	waitReady(t, e, "p")
+	// Build well past the cap so an unpinned entry would be evicted.
+	for _, n := range []string{"a", "b", "c", "d", "e"} {
+		waitReady(t, e, n)
+	}
+	if !e.Ready("p") {
+		t.Fatal("pinned expr p was evicted — goodbye-lag regression")
+	}
+	if _, ok := e.AnimFrame("p", testFrameDim, testFrameDim, 0, 0, 1.0); !ok {
+		t.Fatal("pinned expr p frame not immediately available")
+	}
+}
+
 // TestSpeakingEmotionAnimates is the regression guard for WS1: with an emotion
 // set and a positive amplitude signal, the engine must return an animated frame
 // distinct from the rest frame. Before WS1, emotions had no animation defs so
