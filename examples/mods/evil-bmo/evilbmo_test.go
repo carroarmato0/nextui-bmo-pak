@@ -48,6 +48,16 @@ func TestEmotions(t *testing.T) {
 			t.Errorf("emotions missing key %q", key)
 		}
 	}
+	// Emotions that ship a dedicated face must have a matching SVG, so a
+	// typo'd key (e.g. "skeptcal") is caught here rather than silently
+	// folding to neutral on-device. The snob aliases (smug/mocking/gloating)
+	// intentionally have no face and are excluded.
+	for _, key := range []string{"neutral", "laugh", "angry", "skeptical", "unamused"} {
+		facePath := filepath.Join(modRoot(t), "faces", key+".svg")
+		if _, err := os.Stat(facePath); err != nil {
+			t.Errorf("emotion %q has no matching faces/%s.svg", key, key)
+		}
+	}
 }
 
 func TestPrompts(t *testing.T) {
