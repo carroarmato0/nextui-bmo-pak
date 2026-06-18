@@ -76,6 +76,23 @@ func TestEmotions(t *testing.T) {
 	}
 }
 
+// TestAudioClips checks the mod ships every spoken system clip as a non-empty
+// .pcm. The app folds a missing clip to the embedded default (the cheerful BMO
+// voice), so a missing file would silently break character rather than error.
+func TestAudioClips(t *testing.T) {
+	for _, name := range []string{"hello", "goodbye", "error", "timeout", "mod_error", "sleep", "wake"} {
+		p := filepath.Join(modRoot(t), "audio", name+".pcm")
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Errorf("missing audio clip %s.pcm: %v", name, err)
+			continue
+		}
+		if info.Size() < 1024 {
+			t.Errorf("audio clip %s.pcm is suspiciously small (%d bytes)", name, info.Size())
+		}
+	}
+}
+
 func TestPrompts(t *testing.T) {
 	root := modRoot(t)
 	for _, name := range []string{"persona.txt", "voice.txt", "quotes.txt"} {
