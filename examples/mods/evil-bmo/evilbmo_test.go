@@ -10,9 +10,25 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/carroarmato0/nextui-bmo/internal/config"
 	"github.com/carroarmato0/nextui-bmo/internal/face"
 	modpkg "github.com/carroarmato0/nextui-bmo/internal/mod"
 )
+
+// TestDeviceValidation mirrors exactly what the app runs when it loads a mod:
+// config.CheckOverrides validates that persona/voice/quotes are non-blank and
+// that every faces/*.svg is valid XML on the RAW bytes — before any template
+// execution. This is stricter than TestFacesRender (which RenderRest's first),
+// so it catches template syntax that is only valid after rendering, e.g. a
+// quote character inside an attribute value (cx="{{printf "%.1f" $x}}"). The
+// device rejects such a face as "not valid XML" and falls back to neutral.
+func TestDeviceValidation(t *testing.T) {
+	if errs := config.CheckOverrides(modRoot(t)); len(errs) != 0 {
+		for _, e := range errs {
+			t.Errorf("CheckOverrides (device mod-load validation): %v", e)
+		}
+	}
+}
 
 // modRoot is the directory this test runs in (the mod source dir). go test
 // sets the working directory to the package dir, so this is examples/mods/evil-bmo.

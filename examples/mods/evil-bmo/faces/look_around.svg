@@ -4,7 +4,7 @@
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#F25C5C"/>
   <path d="M 60 58 Q 80 52 98 58" stroke="#1a1a1a" stroke-width="5.5" fill="none" stroke-linecap="round"/>
   <path d="M 218 60 L 184 70" stroke="#1a1a1a" stroke-width="5.5" fill="none" stroke-linecap="round"/>
-  <circle cx="{{printf "%.1f" $lx}}" cy="78" r="6.5" fill="#1a1a1a"/>
-  <circle cx="{{printf "%.1f" $rx}}" cy="78" r="6.5" fill="#1a1a1a"/>
+  <circle cx="{{$lx}}" cy="78" r="6.5" fill="#1a1a1a"/>
+  <circle cx="{{$rx}}" cy="78" r="6.5" fill="#1a1a1a"/>
   <path d="M 110 120 Q 138 122 166 104" stroke="#1a1a1a" stroke-width="4.5" fill="none" stroke-linecap="round"/>
 </svg>
