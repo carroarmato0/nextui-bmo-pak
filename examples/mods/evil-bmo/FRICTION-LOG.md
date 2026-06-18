@@ -73,6 +73,26 @@ findings are a primary deliverable, separate from the mod itself.
   clips are fully in-character. *Fix upstreamed in this branch;* worth a note in
   any "audio clips" mod doc that clip generation uses the mod persona + voice.
 
+## Sparse-mod behavior gaps (found on device, fixed on a follow-up branch)
+
+- **Idle looked static for a sparse self-contained mod.** The idle scheduler
+  (`internal/assistant/idle.go`) cycles the full embedded emotion vocabulary
+  (~26 faces) with no knowledge of which faces the active mod ships. Evil BMO
+  has 8 faces, so ~80% of idle ticks folded to its `neutral` — the screen sat on
+  the smug smirk while the logs named the full variety. Not a render bug.
+  *Fix:* `IdleScheduler.SetAvailable` + `face.FaceNamesInDir`, restricting idle
+  to the mod's shipped faces (unfiltered for the default/overlay set). Lesson for
+  mod authors: a self-contained mod's idle is only as lively as the faces it
+  ships — include a few idle-friendly expressions (look_around, plus a couple of
+  emotion faces).
+
+- **A long modded goodbye clip was cut off on exit.** The shutdown waited a
+  fixed 8s for the goodbye clip; the generated evil farewell was ~10s, so it was
+  force-quit ~2s early. *Fix:* `clips.Player.ClipDuration` + size the wait to the
+  clip's own length (plus margin, capped) so any farewell is heard in full
+  without letting a stuck clip hang the exit. Lesson: clip length matters — keep
+  system clips short, or rely on the now-dynamic wait.
+
 ## Worked as documented (worth noting)
 
 - The `{{$m := or .m 0.0}}` … `{{template "talkmouth" $m}}` lip-sync idiom from
