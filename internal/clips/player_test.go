@@ -153,6 +153,34 @@ func TestPlaySequenceInterruptsPrevious(t *testing.T) {
 	}
 }
 
+func TestStopInterruptsInFlightClip(t *testing.T) {
+	dir := t.TempDir()
+	audioDir := filepath.Join(dir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 1s clip so it is still playing when Stop is called.
+	if err := os.WriteFile(filepath.Join(audioDir, "long.pcm"), make([]byte, 64000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+
+	done := p.PlaySequence(context.Background(), "long")
+	time.Sleep(20 * time.Millisecond) // let it start
+
+	p.Stop()
+	// Stop must have cancelled the clip: its done is closed promptly, well
+	// before the clip's natural 1s length.
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Stop did not interrupt the in-flight clip")
+	}
+	if p.Playing() {
+		t.Fatal("Playing() should be false after Stop")
+	}
+}
+
 func TestClipDuration(t *testing.T) {
 	dir := t.TempDir()
 	audioDir := filepath.Join(dir, "audio")

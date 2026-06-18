@@ -108,6 +108,19 @@ findings are a primary deliverable, separate from the mod itself.
   Fixed with an atomic `Machine.BeginRemark` and making X/Y interrupt the current
   reaction. Not mod-specific, but surfaced while exercising the mod's quotes.
 
+- **Shutdown was not authoritative — audio could play over the goodbye (app bug,
+  fixed).** The goodbye **clip** (`clips.Player`) and BMO's **speech**
+  (`VoicePipeline`) are independent paths into the same audio device, unserialized
+  against each other. While the goodbye clip played, the machine stayed idle, so a
+  proactive remark (or, on a fast exit, the startup `hello` clip) could start on
+  top of it; and a second exit press was swallowed by the `CancelBatch`/
+  `InterruptSpeech` guards (or merely set `running = false` without stopping the
+  clip), so the farewell kept playing during teardown. *Fix:* shutdown is now
+  authoritative — `beginShutdown` interrupts in-flight speech, the startup-clip and
+  proactive-remark paths are gated on `!shuttingDown`, and a second exit press
+  (B/MENU) calls `clipPlayer.Stop()` + `InterruptSpeech()` and quits immediately.
+  Surfaced while exercising the mod's longer farewell clip; not mod-specific.
+
 ## Worked as documented (worth noting)
 
 - The `{{$m := or .m 0.0}}` … `{{template "talkmouth" $m}}` lip-sync idiom from

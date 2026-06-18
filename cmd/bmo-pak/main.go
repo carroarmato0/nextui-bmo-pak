@@ -481,6 +481,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 		shuttingDown = true
 		shuttingDownAt = time.Now()
+		// Cut any in-flight remark so the farewell clip plays alone instead of
+		// mixing with a quote/proactive line on the separate speech path.
+		if audioPipeline != nil {
+			audioPipeline.InterruptSpeech()
+		}
 		if clipPlayer != nil {
 			goodbyeDone = clipPlayer.PlaySequence(ctx, "goodbye")
 			// Wait for the actual goodbye length so a long (e.g. modded)
@@ -526,6 +531,20 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates,
 	// X=BTN_WEST(308) speaks a random quote, Y=BTN_NORTH(307) steps the face gallery.
 	handleNav := func(action input.NavAction) {
+		// Once the farewell is under way, BMO is committed to exiting. A further
+		// exit press (B or MENU) means "skip it": cancel the goodbye clip and any
+		// speech and quit immediately and cleanly, rather than layering another
+		// action — or another farewell — on top. This runs before the overlay /
+		// batch / speech guards so an exit press always wins during shutdown.
+		if shuttingDown && (action == input.NavCancel || action == input.NavMenu) {
+			clipPlayer.Stop()
+			if audioPipeline != nil {
+				audioPipeline.InterruptSpeech()
+			}
+			running = false
+			return
+		}
+
 		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
 			beginShutdown()
@@ -708,7 +727,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// mutex rasterization. Capped at 10s so a failed warm still plays the
 		// audio. The clips run in the player's own goroutine, so audio pacing
 		// is independent of the render loop's frame rate.
-		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
+		if !startupClipFired && !shuttingDown && time.Now().After(startupFaceShownAt) &&
 			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
@@ -773,7 +792,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				nextIdleUpdate = now.Add(step.HoldFor)
 			}
 			expr = string(currentIdleExpression)
-			if !galleryActive && audioPipeline != nil && proactive.Due(now) {
+			if !galleryActive && !shuttingDown && audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
 				remarkPipeline := audioPipeline
 				// ProactiveNudge refreshes device context (sqlite play-log,
