@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$x := or .x 0.0}}{{$lx := add 80.0 (mul $x 14.0)}}{{$rx := add 199.0 (mul $x 14.0)}}
+  <rect x="0" y="0" width="280" height="210" fill="#D62828"/>
+  <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#D62828"/>
+  <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#F25C5C"/>
+  <path d="M 60 58 Q 80 52 98 58" stroke="#1a1a1a" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  <path d="M 218 60 L 184 70" stroke="#1a1a1a" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  <circle cx="{{$lx}}" cy="78" r="6.5" fill="#1a1a1a"/>
+  <circle cx="{{$rx}}" cy="78" r="6.5" fill="#1a1a1a"/>
+  <path d="M 110 120 Q 138 122 166 104" stroke="#1a1a1a" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+</svg>

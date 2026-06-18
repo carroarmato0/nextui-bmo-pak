@@ -42,11 +42,16 @@ func main() {
 	outDir := flag.String("out", "internal/clips/assets/audio", "Output directory for PCM files")
 	flag.Parse()
 
-	// If home-dir is set, load the runtime voice and instructions so clips
-	// match what the user hears from the API. Instructions resolve through the
-	// active mod's voice.txt, which falls back to the built-in default when the
-	// mod ships no override — so this defaults to the project's voice prompt and
-	// only diverges when a mod explicitly customizes it.
+	// systemPrompt drives the *words* of each clip. It defaults to BMO's
+	// built-in persona and is overridden by the active mod's persona.txt below,
+	// so a character mod's clips speak in-character (not just in its voice).
+	systemPrompt := config.DefaultSystemPrompt
+
+	// If home-dir is set, load the runtime voice, TTS instructions, and persona
+	// so clips match what the user hears from the API. Voice/instructions/persona
+	// resolve through the active mod's voice.txt / persona.txt, each falling back
+	// to the built-in default when the mod ships no override — so this defaults to
+	// the project's prompts and only diverges when a mod customizes them.
 	if *homeDir != "" {
 		cfgPath := config.Path(*homeDir)
 		cfg, err := config.Load(cfgPath)
@@ -55,6 +60,7 @@ func main() {
 		}
 		activeMod := mod.Active(mod.Discover(filepath.Join(*homeDir, "mods")), cfg.ActiveMod)
 		*instructions = config.LoadPromptFile(activeMod.VoicePath(), config.DefaultTTSInstructions)
+		systemPrompt = config.LoadPromptFile(activeMod.PersonaPath(), config.DefaultSystemPrompt)
 	}
 
 	resolvedKey := strings.TrimSpace(*key)
@@ -94,7 +100,7 @@ func main() {
 		chatResp, err := client.Reply(ctx, providers.ChatRequest{
 			Model:        *chatModel,
 			Messages:     []providers.Message{{Role: "user", Content: clip.nudge}},
-			SystemPrompt: config.DefaultSystemPrompt,
+			SystemPrompt: systemPrompt,
 		})
 		if err != nil {
 			log.Fatalf("chat %s: %v", clip.name, err)
