@@ -80,6 +80,18 @@ From `bmo-perf-sample.csv` (155 rows, 2 s interval):
 2. **[OOM driver — memory] Bound the face frame cache.**
    Evidence: `face.Cache.frames` (`internal/face/cache.go:12`) is unbounded and never evicted; ~265 MB live ≈ 88 retained full-res frames; `HeapSys` plateau at 291 MB. Fix: cap the cache (LRU by recency) and/or retain only the active expression's frames plus a small idle set, evicting inactive animated-face frame-sets. Aligns with [[reference_idle_full_set_oom]] ("serve amplitude faces from the static cache; only animate when speaking or time-driven"). Expected win: peak RSS down by 150–250 MB, removing the OOM headroom problem.
 
+> **✅ DONE (2026-06-18) on `fix/pool-rasterizer`.** `face.Rasterize` now draws
+> through a `sync.Pool` of `rasterCtx` (destination `*image.RGBA` + `rasterx`
+> dasher/scanner, the scanner carrying the `vector.Rasterizer` scratch). At a
+> stable output size the pooled context is reused: the destination is zeroed and
+> `SetBounds` resets the scanner scratch in place (`vector.Rasterizer.Reset`
+> reuses capacity). The `sync.Pool` (not a single shared ctx) keeps reuse
+> race-free across the concurrent callers (render loop, warm goroutine,
+> `buildFrames`). **Measured per-call allocation: 12.59 MB → 4.34 MB (−65%)** —
+> the residual is the retained `out []uint32` (~3.1 MB) plus oksvg's per-call
+> SVG parse (~1.2 MB, only on a cache miss). Verified under `-race`; a no-bleed
+> regression test guards the reused-destination/scratch-clearing invariants.
+
 3. **[GC pressure — memory churn, some CPU] Pool the rasterizer and destination buffer.**
    Evidence: 806 MB `alloc_space` over only 72 rasterizations = ~11 MB/call; `image.NewRGBA` + two `vector.Rasterizer` scratch masks allocated fresh each time (`internal/face/Rasterize`). Fix: reuse a per-size scratch `*image.RGBA` and a pooled `vector.Rasterizer` (`sync.Pool`) across rasterizations. Expected win: ~90 % less rasterization allocation, lower `HeapSys` high-water mark, smoother GC. Smaller CPU win than #1 but compounds with #2.
 

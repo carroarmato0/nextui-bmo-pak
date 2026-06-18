@@ -1,6 +1,20 @@
 package face
 
-import "testing"
+import (
+	"bytes"
+	"fmt"
+	"runtime"
+	"sync"
+	"testing"
+)
+
+// altSVG is intentionally different from testSVG (different colours and a
+// smaller shape) so a reused, un-zeroed destination or un-cleared scanner
+// scratch would visibly bleed across calls.
+const altSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
+  <rect x="0" y="0" width="280" height="210" fill="#00ff00"/>
+  <circle cx="70" cy="52" r="15" fill="#ffffff"/>
+</svg>`
 
 const testSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
   <rect x="0" y="0" width="280" height="210" fill="#ff0000"/>
@@ -67,4 +81,143 @@ func TestRasterizeGarbageInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for garbage input")
 	}
+}
+
+// TestRasterizeReuseNoBleed guards the pooling invariant: rasterizing a second,
+// different SVG between two renders of the same SVG must not change the result.
+// A reused destination that isn't zeroed, or scanner scratch that isn't
+// cleared, would let altSVG's pixels bleed into the second render of testSVG.
+func TestRasterizeReuseNoBleed(t *testing.T) {
+	const w, h = 256, 192
+	first, err := Rasterize([]byte(testSVG), w, h)
+	if err != nil {
+		t.Fatalf("first Rasterize: %v", err)
+	}
+	if _, err := Rasterize([]byte(altSVG), w, h); err != nil {
+		t.Fatalf("interleaved Rasterize: %v", err)
+	}
+	again, err := Rasterize([]byte(testSVG), w, h)
+	if err != nil {
+		t.Fatalf("repeat Rasterize: %v", err)
+	}
+	if len(first) != len(again) {
+		t.Fatalf("length drift: %d vs %d", len(first), len(again))
+	}
+	for i := range first {
+		if first[i] != again[i] {
+			t.Fatalf("pixel %d differs after interleaved render: %08x vs %08x", i, first[i], again[i])
+		}
+	}
+}
+
+// TestRasterizeSizeChangeInterleave exercises the rebuild path: a render at a
+// different size between two same-size renders must still produce correct,
+// identical output for the repeated size.
+func TestRasterizeSizeChangeInterleave(t *testing.T) {
+	const w, h = 200, 150
+	first, err := Rasterize([]byte(testSVG), w, h)
+	if err != nil {
+		t.Fatalf("first Rasterize: %v", err)
+	}
+	if _, err := Rasterize([]byte(testSVG), 320, 240); err != nil {
+		t.Fatalf("different-size Rasterize: %v", err)
+	}
+	again, err := Rasterize([]byte(testSVG), w, h)
+	if err != nil {
+		t.Fatalf("repeat Rasterize: %v", err)
+	}
+	for i := range first {
+		if first[i] != again[i] {
+			t.Fatalf("pixel %d differs after size-change render: %08x vs %08x", i, first[i], again[i])
+		}
+	}
+	// Spot-check correctness survived the rebuild path.
+	assertColor(t, again, w, h, 140, 105, 0, 0, 0xff, "circle centre")
+	assertColor(t, again, w, h, 5, 5, 0xff, 0, 0, "background corner")
+}
+
+// TestRasterizeConcurrent runs many rasterizations across goroutines (with
+// pooled scratch shared via sync.Pool) and asserts each matches its sequential
+// reference. Run under -race to catch pool misuse / shared-state bugs.
+func TestRasterizeConcurrent(t *testing.T) {
+	const w, h = 192, 144
+	svgs := [][]byte{[]byte(testSVG), []byte(altSVG)}
+	refs := make([][]uint32, len(svgs))
+	for i, s := range svgs {
+		buf, err := Rasterize(s, w, h)
+		if err != nil {
+			t.Fatalf("reference Rasterize %d: %v", i, err)
+		}
+		refs[i] = buf
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for g := 0; g < 32; g++ {
+		wg.Add(1)
+		go func(sel int) {
+			defer wg.Done()
+			buf, err := Rasterize(svgs[sel], w, h)
+			if err != nil {
+				errs <- fmt.Errorf("goroutine Rasterize: %w", err)
+				return
+			}
+			if !bytes.Equal(uint32sAsBytes(buf), uint32sAsBytes(refs[sel])) {
+				errs <- fmt.Errorf("goroutine result for svg %d differs from reference", sel)
+			}
+		}(g % len(svgs))
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+// TestRasterizeAllocationBounded is the optimization-driving test: at a stable
+// output size, repeated rasterizations must not re-allocate the destination
+// image and scanner scratch on every call. With per-call scratch reuse, only
+// the retained result buffer (w*h*4 bytes) plus small SVG-parse overhead is
+// allocated, well under the unpooled ~3× that.
+func TestRasterizeAllocationBounded(t *testing.T) {
+	const w, h = 1024, 768
+	const iters = 8
+	// Warm the pool so the first (allocating) call isn't counted.
+	if _, err := Rasterize([]byte(testSVG), w, h); err != nil {
+		t.Fatalf("warmup Rasterize: %v", err)
+	}
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	for i := 0; i < iters; i++ {
+		if _, err := Rasterize([]byte(testSVG), w, h); err != nil {
+			t.Fatalf("Rasterize iter %d: %v", i, err)
+		}
+	}
+	runtime.ReadMemStats(&after)
+
+	perOp := (after.TotalAlloc - before.TotalAlloc) / iters
+	resultBytes := uint64(w * h * 4) // the unavoidable retained out buffer
+	// Allow result buffer + generous parse/overhead headroom, but far below
+	// the unpooled footprint (result + dest image + scanner scratch ≈ 3×).
+	limit := resultBytes * 2
+	if perOp > limit {
+		t.Errorf("per-call allocation %d bytes exceeds %d (result buffer %d); scratch not being reused",
+			perOp, limit, resultBytes)
+	}
+	t.Logf("per-call allocation: %d bytes (result buffer %d)", perOp, resultBytes)
+}
+
+// uint32sAsBytes reinterprets a uint32 slice as bytes for a fast equality
+// check; it is only used in tests.
+func uint32sAsBytes(s []uint32) []byte {
+	b := make([]byte, len(s)*4)
+	for i, v := range s {
+		b[i*4] = byte(v)
+		b[i*4+1] = byte(v >> 8)
+		b[i*4+2] = byte(v >> 16)
+		b[i*4+3] = byte(v >> 24)
+	}
+	return b
 }
