@@ -60,8 +60,11 @@ mod own its entire face set. Expressions we do not ship fold to the mod's
 own `neutral.svg` (the smug smirk), which is on-brand, so partial
 coverage is acceptable and intentional.
 
-**Staging & deploy:**
-- Build/author assets into `./dist/mods/evil-bmo/`.
+**Source location & deploy:**
+- Canonical, tracked source: `examples/mods/evil-bmo/` (committed on the
+  feature branch — `dist/` is gitignored build output and cannot hold the
+  reviewable/testable source).
+- Stage for deploy: `cp -r examples/mods/evil-bmo dist/mods/evil-bmo`.
 - `adb push dist/mods/evil-bmo /mnt/SDCARD/.userdata/tg5040/BMO/mods/`
 - On device: **Settings → MOD → Evil BMO**.
 
