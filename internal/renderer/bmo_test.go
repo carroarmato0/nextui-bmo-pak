@@ -135,22 +135,62 @@ func TestShouldPresentResizeCountsAsChange(t *testing.T) {
 
 func TestFrameSignatureStaticVsAnimating(t *testing.T) {
 	r := &Renderer{W: 1024, H: 768} // anims nil → not time-driven
-	if got := r.frameSignature(FrameState{Expression: "neutral"}, "neutral"); got != "neutral|1024|768" {
+	if got := r.frameSignature(FrameState{Expression: "neutral"}, "neutral", 0, 0); got != "neutral|1024|768" {
 		t.Fatalf("static sig = %q, want neutral|1024|768", got)
 	}
 	// Every per-tick-animating case must yield "" (never skippable).
-	if r.frameSignature(FrameState{Speaking: true}, "neutral") != "" {
+	if r.frameSignature(FrameState{Speaking: true}, "neutral", 0, 0) != "" {
 		t.Error("speaking must not be skippable")
 	}
-	if r.frameSignature(FrameState{QuotaExhausted: true}, "neutral") != "" {
+	if r.frameSignature(FrameState{QuotaExhausted: true}, "neutral", 0, 0) != "" {
 		t.Error("quota clock must not be skippable")
 	}
-	if r.frameSignature(FrameState{}, "sleeping") != "" {
+	if r.frameSignature(FrameState{}, "sleeping", 0, 0) != "" {
 		t.Error("sleeping (animated Z marks) must not be skippable")
 	}
 	ov := OverlayState{Visible: true}
-	if r.frameSignature(FrameState{Overlay: &ov}, "neutral") != "" {
+	if r.frameSignature(FrameState{Overlay: &ov}, "neutral", 0, 0) != "" {
 		t.Error("open overlay must not be skippable")
+	}
+}
+
+// stepStub is a minimal face.StepSource: it reports a fixed set of expressions
+// as time-driven and returns a scripted step so frameSignature's time-driven
+// branch can be exercised without building real animations.
+type stepStub struct {
+	timeDriven map[string]bool
+	step       int
+	ok         bool
+}
+
+func (s stepStub) IsTimeDriven(expr string) bool { return s.timeDriven[expr] }
+func (s stepStub) FrameStep(expr string, w, h int, clock, epoch float64, signal float32) (int, bool) {
+	return s.step, s.ok
+}
+func (s stepStub) AnimFrame(expr string, w, h int, clock, epoch float64, signal float32) ([]uint32, bool) {
+	return nil, false
+}
+
+func TestFrameSignatureTimeDrivenFoldsStep(t *testing.T) {
+	r := &Renderer{W: 1024, H: 768}
+	r.anims = stepStub{timeDriven: map[string]bool{"look_around": true}, step: 3, ok: true}
+
+	// A built time-driven face folds its current step into the signature, so a
+	// held step stays skippable and an advanced step is a distinct signature.
+	if got := r.frameSignature(FrameState{Expression: "look_around"}, "look_around", 1.0, 0); got != "look_around|step=3|1024|768" {
+		t.Fatalf("time-driven sig = %q, want look_around|step=3|1024|768", got)
+	}
+
+	// Same expression, different step → different signature (forces a rebuild).
+	r.anims = stepStub{timeDriven: map[string]bool{"look_around": true}, step: 4, ok: true}
+	if got := r.frameSignature(FrameState{Expression: "look_around"}, "look_around", 1.25, 0); got == "look_around|step=3|1024|768" {
+		t.Fatal("advancing the step must change the signature")
+	}
+
+	// Not yet built (ok=false) → "" so the static fallback keeps rebuilding.
+	r.anims = stepStub{timeDriven: map[string]bool{"look_around": true}, step: 0, ok: false}
+	if got := r.frameSignature(FrameState{Expression: "look_around"}, "look_around", 1.0, 0); got != "" {
+		t.Fatalf("unbuilt time-driven sig = %q, want empty", got)
 	}
 }
 

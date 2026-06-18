@@ -177,6 +177,36 @@ func (e *Engine) AnimFrame(expr string, w, h int, clock, epoch float64, signal f
 	return frames[step], true
 }
 
+// FrameStep reports the frame index AnimFrame would return for expr under the
+// given driver inputs, without copying any pixels. ok is false when expr is
+// static or its animation is not yet built at this size — the same readiness
+// condition as AnimFrame, so a caller can treat "not ready" as "no stable step,
+// rebuild". Unlike AnimFrame it does NOT start a build (that stays AnimFrame's
+// job); it is a pure read used by the renderer to fold a time-driven
+// animation's current step into its frame signature, so a frame being held
+// between steps is skipped instead of re-rendered every tick.
+func (e *Engine) FrameStep(expr string, w, h int, clock, epoch float64, signal float32) (int, bool) {
+	key := normExpr(expr)
+	def, ok := e.defs[key]
+	if !ok {
+		return 0, false
+	}
+	e.mu.Lock()
+	st := e.cache[key]
+	if st == nil || !st.ready || st.w != w || st.h != h {
+		e.mu.Unlock()
+		return 0, false
+	}
+	n := len(st.frames)
+	e.mu.Unlock()
+
+	step := def.Driver.Step(clock, epoch, signal, n)
+	if step < 0 || step >= n {
+		return 0, false
+	}
+	return step, true
+}
+
 // ensureLocked starts a background build for (key,w,h) unless a matching ready or
 // in-flight build already exists, and marks the key most-recently-used. Caller
 // holds e.mu.

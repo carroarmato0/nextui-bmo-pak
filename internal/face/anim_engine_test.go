@@ -201,3 +201,77 @@ func TestSpeakingEmotionAnimates(t *testing.T) {
 		t.Fatal("mouth did not move between silence and full voice (regression)")
 	}
 }
+
+// newTimeDrivenEngine builds an engine with a two-frame, time-driven "loop"
+// animation whose frames are visually distinct, so a step index can be
+// correlated to the pixels AnimFrame returns.
+func newTimeDrivenEngine(t *testing.T) *Engine {
+	t.Helper()
+	const greenSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" fill="#00ff00"/></svg>`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "look_0.svg"), []byte(tinyRedSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "look_1.svg"), []byte(greenSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := NewLibraryMode(dir, true)
+	defs := map[string]AnimationDef{
+		// FPS 4, loop: step = int(clock*4) % 2.
+		"look": {Frames: []string{"look_0", "look_1"}, Driver: Driver{Kind: DriverTime, FPS: 4, Mode: modeLoop}},
+	}
+	return NewEngine(lib, defs)
+}
+
+func TestFrameStepFalseForStatic(t *testing.T) {
+	e := newTimeDrivenEngine(t)
+	if _, ok := e.FrameStep("neutral", testFrameDim, testFrameDim, 0, 0, 0); ok {
+		t.Fatal("FrameStep should report false for a static expression")
+	}
+}
+
+func TestFrameStepFalseBeforeBuilt(t *testing.T) {
+	e := newTimeDrivenEngine(t)
+	// No AnimFrame call yet, so nothing is built: FrameStep must not invent a step.
+	if _, ok := e.FrameStep("look", testFrameDim, testFrameDim, 0, 0, 0); ok {
+		t.Fatal("FrameStep should report false before the animation is built")
+	}
+}
+
+func TestFrameStepDoesNotTriggerBuild(t *testing.T) {
+	e := newTimeDrivenEngine(t)
+	for i := 0; i < 10; i++ {
+		e.FrameStep("look", testFrameDim, testFrameDim, 0, 0, 0)
+	}
+	// FrameStep is a pure peek: it must never kick off a build the way AnimFrame does.
+	if e.Ready("look") {
+		t.Fatal("FrameStep must not start a build")
+	}
+}
+
+func TestFrameStepAgreesWithAnimFrame(t *testing.T) {
+	e := newTimeDrivenEngine(t)
+	waitReady(t, e, "look") // builds at testFrameDim via AnimFrame
+
+	// Across a range of clocks, the frame AnimFrame shows must be exactly the
+	// frame at the index FrameStep reports — and held clocks must report a
+	// stable step.
+	for _, clock := range []float64{0, 0.1, 0.24, 0.25, 0.49, 0.5, 0.75, 1.0} {
+		step, ok := e.FrameStep("look", testFrameDim, testFrameDim, clock, 0, 0)
+		if !ok {
+			t.Fatalf("FrameStep not ok at clock=%v", clock)
+		}
+		buf, ok := e.AnimFrame("look", testFrameDim, testFrameDim, clock, 0, 0)
+		if !ok {
+			t.Fatalf("AnimFrame not ok at clock=%v", clock)
+		}
+		// Re-fetch the frame at the reported step directly to confirm agreement.
+		ref, ok := e.AnimFrame("look", testFrameDim, testFrameDim, float64(step)/4+0.01, 0, 0)
+		if !ok {
+			t.Fatalf("reference AnimFrame not ok for step=%d", step)
+		}
+		if !equalFrame(buf, ref) {
+			t.Fatalf("clock=%v: FrameStep=%d disagrees with the frame AnimFrame returned", clock, step)
+		}
+	}
+}

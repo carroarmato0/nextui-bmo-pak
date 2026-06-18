@@ -145,7 +145,7 @@ type Renderer struct {
 	H      int32
 	stride int
 	faces  *face.Cache
-	anims  *face.Engine
+	anims  animator
 	exprTr exprTracker
 
 	// Dirty-present state: lastRendered holds the most recently presented
@@ -160,6 +160,15 @@ type Renderer struct {
 
 type rgba struct {
 	R, G, B, A uint8
+}
+
+// animator is the subset of *face.Engine the renderer drives. Keeping it an
+// interface lets the renderer fold animation state into its frame signature and
+// be unit-tested without building real animations.
+type animator interface {
+	IsTimeDriven(expr string) bool
+	FrameStep(expr string, w, h int, clock, epoch float64, signal float32) (int, bool)
+	AnimFrame(expr string, w, h int, clock, epoch float64, signal float32) ([]uint32, bool)
 }
 
 func NewFullscreen(title string) (*Renderer, error) {
@@ -337,10 +346,16 @@ func (r *Renderer) Draw(frame FrameState) error {
 	}
 	canonical := face.Canonical(frame.Expression)
 
-	// A static frame is byte-identical to the one already on screen, so skip the
-	// whole rebuild+present once every swap-chain buffer holds it. Animating
+	// Track epoch (seconds since this expression became active) every tick,
+	// before the skip check, so a time "once" animation's elapsed time stays
+	// correct across skipped frames; blitFace reuses it instead of re-deriving.
+	epoch := r.exprTr.epoch(frame.Expression, phase)
+
+	// A static frame — or a time-driven frame being held between animation steps
+	// — is byte-identical to the one already on screen, so skip the whole
+	// rebuild+present once every swap-chain buffer holds it. Per-tick-animating
 	// frames yield an empty signature and always fall through to a full rebuild.
-	sig := r.frameSignature(frame, canonical)
+	sig := r.frameSignature(frame, canonical, phase, epoch)
 	if r.staticFrameUnchanged(sig) {
 		return nil
 	}
@@ -354,7 +369,7 @@ func (r *Renderer) Draw(frame FrameState) error {
 		return r.presentDirty()
 	}
 
-	if !r.blitFace(frame.Expression, frame, phase) {
+	if !r.blitFace(frame.Expression, frame, phase, epoch) {
 		r.drawPlainFace(layout)
 	}
 
@@ -365,19 +380,32 @@ func (r *Renderer) Draw(frame FrameState) error {
 	return r.presentDirty()
 }
 
-// frameSignature returns a stable identifier for a *static* frame whose output
-// depends only on the expression and surface size. blitFace serves
-// non-time-driven faces from a single cached frame, so such a frame is
-// byte-identical every tick. It returns "" for any frame that animates per tick
-// (speaking lip-sync, an open overlay, the quota clock, the sleeping Z marks,
-// or a time-driven mod face), so those always rebuild and are never skipped.
-func (r *Renderer) frameSignature(frame FrameState, canonical string) string {
+// frameSignature returns a stable identifier for a frame whose output is fully
+// determined by a small set of inputs, so an identical follow-up tick can skip
+// the rebuild+present. A non-time-driven face is keyed by expression and surface
+// size (blitFace serves it from a single cached frame, byte-identical every
+// tick). A time-driven face additionally folds in its current animation step, so
+// a frame *held* between steps — or a finished "once" animation resting on its
+// last frame — is skipped instead of re-rendered at the ~60 fps loop rate while
+// the animation only advances at a few FPS.
+//
+// It returns "" — never skippable — for any frame whose pixels change other than
+// by a discrete step: TTS lip-sync, an open overlay, the ticking quota clock,
+// the phase-driven sleeping Z marks, or a time-driven face not yet built (whose
+// static fallback will change once its frames are ready).
+func (r *Renderer) frameSignature(frame FrameState, canonical string, phase, epoch float64) string {
 	if frame.Speaking ||
 		frame.QuotaExhausted ||
 		canonical == face.ExprSleeping ||
-		(frame.Overlay != nil && frame.Overlay.Visible) ||
-		(r.anims != nil && r.anims.IsTimeDriven(frame.Expression)) {
+		(frame.Overlay != nil && frame.Overlay.Visible) {
 		return ""
+	}
+	if r.anims != nil && r.anims.IsTimeDriven(frame.Expression) {
+		step, ok := r.anims.FrameStep(frame.Expression, int(r.W), int(r.H), phase, epoch, frame.SpeakAmplitude)
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("%s|step=%d|%d|%d", canonical, step, r.W, r.H)
 	}
 	return fmt.Sprintf("%s|%d|%d", canonical, r.W, r.H)
 }
@@ -471,6 +499,12 @@ func (r *Renderer) SetFaces(c *face.Cache) {
 // SetAnimations installs the declarative animation engine. Call before the
 // render loop and on mod switch.
 func (r *Renderer) SetAnimations(e *face.Engine) {
+	// Guard against a typed-nil *face.Engine becoming a non-nil interface value,
+	// which would make the r.anims != nil checks fire on a nil engine.
+	if e == nil {
+		r.anims = nil
+		return
+	}
 	r.anims = e
 }
 
@@ -483,7 +517,7 @@ func (r *Renderer) Size() (int, int) {
 // from the engine when expr is animated and ready, otherwise the cached static
 // SVG face. Returns false if neither produced a usable frame (caller falls back
 // to drawPlainFace).
-func (r *Renderer) blitFace(expr string, frame FrameState, phase float64) bool {
+func (r *Renderer) blitFace(expr string, frame FrameState, phase, epoch float64) bool {
 	// Drive the animation engine only when the face is actually moving: a
 	// self-animating time-driven idle face (whistle/look_around/sleeping), or
 	// any face while BMO is speaking (amplitude lip-sync). At idle, amplitude
@@ -492,7 +526,6 @@ func (r *Renderer) blitFace(expr string, frame FrameState, phase float64) bool {
 	// full frame set — which previously OOM-killed the device once the idle
 	// rotation began cycling the whole expressive set.
 	if r.anims != nil && (frame.Speaking || r.anims.IsTimeDriven(expr)) {
-		epoch := r.exprTr.epoch(expr, phase)
 		if buf, ok := r.anims.AnimFrame(expr, int(r.W), int(r.H), phase, epoch, frame.SpeakAmplitude); ok {
 			if len(buf) != len(r.pixels) {
 				return false
