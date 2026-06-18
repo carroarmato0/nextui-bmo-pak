@@ -6,7 +6,4 @@
   <circle cx="199" cy="74" r="6.5" fill="#1a1a1a"/>
   <path d="M 183 62 L 214 50" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
   <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
-  <circle cx="210" cy="38" r="3" fill="#1a1a1a"/>
-  <circle cx="220" cy="28" r="2" fill="#1a1a1a"/>
-  <circle cx="227" cy="20" r="1.5" fill="#1a1a1a"/>
 </svg>

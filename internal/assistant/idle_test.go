@@ -5,6 +5,44 @@ import (
 	"time"
 )
 
+func TestIdleSchedulerRespectsAvailableFaces(t *testing.T) {
+	s := NewIdleScheduler(1)
+	// A sparse self-contained mod that ships only these distinct faces.
+	s.SetAvailable(map[Expression]bool{
+		ExpressionLookAround: true,
+		ExpressionSkeptical:  true,
+		ExpressionAngry:      true,
+		ExpressionUnamused:   true,
+	})
+	allowed := map[Expression]bool{
+		ExpressionNeutral:    true, // always permitted as the resting fallback
+		ExpressionLookAround: true,
+		ExpressionSkeptical:  true,
+		ExpressionAngry:      true,
+		ExpressionUnamused:   true,
+	}
+	// Sweep idleFor across every pool tier; never pick a face the mod lacks
+	// (which would silently fold to neutral and look static).
+	for i := 0; i < 1000; i++ {
+		step := s.Next(time.Duration(i) * 60 * time.Millisecond)
+		if !allowed[step.Expression] {
+			t.Fatalf("idle picked %q which the mod does not provide", step.Expression)
+		}
+	}
+}
+
+func TestIdleSchedulerUnfilteredByDefault(t *testing.T) {
+	s := NewIdleScheduler(7) // no SetAvailable
+	seen := map[Expression]struct{}{}
+	for i := 0; i < 2000; i++ {
+		seen[s.Next(20*time.Second).Expression] = struct{}{}
+	}
+	// Without a filter, expressive faces still appear (current behavior).
+	if _, ok := seen[ExpressionSmile]; !ok {
+		t.Fatalf("unfiltered scheduler should still pick expressive faces; saw %#v", seen)
+	}
+}
+
 func TestIdleSchedulerAvoidsImmediateRepetition(t *testing.T) {
 	s := NewIdleScheduler(1)
 

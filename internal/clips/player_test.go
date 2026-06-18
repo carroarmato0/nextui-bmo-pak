@@ -2,6 +2,8 @@ package clips
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -88,5 +90,117 @@ func TestPlaySequenceNilPlayerClosesDone(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("nil player PlaySequence should close done immediately")
+	}
+}
+
+// concWriter records whether two clips ever wrote to the audio output at the
+// same time (which would mix/garble on the device).
+type concWriter struct {
+	mu         sync.Mutex
+	active     int
+	overlapped bool
+}
+
+func (w *concWriter) WritePCM(pcm []byte) error {
+	w.mu.Lock()
+	w.active++
+	if w.active > 1 {
+		w.overlapped = true
+	}
+	w.mu.Unlock()
+	time.Sleep(time.Millisecond)
+	w.mu.Lock()
+	w.active--
+	w.mu.Unlock()
+	return nil
+}
+
+func (w *concWriter) didOverlap() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.overlapped
+}
+
+func TestPlaySequenceInterruptsPrevious(t *testing.T) {
+	dir := t.TempDir()
+	audioDir := filepath.Join(dir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// ~0.33s clips so the first is still playing when the second starts.
+	for _, n := range []string{"a", "b"} {
+		if err := os.WriteFile(filepath.Join(audioDir, n+".pcm"), make([]byte, 64000/3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := &concWriter{}
+	p := NewPlayer(w, 16000, 2, NewLibrary(dir))
+
+	done1 := p.PlaySequence(context.Background(), "a")
+	time.Sleep(20 * time.Millisecond) // let "a" actually start writing
+	done2 := p.PlaySequence(context.Background(), "b")
+
+	// Starting "b" must have interrupted "a": its done is already closed.
+	select {
+	case <-done1:
+	default:
+		t.Error("a new clip should interrupt and close the previous clip's done")
+	}
+	<-done2
+
+	if w.didOverlap() {
+		t.Error("two clips wrote to the audio output concurrently (audio would mix)")
+	}
+}
+
+func TestStopInterruptsInFlightClip(t *testing.T) {
+	dir := t.TempDir()
+	audioDir := filepath.Join(dir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 1s clip so it is still playing when Stop is called.
+	if err := os.WriteFile(filepath.Join(audioDir, "long.pcm"), make([]byte, 64000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+
+	done := p.PlaySequence(context.Background(), "long")
+	time.Sleep(20 * time.Millisecond) // let it start
+
+	p.Stop()
+	// Stop must have cancelled the clip: its done is closed promptly, well
+	// before the clip's natural 1s length.
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Stop did not interrupt the in-flight clip")
+	}
+	if p.Playing() {
+		t.Fatal("Playing() should be false after Stop")
+	}
+}
+
+func TestClipDuration(t *testing.T) {
+	dir := t.TempDir()
+	audioDir := filepath.Join(dir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 64000 bytes at 16 kHz * 2 channels * 2 bytes/sample = exactly 1 second.
+	if err := os.WriteFile(filepath.Join(audioDir, "myclip.pcm"), make([]byte, 64000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+
+	if got := p.ClipDuration("myclip"); got != time.Second {
+		t.Errorf("ClipDuration(myclip) = %v, want 1s", got)
+	}
+	if got := p.ClipDuration("nonexistent-zzz"); got != 0 {
+		t.Errorf("ClipDuration(missing) = %v, want 0", got)
+	}
+	var nilP *Player
+	if got := nilP.ClipDuration("myclip"); got != 0 {
+		t.Errorf("nil ClipDuration = %v, want 0", got)
 	}
 }

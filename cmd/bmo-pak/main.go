@@ -365,6 +365,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// and clip library for the new mod. This runs on the main goroutine (from
 	// the nav handler), the same goroutine as screen.Draw, so swapping the
 	// face cache is race-free.
+	// scheduler is created further down (it needs the idle seed), but reloadMod
+	// must update its available face set when the mod changes at runtime, so it
+	// is declared here and assigned later; the nil guard covers a mod swap that
+	// somehow precedes scheduler creation.
+	var scheduler *assistant.IdleScheduler
+
 	reloadMod := func(id string) {
 		active := mod.Active(mods, id)
 		activeMod = active
@@ -396,6 +402,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				audioPipeline.SetTimeoutClip(clipLib.Load("timeout"))
 				audioPipeline.SetErrorClip(clipLib.Load("error"))
 			}
+		}
+		if scheduler != nil {
+			scheduler.SetAvailable(modIdleFaces(active))
 		}
 		logger.Infof("switched to mod %q (self-contained=%t)", active.ID, active.SelfContained())
 	}
@@ -459,6 +468,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var shuttingDown bool
 	var shuttingDownAt time.Time
 	var goodbyeDone <-chan struct{}
+	var goodbyeWaitDur time.Duration
 
 	// beginShutdown starts BMO's farewell: it kicks off the goodbye clip in the
 	// player's goroutine and leaves the face loop running so the mouth animates
@@ -471,8 +481,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 		shuttingDown = true
 		shuttingDownAt = time.Now()
+		// Cut any in-flight remark so the farewell clip plays alone instead of
+		// mixing with a quote/proactive line on the separate speech path.
+		if audioPipeline != nil {
+			audioPipeline.InterruptSpeech()
+		}
 		if clipPlayer != nil {
 			goodbyeDone = clipPlayer.PlaySequence(ctx, "goodbye")
+			// Wait for the actual goodbye length so a long (e.g. modded)
+			// farewell is heard in full instead of being cut at a fixed timeout.
+			goodbyeWaitDur = goodbyeWait(clipPlayer.ClipDuration("goodbye"))
 		} else {
 			running = false
 		}
@@ -513,6 +531,20 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates,
 	// X=BTN_WEST(308) speaks a random quote, Y=BTN_NORTH(307) steps the face gallery.
 	handleNav := func(action input.NavAction) {
+		// Once the farewell is under way, BMO is committed to exiting. A further
+		// exit press (B or MENU) means "skip it": cancel the goodbye clip and any
+		// speech and quit immediately and cleanly, rather than layering another
+		// action — or another farewell — on top. This runs before the overlay /
+		// batch / speech guards so an exit press always wins during shutdown.
+		if shuttingDown && (action == input.NavCancel || action == input.NavMenu) {
+			clipPlayer.Stop()
+			if audioPipeline != nil {
+				audioPipeline.InterruptSpeech()
+			}
+			running = false
+			return
+		}
+
 		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
 			beginShutdown()
@@ -552,6 +584,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if activeMenu != nil || audioPipeline == nil {
 				return
 			}
+			// Cancel any in-progress spontaneous reaction so the quote replaces
+			// it (returning the machine to idle) instead of overlapping its
+			// audio. A no-op when nothing is playing.
+			audioPipeline.InterruptSpeech()
 			quotes := quotesFn()
 			if len(quotes) == 0 {
 				return
@@ -570,7 +606,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// preview. Only meaningful from idle (other states drive their own face);
 		// it activates the override the idle branch reads each tick.
 		if action == input.NavGallery {
-			if activeMenu != nil || machine.Snapshot().Current != assistant.StateIdle {
+			if activeMenu != nil {
+				return
+			}
+			// Cancel a spontaneous reaction so stepping the gallery interrupts
+			// it (and frees the machine) rather than being ignored mid-speech.
+			if audioPipeline != nil {
+				audioPipeline.InterruptSpeech()
+			}
+			if machine.Snapshot().Current != assistant.StateIdle {
 				return
 			}
 			galleryFaces = galleryFaceNames()
@@ -621,7 +665,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 
-	scheduler := assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
+	scheduler = assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
+	// Restrict idle to the active mod's own faces (no-op for the default set).
+	scheduler.SetAvailable(modIdleFaces(activeMod))
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
 	var errorSince time.Time
@@ -681,7 +727,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// mutex rasterization. Capped at 10s so a failed warm still plays the
 		// audio. The clips run in the player's own goroutine, so audio pacing
 		// is independent of the render loop's frame rate.
-		if !startupClipFired && time.Now().After(startupFaceShownAt) &&
+		if !startupClipFired && !shuttingDown && time.Now().After(startupFaceShownAt) &&
 			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
@@ -694,10 +740,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			clipPlayer.PlaySequence(ctx, names...)
 		}
 
-		// Exit once the goodbye clip has played out (or after an 8s safety
-		// timeout), so the farewell is fully heard and animated before quitting.
+		// Exit once the goodbye clip has played out (or after goodbyeWaitDur, a
+		// safety timeout sized to the clip's own length), so the farewell is
+		// fully heard and animated before quitting.
 		if shuttingDown {
-			if goodbyeDone == nil || time.Since(shuttingDownAt) > 8*time.Second {
+			if goodbyeDone == nil || time.Since(shuttingDownAt) > goodbyeWaitDur {
 				running = false
 				continue
 			}
@@ -745,7 +792,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				nextIdleUpdate = now.Add(step.HoldFor)
 			}
 			expr = string(currentIdleExpression)
-			if !galleryActive && audioPipeline != nil && proactive.Due(now) {
+			if !galleryActive && !shuttingDown && audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
 				remarkPipeline := audioPipeline
 				// ProactiveNudge refreshes device context (sqlite play-log,

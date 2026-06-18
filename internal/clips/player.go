@@ -3,6 +3,7 @@ package clips
 import (
 	"context"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,15 @@ type Player struct {
 
 	ampl    atomic.Uint32
 	playing atomic.Bool
+
+	// Clips share a single audio output, so only one may play at a time. startMu
+	// serializes PlaySequence/Stop calls; mu guards the handle to the in-flight
+	// playback (cancelCur/doneCur) so a new clip can cancel and wait for it
+	// before starting, instead of mixing on top of it.
+	startMu   sync.Mutex
+	mu        sync.Mutex
+	cancelCur context.CancelFunc
+	doneCur   chan struct{}
 }
 
 func NewPlayer(writer AudioWriter, sampleRate, channels int, lib *Library) *Player {
@@ -48,6 +58,23 @@ func NewPlayer(writer AudioWriter, sampleRate, channels int, lib *Library) *Play
 // Playing reports whether a clip is currently streaming.
 func (p *Player) Playing() bool {
 	return p != nil && p.playing.Load()
+}
+
+// ClipDuration returns the playback duration of the named clip, computed from
+// its PCM byte length at the player's sample rate and channel count (S16LE, so
+// 2 bytes per sample). It returns 0 when the clip is missing or empty, so
+// callers can fall back to a default. Used to size the goodbye shutdown wait to
+// the actual farewell length instead of a fixed timeout.
+func (p *Player) ClipDuration(name string) time.Duration {
+	if p == nil || p.lib == nil {
+		return 0
+	}
+	pcm := p.lib.Load(name)
+	bytesPerSec := p.sampleRate * p.channels * 2 // S16LE = 2 bytes/sample
+	if bytesPerSec <= 0 || len(pcm) == 0 {
+		return 0
+	}
+	return time.Duration(len(pcm)) * time.Second / time.Duration(bytesPerSec)
 }
 
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio being played.
@@ -70,23 +97,69 @@ func (p *Player) PlaySequence(ctx context.Context, names ...string) <-chan struc
 		close(done)
 		return done
 	}
+
+	// Serialize starts and cancel any clip already playing, waiting for it to
+	// stop, so a new clip (e.g. goodbye over a still-playing hello) replaces it
+	// instead of mixing into the same audio output.
+	p.startMu.Lock()
+	defer p.startMu.Unlock()
+	p.interruptCurrent()
+
+	playCtx, cancel := context.WithCancel(ctx)
+	p.mu.Lock()
+	p.cancelCur = cancel
+	p.doneCur = done
+	p.mu.Unlock()
+
 	// Mark playing synchronously so the render loop sees the speaking state on
 	// the very next frame, before the goroutine is scheduled.
 	p.playing.Store(true)
 	go func() {
-		defer close(done)
-		defer p.playing.Store(false)
-		defer p.ampl.Store(0)
+		defer func() {
+			p.ampl.Store(0)
+			p.mu.Lock()
+			if p.doneCur == done { // still the current playback
+				p.playing.Store(false)
+				p.cancelCur = nil
+				p.doneCur = nil
+			}
+			p.mu.Unlock()
+			cancel()
+			close(done)
+		}()
 		for _, name := range names {
-			if ctx.Err() != nil {
+			if playCtx.Err() != nil {
 				return
 			}
-			if err := p.playPaced(ctx, p.lib.Load(name)); err != nil {
+			if err := p.playPaced(playCtx, p.lib.Load(name)); err != nil {
 				return
 			}
 		}
 	}()
 	return done
+}
+
+// interruptCurrent cancels the in-flight clip (if any) and blocks until it has
+// fully stopped. Callers must hold startMu so two starts cannot race.
+func (p *Player) interruptCurrent() {
+	p.mu.Lock()
+	cancel, done := p.cancelCur, p.doneCur
+	p.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		<-done
+	}
+}
+
+// Stop cancels any in-flight clip and blocks until playback has stopped. Safe to
+// call when nothing is playing.
+func (p *Player) Stop() {
+	if p == nil {
+		return
+	}
+	p.startMu.Lock()
+	defer p.startMu.Unlock()
+	p.interruptCurrent()
 }
 
 // Play loads and plays a single clip, blocking until it has finished. Returns

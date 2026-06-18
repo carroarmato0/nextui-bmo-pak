@@ -211,6 +211,28 @@ func (m *Machine) TransitionAt(event Event, at time.Time) State {
 	return m.state
 }
 
+// BeginRemark atomically starts a proactive remark or verbatim quote
+// (idle -> thinking) and reports whether it actually started. It returns false
+// when BMO is not idle, so a second remark can never begin on top of one already
+// thinking or speaking — which would overlap audio. This is stricter than
+// Transition(EventRemark), which returns StateThinking unchanged when already
+// thinking and so could not distinguish "started" from "already running".
+func (m *Machine) BeginRemark() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.state != StateIdle {
+		return false
+	}
+	current, next := transitionState(m.state, EventRemark)
+	if next != StateThinking {
+		return false
+	}
+	m.state = next
+	m.lastInteraction = time.Now().UTC()
+	applyTransitionEffects(m, current, next, EventRemark)
+	return true
+}
+
 func Transition(current State, event Event) State {
 	_, next := transitionState(current, event)
 	return next

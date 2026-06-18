@@ -474,13 +474,12 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	if nudge == "" {
 		return nil
 	}
-	if p.machine != nil {
-		// EventRemark only succeeds from idle, so a PTT press racing this
-		// call cannot be hijacked: if EventListen landed first, the
-		// transition is refused and the remark is silently dropped.
-		if p.machine.Transition(EventRemark) != StateThinking {
-			return nil
-		}
+	if p.machine != nil && !p.machine.BeginRemark() {
+		// BeginRemark only succeeds from idle, so a PTT press or another
+		// reaction racing this call cannot be hijacked or overlapped: if
+		// anything else landed first (listening, or already thinking/speaking),
+		// the remark is silently dropped.
+		return nil
 	}
 
 	// Bound chat + TTS so a stalled provider can't freeze the thinking face for
@@ -560,10 +559,11 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 	if text == "" {
 		return nil
 	}
-	if p.machine != nil {
-		if p.machine.Transition(EventRemark) != StateThinking {
-			return nil
-		}
+	if p.machine != nil && !p.machine.BeginRemark() {
+		// Not idle (a reaction is already thinking/speaking): drop this quote
+		// rather than overlap it. Callers that want to replace the current
+		// reaction interrupt it first (see the X/Y nav handlers).
+		return nil
 	}
 	if p.logger != nil {
 		p.logger.Debugf("remark quote: %q", text)
