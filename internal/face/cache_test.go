@@ -1,6 +1,7 @@
 package face
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,5 +113,68 @@ func TestCacheSourceDelegates(t *testing.T) {
 	embedded := NewCache(NewLibrary(""))
 	if got := embedded.Source(ExprNeutral); got != "embedded-default" {
 		t.Fatalf("Source = %q, want embedded-default", got)
+	}
+}
+
+func TestCacheEvictsUnpinnedModFacesBeyondBudget(t *testing.T) {
+	c := &Cache{frames: map[string][]uint32{}, failed: map[string]bool{}}
+	for i := 0; i < staticCacheModBudget+3; i++ {
+		k := fmt.Sprintf("modface%d", i)
+		c.frames[k] = []uint32{uint32(i)}
+		c.noteUseLocked(k)
+		c.evictLocked()
+	}
+	if len(c.lru) != staticCacheModBudget {
+		t.Fatalf("unpinned resident = %d, want %d", len(c.lru), staticCacheModBudget)
+	}
+	if _, ok := c.frames["modface0"]; ok {
+		t.Error("oldest mod face should have been evicted")
+	}
+	newest := fmt.Sprintf("modface%d", staticCacheModBudget+2)
+	if _, ok := c.frames[newest]; !ok {
+		t.Errorf("newest mod face %q must stay resident", newest)
+	}
+}
+
+// Canonical faces are pinned: a mod with arbitrarily many custom faces must
+// never evict the built-in expression set (the idle rotation).
+func TestCachePinsCanonicalFacesAgainstFloodingMod(t *testing.T) {
+	c := &Cache{frames: map[string][]uint32{}, failed: map[string]bool{}}
+	for _, n := range CanonicalNames {
+		c.frames[n] = []uint32{1}
+		c.noteUseLocked(n)
+	}
+	for i := 0; i < staticCacheModBudget+100; i++ {
+		k := fmt.Sprintf("modface%d", i)
+		c.frames[k] = []uint32{2}
+		c.noteUseLocked(k)
+		c.evictLocked()
+	}
+	for _, n := range CanonicalNames {
+		if _, ok := c.frames[n]; !ok {
+			t.Fatalf("canonical %q was evicted; canonical faces must be pinned", n)
+		}
+	}
+	if len(c.lru) != staticCacheModBudget {
+		t.Errorf("unpinned resident = %d, want %d", len(c.lru), staticCacheModBudget)
+	}
+}
+
+func TestCacheNoteUseUpdatesRecency(t *testing.T) {
+	c := &Cache{frames: map[string][]uint32{}, failed: map[string]bool{}}
+	for i := 0; i < staticCacheModBudget; i++ {
+		k := fmt.Sprintf("m%d", i)
+		c.frames[k] = []uint32{}
+		c.noteUseLocked(k)
+	}
+	c.noteUseLocked("m0") // re-touch oldest → now most recent
+	c.frames["new"] = []uint32{}
+	c.noteUseLocked("new")
+	c.evictLocked()
+	if _, ok := c.frames["m0"]; !ok {
+		t.Error("re-touched m0 must survive eviction")
+	}
+	if _, ok := c.frames["m1"]; ok {
+		t.Error("now-oldest m1 should be evicted")
 	}
 }
