@@ -52,6 +52,20 @@ func EmotionNames() []string {
 // names of *.svg files in dir, excluding functional faces and unsafe names,
 // sorted. A missing or unreadable dir yields nil.
 func EmotionFaceNamesInDir(dir string) []string {
+	return faceNamesInDir(dir, true)
+}
+
+// FaceNamesInDir lists every face a mod ships on disk: the base names of *.svg
+// files in dir with a safe name, sorted, INCLUDING functional/idle faces
+// (look_around, listening, speaking…). Use this — not EmotionFaceNamesInDir —
+// when you need the mod's full set of distinctly-rendered expressions, e.g. to
+// restrict the idle rotation to faces the mod actually provides. A missing or
+// unreadable dir yields nil.
+func FaceNamesInDir(dir string) []string {
+	return faceNamesInDir(dir, false)
+}
+
+func faceNamesInDir(dir string, excludeFunctional bool) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -65,7 +79,10 @@ func EmotionFaceNamesInDir(dir string) []string {
 			continue
 		}
 		base := strings.ToLower(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
-		if !fileNameRe.MatchString(base) || isFunctional(base) {
+		if !fileNameRe.MatchString(base) {
+			continue
+		}
+		if excludeFunctional && isFunctional(base) {
 			continue
 		}
 		out = append(out, base)

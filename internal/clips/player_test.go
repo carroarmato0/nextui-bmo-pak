@@ -2,6 +2,8 @@ package clips
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -88,5 +90,29 @@ func TestPlaySequenceNilPlayerClosesDone(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("nil player PlaySequence should close done immediately")
+	}
+}
+
+func TestClipDuration(t *testing.T) {
+	dir := t.TempDir()
+	audioDir := filepath.Join(dir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 64000 bytes at 16 kHz * 2 channels * 2 bytes/sample = exactly 1 second.
+	if err := os.WriteFile(filepath.Join(audioDir, "myclip.pcm"), make([]byte, 64000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+
+	if got := p.ClipDuration("myclip"); got != time.Second {
+		t.Errorf("ClipDuration(myclip) = %v, want 1s", got)
+	}
+	if got := p.ClipDuration("nonexistent-zzz"); got != 0 {
+		t.Errorf("ClipDuration(missing) = %v, want 0", got)
+	}
+	var nilP *Player
+	if got := nilP.ClipDuration("myclip"); got != 0 {
+		t.Errorf("nil ClipDuration = %v, want 0", got)
 	}
 }

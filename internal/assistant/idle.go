@@ -16,10 +16,43 @@ type IdleScheduler struct {
 	blocked      Expression
 	interruptLat bool
 	cycle        int
+	available    map[Expression]bool // nil = every expression allowed
 }
 
 func NewIdleScheduler(seed int64) *IdleScheduler {
 	return &IdleScheduler{rng: rand.New(rand.NewSource(seed)), last: ExpressionNeutral}
+}
+
+// SetAvailable restricts the idle rotation to the given expressions (neutral is
+// always permitted as the resting fallback). Pass nil/empty to allow every
+// expression — the default, used by the built-in and overlay face sets, which
+// resolve all canonical faces. A self-contained mod that ships only a few faces
+// uses this so idle cycles its real faces instead of repeatedly folding
+// unshipped expressions to neutral (which looks static on screen).
+func (s *IdleScheduler) SetAvailable(exprs map[Expression]bool) {
+	if len(exprs) == 0 {
+		s.available = nil
+		return
+	}
+	s.available = exprs
+}
+
+// filterPool drops expressions the active mod does not provide a distinct face
+// for. Neutral is always kept; if nothing survives, idle holds on neutral.
+func (s *IdleScheduler) filterPool(pool []Expression) []Expression {
+	if s.available == nil {
+		return pool
+	}
+	filtered := make([]Expression, 0, len(pool))
+	for _, e := range pool {
+		if e == ExpressionNeutral || s.available[e] {
+			filtered = append(filtered, e)
+		}
+	}
+	if len(filtered) == 0 {
+		return []Expression{ExpressionNeutral}
+	}
+	return filtered
 }
 
 func (s *IdleScheduler) Interrupt() IdleStep {
@@ -35,6 +68,7 @@ func (s *IdleScheduler) Next(idleFor time.Duration) IdleStep {
 	}
 
 	pool, hold := s.poolFor(idleFor)
+	pool = s.filterPool(pool)
 	idx := (s.cycle + s.rng.Intn(len(pool))) % len(pool)
 	picked := pool[idx]
 	if len(pool) > 1 && picked == s.last {

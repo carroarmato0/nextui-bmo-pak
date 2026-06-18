@@ -50,6 +50,23 @@ func (p *Player) Playing() bool {
 	return p != nil && p.playing.Load()
 }
 
+// ClipDuration returns the playback duration of the named clip, computed from
+// its PCM byte length at the player's sample rate and channel count (S16LE, so
+// 2 bytes per sample). It returns 0 when the clip is missing or empty, so
+// callers can fall back to a default. Used to size the goodbye shutdown wait to
+// the actual farewell length instead of a fixed timeout.
+func (p *Player) ClipDuration(name string) time.Duration {
+	if p == nil || p.lib == nil {
+		return 0
+	}
+	pcm := p.lib.Load(name)
+	bytesPerSec := p.sampleRate * p.channels * 2 // S16LE = 2 bytes/sample
+	if bytesPerSec <= 0 || len(pcm) == 0 {
+		return 0
+	}
+	return time.Duration(len(pcm)) * time.Second / time.Duration(bytesPerSec)
+}
+
 // CurrentAmplitude returns the RMS amplitude [0, 1] of the audio being played.
 func (p *Player) CurrentAmplitude() float32 {
 	if p == nil {

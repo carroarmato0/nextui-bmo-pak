@@ -365,6 +365,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// and clip library for the new mod. This runs on the main goroutine (from
 	// the nav handler), the same goroutine as screen.Draw, so swapping the
 	// face cache is race-free.
+	// scheduler is created further down (it needs the idle seed), but reloadMod
+	// must update its available face set when the mod changes at runtime, so it
+	// is declared here and assigned later; the nil guard covers a mod swap that
+	// somehow precedes scheduler creation.
+	var scheduler *assistant.IdleScheduler
+
 	reloadMod := func(id string) {
 		active := mod.Active(mods, id)
 		activeMod = active
@@ -396,6 +402,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				audioPipeline.SetTimeoutClip(clipLib.Load("timeout"))
 				audioPipeline.SetErrorClip(clipLib.Load("error"))
 			}
+		}
+		if scheduler != nil {
+			scheduler.SetAvailable(modIdleFaces(active))
 		}
 		logger.Infof("switched to mod %q (self-contained=%t)", active.ID, active.SelfContained())
 	}
@@ -459,6 +468,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var shuttingDown bool
 	var shuttingDownAt time.Time
 	var goodbyeDone <-chan struct{}
+	var goodbyeWaitDur time.Duration
 
 	// beginShutdown starts BMO's farewell: it kicks off the goodbye clip in the
 	// player's goroutine and leaves the face loop running so the mouth animates
@@ -473,6 +483,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		shuttingDownAt = time.Now()
 		if clipPlayer != nil {
 			goodbyeDone = clipPlayer.PlaySequence(ctx, "goodbye")
+			// Wait for the actual goodbye length so a long (e.g. modded)
+			// farewell is heard in full instead of being cut at a fixed timeout.
+			goodbyeWaitDur = goodbyeWait(clipPlayer.ClipDuration("goodbye"))
 		} else {
 			running = false
 		}
@@ -621,7 +634,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 
-	scheduler := assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
+	scheduler = assistant.NewIdleScheduler(machine.Snapshot().IdleSeed)
+	// Restrict idle to the active mod's own faces (no-op for the default set).
+	scheduler.SetAvailable(modIdleFaces(activeMod))
 	currentIdleExpression := assistant.ExpressionNeutral
 	nextIdleUpdate := time.Now()
 	var errorSince time.Time
@@ -694,10 +709,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			clipPlayer.PlaySequence(ctx, names...)
 		}
 
-		// Exit once the goodbye clip has played out (or after an 8s safety
-		// timeout), so the farewell is fully heard and animated before quitting.
+		// Exit once the goodbye clip has played out (or after goodbyeWaitDur, a
+		// safety timeout sized to the clip's own length), so the farewell is
+		// fully heard and animated before quitting.
 		if shuttingDown {
-			if goodbyeDone == nil || time.Since(shuttingDownAt) > 8*time.Second {
+			if goodbyeDone == nil || time.Since(shuttingDownAt) > goodbyeWaitDur {
 				running = false
 				continue
 			}
