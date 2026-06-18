@@ -9,13 +9,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // NavAction is a menu navigation intent decoded from a raw Linux evdev event.
 type NavAction uint8
 
 const (
-	NavUp     NavAction = iota // D-pad up
+	NavUp      NavAction = iota // D-pad up
 	NavDown                     // D-pad down
 	NavLeft                     // D-pad left
 	NavRight                    // D-pad right
@@ -24,6 +25,7 @@ const (
 	NavMenu                     // Mode/Guide — exit to NextUI
 	NavQuote                    // X/West — speak a random verbatim quote
 	NavGallery                  // Y/North — step to the next face / animation
+	NavConfirm                  // A/East — activate the focused menu item
 )
 
 const (
@@ -38,6 +40,14 @@ const (
 	btnDpadRight uint16 = 0x223
 )
 
+// Auto-repeat tuning for a held up/down direction. EV_ABS hat dpads emit no
+// kernel autorepeat, so NavReader synthesises repeats itself: hold the button
+// past repeatInitialDelay and it then fires every repeatInterval until release.
+const (
+	repeatInitialDelay = 350 * time.Millisecond
+	repeatInterval     = 90 * time.Millisecond
+)
+
 // NavReader reads raw Linux evdev events from an input device and emits NavAction values.
 type NavReader struct {
 	mu     sync.Mutex
@@ -45,6 +55,16 @@ type NavReader struct {
 	file   *os.File
 	events chan NavAction
 	once   sync.Once
+
+	// Auto-repeat state for a held up/down direction, guarded by repeatMu.
+	// repeatGen is bumped on every state change so a stale repeat loop can
+	// detect that its press ended (or was superseded) and bail out. wake nudges
+	// the repeater goroutine to re-read the state.
+	repeatMu     sync.Mutex
+	repeatAction NavAction
+	repeatOn     bool
+	repeatGen    uint64
+	wake         chan struct{}
 }
 
 // NewNavReader creates a NavReader for the given input device path.
@@ -55,6 +75,7 @@ func NewNavReader(path string) (*NavReader, error) {
 	return &NavReader{
 		path:   path,
 		events: make(chan NavAction, 16),
+		wake:   make(chan struct{}, 1),
 	}, nil
 }
 
@@ -80,6 +101,7 @@ func (r *NavReader) Start(ctx context.Context) error {
 	r.mu.Unlock()
 
 	go r.run(ctx, f)
+	go r.repeater(ctx)
 	return nil
 }
 
@@ -133,31 +155,136 @@ func (r *NavReader) run(ctx context.Context, f *os.File) {
 		code := binary.LittleEndian.Uint16(buf[18:20])
 		value := int32(binary.LittleEndian.Uint32(buf[20:24]))
 
-		var (
-			action NavAction
-			ok     bool
-		)
 		switch typ {
 		case evKey:
-			if value != keyStatePressed {
-				continue
+			switch value {
+			case keyStatePressed:
+				if action, ok := navActionForKey(code); ok {
+					r.emit(ctx, action)
+					r.setRepeat(action)
+				}
+			case keyStateReleased:
+				if action, ok := navActionForKey(code); ok {
+					r.clearRepeat(action)
+				}
 			}
-			action, ok = navActionForKey(code)
+			// keyStateRepeat (kernel autorepeat) is ignored: NavReader drives
+			// repeats itself so EV_KEY and EV_ABS dpads behave identically.
 		case evAbs:
-			action, ok = navActionForAbs(code, value)
-		default:
-			continue
-		}
-		if !ok {
-			continue
-		}
-		select {
-		case r.events <- action:
-		case <-ctx.Done():
-			return
-		default:
+			if action, ok := navActionForAbs(code, value); ok {
+				r.emit(ctx, action)
+				r.setRepeat(action)
+			} else if value == 0 {
+				// Hat axis returned to centre — the held direction was released.
+				r.clearRepeatAxis(code)
+			}
 		}
 	}
+}
+
+// emit delivers a NavAction to consumers, dropping it if the buffer is full
+// (the same back-pressure behaviour as raw presses) or the context is done.
+func (r *NavReader) emit(ctx context.Context, action NavAction) {
+	select {
+	case r.events <- action:
+	case <-ctx.Done():
+	default:
+	}
+}
+
+// setRepeat begins (or refreshes) auto-repeat for a held up/down press. Any
+// other direction cancels an in-flight repeat.
+func (r *NavReader) setRepeat(action NavAction) {
+	r.repeatMu.Lock()
+	if action == NavUp || action == NavDown {
+		r.repeatAction = action
+		r.repeatOn = true
+	} else {
+		r.repeatOn = false
+	}
+	r.repeatGen++
+	r.repeatMu.Unlock()
+	r.signalWake()
+}
+
+// clearRepeat stops auto-repeat when the matching direction button is released.
+func (r *NavReader) clearRepeat(action NavAction) {
+	r.repeatMu.Lock()
+	if r.repeatOn && r.repeatAction == action {
+		r.repeatOn = false
+		r.repeatGen++
+	}
+	r.repeatMu.Unlock()
+	r.signalWake()
+}
+
+// clearRepeatAxis stops auto-repeat when the vertical hat axis recentres.
+func (r *NavReader) clearRepeatAxis(code uint16) {
+	if code != absHat0Y {
+		return
+	}
+	r.repeatMu.Lock()
+	if r.repeatOn {
+		r.repeatOn = false
+		r.repeatGen++
+	}
+	r.repeatMu.Unlock()
+	r.signalWake()
+}
+
+// signalWake nudges the repeater goroutine to re-read the repeat state.
+func (r *NavReader) signalWake() {
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
+}
+
+// repeater synthesises held-button auto-repeat. While an up/down direction is
+// held it emits that action every repeatInterval after an initial
+// repeatInitialDelay, until the press is released or superseded.
+func (r *NavReader) repeater(ctx context.Context) {
+	for {
+		r.repeatMu.Lock()
+		on, action, gen := r.repeatOn, r.repeatAction, r.repeatGen
+		r.repeatMu.Unlock()
+
+		if !on {
+			select {
+			case <-r.wake:
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		// Initial delay; a state change (wake) restarts the evaluation so a new
+		// press gets its own full delay rather than inheriting the old timer.
+		select {
+		case <-time.After(repeatInitialDelay):
+		case <-r.wake:
+			continue
+		case <-ctx.Done():
+			return
+		}
+
+		for r.repeatStillHeld(gen) {
+			r.emit(ctx, action)
+			select {
+			case <-time.After(repeatInterval):
+			case <-r.wake:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+// repeatStillHeld reports whether the press identified by gen is still active.
+func (r *NavReader) repeatStillHeld(gen uint64) bool {
+	r.repeatMu.Lock()
+	defer r.repeatMu.Unlock()
+	return r.repeatOn && r.repeatGen == gen
 }
 
 // navActionForKey maps a Linux EV_KEY button code to a NavAction on press.
@@ -165,6 +292,8 @@ func navActionForKey(code uint16) (NavAction, bool) {
 	switch code {
 	case 304: // BTN_SOUTH / physical B — cancel/exit
 		return NavCancel, true
+	case 305: // BTN_EAST / physical A — confirm/activate the focused menu item
+		return NavConfirm, true
 	case 315: // BTN_START
 		return NavSave, true
 	case 316: // BTN_MODE / menu button

@@ -17,6 +17,7 @@ import (
 
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
+	"github.com/carroarmato0/nextui-bmo/internal/buildinfo"
 	"github.com/carroarmato0/nextui-bmo/internal/clips"
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 	"github.com/carroarmato0/nextui-bmo/internal/devctx"
@@ -27,6 +28,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
 	"github.com/carroarmato0/nextui-bmo/internal/perf"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
+	"github.com/carroarmato0/nextui-bmo/internal/qr"
 	"github.com/carroarmato0/nextui-bmo/internal/renderer"
 	"github.com/carroarmato0/nextui-bmo/internal/ui"
 	"github.com/veandco/go-sdl2/sdl"
@@ -151,6 +153,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		modChoices = append(modChoices, ui.ModChoice{ID: md.ID, Label: strings.ToUpper(md.DisplayName())})
 	}
 	settingsMenu.SetModChoices(modChoices)
+	settingsMenu.SetAbout(buildAboutState(logger))
 	settingsMenu.SetLogLevelCallback(func(level string) {
 		logger.SetLevel(observability.ParseLevel(level))
 		logger.Infof("log level changed to %s", level)
@@ -502,7 +505,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// the idle scheduler on galleryFaces[galleryIdx]; any non-idle state (a quote,
 	// PTT, exit) clears it and normal idle scheduling resumes. The list is rebuilt
 	// on each press so it always reflects the active mod (which may change at
-	// runtime via reloadMod) and only includes faces the mod actually resolves.
+	// runtime via reloadMod). A self-contained mod cycles only the faces it
+	// actually ships on disk — never the embedded-default/neutral-fold renders
+	// it doesn't own — while the default BMO (or a faceless overlay mod that
+	// inherits the built-in art) cycles the full canonical set.
 	var galleryFaces []string
 	galleryIdx := -1
 	galleryActive := false
@@ -516,20 +522,24 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			seen[n] = true
 			names = append(names, n)
 		}
-		for _, n := range face.CanonicalNames {
-			add(n)
-		}
-		for _, n := range face.EmotionFaceNamesInDir(activeMod.FacesDir()) {
-			add(n)
+		if activeMod.SelfContained() {
+			for _, n := range face.FaceNamesInDir(activeMod.FacesDir()) {
+				add(n)
+			}
+		} else {
+			for _, n := range face.CanonicalNames {
+				add(n)
+			}
 		}
 		return names
 	}
 
 	// handleNav maps decoded evdev navigation intents to menu/overlay actions.
 	// Physical button layout (TrimUI, confirmed via getevent): A=BTN_EAST(305)
-	// is confirm/PTT (handled by the PTT path), B=BTN_SOUTH(304) cancels,
-	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates,
-	// X=BTN_WEST(308) speaks a random quote, Y=BTN_NORTH(307) steps the face gallery.
+	// confirms the focused menu item (and is PTT outside menus, via the PTT
+	// path), B=BTN_SOUTH(304) cancels, Start opens settings, Menu=BTN_MODE(316)
+	// exits to NextUI, D-pad navigates, X=BTN_WEST(308) speaks a random quote,
+	// Y=BTN_NORTH(307) steps the face gallery.
 	handleNav := func(action input.NavAction) {
 		// Once the farewell is under way, BMO is committed to exiting. A further
 		// exit press (B or MENU) means "skip it": cancel the goodbye clip and any
@@ -545,22 +555,44 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			return
 		}
 
+		// While the About screen is up, any button simply returns to the
+		// settings list (it never exits the app or closes the overlay).
+		if am, ok := activeMenu.(interface {
+			AboutActive() bool
+			DismissAbout()
+		}); ok && am.AboutActive() {
+			am.DismissAbout()
+			return
+		}
+
 		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
 			beginShutdown()
 			return
 		}
 
-		// B closes an open overlay; cancels in-flight batch; interrupts speech;
-		// otherwise it exits to NextUI after playing the goodbye clip.
+		// B is a two-stage "stop, then exit": while BMO is doing anything —
+		// closing an overlay, playing a clip (e.g. the startup greeting),
+		// processing a batch or speaking — the first press stops that and settles
+		// back to idle. Only a B press while BMO is already idle exits to NextUI
+		// after playing the goodbye clip.
 		if action == input.NavCancel {
-			if activeMenu != nil {
+			switch {
+			case activeMenu != nil:
 				setActiveMenu(nil)
-			} else if audioPipeline != nil && audioPipeline.CancelBatch() {
+			case clipPlayer != nil && clipPlayer.Playing():
+				// Stop the clip's audio and its speaking animation; the machine
+				// is already idle during clip playback, so this returns to idle.
+				clipPlayer.Stop()
+				if audioPipeline != nil {
+					audioPipeline.InterruptSpeech()
+				}
+				logger.Infof("clip stopped by B press; returning to idle")
+			case audioPipeline != nil && audioPipeline.CancelBatch():
 				logger.Infof("batch cancelled by B press")
-			} else if audioPipeline != nil && audioPipeline.InterruptSpeech() {
+			case audioPipeline != nil && audioPipeline.InterruptSpeech():
 				logger.Infof("speech interrupted by B press")
-			} else {
+			default:
 				beginShutdown()
 			}
 			return
@@ -637,8 +669,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			activeMenu.Move(-1)
 		case input.NavDown:
 			activeMenu.Move(1)
-		case input.NavLeft, input.NavRight:
-			// Cancel any keyboard-edit state (no keyboard on hardware), then cycle.
+		case input.NavLeft, input.NavRight, input.NavConfirm:
+			// Cancel any keyboard-edit state (no keyboard on hardware) first.
 			type editable interface {
 				IsEditing() bool
 				CancelEdit()
@@ -646,19 +678,28 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
 				ed.CancelEdit()
 			}
-			delta := 1
-			if action == input.NavLeft {
-				delta = -1
+			// A (NavConfirm) activates the focused item: it opens ABOUT, runs
+			// RESTORE DEFAULTS, flips a toggle, or advances a value. Arrows only
+			// adjust values left/right — they never fire pure action rows.
+			var err error
+			if action == input.NavConfirm {
+				err = activeMenu.ToggleFocused()
+			} else {
+				delta := 1
+				if action == input.NavLeft {
+					delta = -1
+				}
+				err = activeMenu.Cycle(delta)
 			}
-			if err := activeMenu.Cycle(delta); err != nil {
-				logger.Debugf("cycle focused: %v", err)
+			if err != nil {
+				logger.Debugf("activate focused: %v", err)
 			}
-			// Cancel if ToggleFocused entered edit mode (API key item).
+			// Cancel if activation entered edit mode (API key item).
 			if ed, ok := activeMenu.(editable); ok && ed.IsEditing() {
 				ed.CancelEdit()
 			}
-			// Auto-persist after every value cycle. Validation failures
-			// (e.g. AI mode without providers) are silently dropped.
+			// Auto-persist after every change. Validation failures (e.g. AI mode
+			// without providers) are silently dropped.
 			if err := commitMenu(activeMenu); err != nil {
 				logger.Debugf("auto-save: %v", err)
 			}
@@ -946,6 +987,35 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	return nil
 }
 
+// aboutProjectURL is the repository the About screen's QR code points to.
+const aboutProjectURL = "https://github.com/carroarmato0/nextui-bmo-pak"
+
+// buildAboutState assembles the static About-screen content for this build. The
+// QR code is generated once; if encoding fails the screen still renders (just
+// without the code) so About is never a hard dependency on the QR library.
+func buildAboutState(logger *observability.Logger) ui.AboutState {
+	matrix, err := qr.Matrix(aboutProjectURL)
+	if err != nil {
+		logger.Warnf("about: QR generation failed: %v", err)
+	}
+	return ui.AboutState{
+		Name: "BMO",
+		Description: []string{
+			"AN INTERACTIVE BMO COMPANION",
+			"FOR NEXTUI HANDHELDS",
+		},
+		Version: buildinfo.VersionString(),
+		Attribution: []string{
+			"SOME ARTWORK INSPIRED BY",
+			"CHERRY HONEY'S (@CHERRYHONEY)",
+			"BMO FACE TEMPLATES/ASSETS,",
+			"USED WITH PERMISSION.",
+		},
+		URL: aboutProjectURL,
+		QR:  matrix,
+	}
+}
+
 func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 	if !src.Visible {
 		return nil
@@ -959,9 +1029,11 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 			Focused:  item.Focused,
 			Disabled: item.Disabled,
 			Hidden:   item.Hidden,
+			Spacer:   item.Spacer,
+			Indent:   item.Indent,
 		})
 	}
-	return &renderer.OverlayState{
+	out := &renderer.OverlayState{
 		Visible:    true,
 		Title:      src.Title,
 		Subtitle:   append([]string(nil), src.Subtitle...),
@@ -969,6 +1041,17 @@ func convertOverlay(src ui.OverlayState) *renderer.OverlayState {
 		Footer:     src.Footer,
 		FocusIndex: src.FocusIndex,
 	}
+	if src.About != nil {
+		out.About = &renderer.AboutState{
+			Name:        src.About.Name,
+			Description: append([]string(nil), src.About.Description...),
+			Version:     src.About.Version,
+			Attribution: append([]string(nil), src.About.Attribution...),
+			URL:         src.About.URL,
+			QR:          src.About.QR,
+		}
+	}
+	return out
 }
 
 // buildAnimationEngine assembles the effective animation set for the active mod

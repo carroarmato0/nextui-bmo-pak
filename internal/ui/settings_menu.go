@@ -24,6 +24,8 @@ type SettingsMenu struct {
 	onRestore        func() error
 	modChoices       []ModChoice
 	onModChange      func(string)
+	about            *AboutState
+	aboutActive      bool
 }
 
 func NewSettingsMenu(cfg config.Config) *SettingsMenu {
@@ -58,6 +60,28 @@ func (m *SettingsMenu) SetModChoices(choices []ModChoice) {
 func (m *SettingsMenu) SetModChangeCallback(fn func(string)) {
 	if m != nil {
 		m.onModChange = fn
+	}
+}
+
+// SetAbout supplies the (static) About-screen content shown when the ABOUT
+// item is activated.
+func (m *SettingsMenu) SetAbout(about AboutState) {
+	if m != nil {
+		a := about
+		m.about = &a
+	}
+}
+
+// AboutActive reports whether the About screen is currently shown in place of
+// the settings list.
+func (m *SettingsMenu) AboutActive() bool {
+	return m != nil && m.aboutActive && m.about != nil
+}
+
+// DismissAbout returns from the About screen to the settings list.
+func (m *SettingsMenu) DismissAbout() {
+	if m != nil {
+		m.aboutActive = false
 	}
 }
 
@@ -101,36 +125,89 @@ func (m *SettingsMenu) Title() string {
 	return strings.ToUpper(strings.TrimSpace(m.title))
 }
 
-// Move advances the focus by delta, skipping non-navigable slots.
-// Slots 3–6 (AI status indicators) are always skipped.
-// Slot 1 (log system prompt) is skipped unless log level is "debug".
+// secondsUnit renders as a lowercase "s" via a private-use glyph in the
+// renderer's font (drawText force-uppercases ASCII, so a plain "s" would show
+// as "S"). Used for the request-timeout unit, e.g. "TIMEOUT: 30s". Keep the
+// rune in sync with the glyph table in internal/renderer.
+const secondsUnit = "\uE073"
+
+// settingsSlot is one settings row together with whether the cursor may land on
+// it. The slot order is fixed (indices are stable) so the ToggleFocused/Cycle
+// switches stay aligned; visibility and navigability vary with mode/log level.
+type settingsSlot struct {
+	item      OverlayItem
+	navigable bool
+}
+
+const settingsSlotCount = 19
+
+// slots is the single source of truth for the settings layout: row content,
+// visibility and navigability all derive from here, so Move, shouldSkip and
+// Overlay can never drift out of sync. AI-only rows are hidden (not just
+// disabled) when the assistant is not in AI mode, grouping them under MODE.
+func (m *SettingsMenu) slots() []settingsSlot {
+	isDebug := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) == "debug"
+	isAI := m.cfg.Mode == config.ModeAI
+	aiToggle := func(code, label string, on bool) settingsSlot {
+		return settingsSlot{OverlayItem{Code: code, Label: label, Selected: on, Hidden: !isAI, Indent: true}, isAI}
+	}
+	aiCycle := func(code, label string) settingsSlot {
+		return settingsSlot{OverlayItem{Code: code, Label: label, Selected: true, Hidden: !isAI, Indent: true}, isAI}
+	}
+	// AI provider/voice rows carry a status box like every other entry and are
+	// nested under MODE via Indent. navigable is false for the read-only voice.
+	aiStatus := func(code, label string, navigable bool) settingsSlot {
+		return settingsSlot{OverlayItem{Code: code, Label: label, Selected: true, Hidden: !isAI, Indent: true}, navigable && isAI}
+	}
+	return []settingsSlot{
+		{OverlayItem{Code: "log_level", Label: "LOG: " + strings.ToUpper(m.cfg.LogLevel), Selected: true}, true},
+		{OverlayItem{Code: "log_system_prompt", Label: "LOG SYSTEM PROMPT: " + onOff(m.cfg.LogSystemPrompt), Selected: m.cfg.LogSystemPrompt, Hidden: !isDebug}, isDebug},
+		{OverlayItem{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode), Selected: true}, true},
+		// Provider rows: hidden in idle, focusable (cycled L/R) in AI mode.
+		aiStatus("stt_status", providerModelLabel("STT", m.cfg.STT.Current()), true),
+		aiStatus("chat_status", providerModelLabel("CHAT", m.cfg.Chat.Current()), true),
+		aiStatus("tts_status", providerModelLabel("TTS", m.cfg.TTS.Current()), true),
+		// Voice: AI-only, read-only status row (never focusable).
+		aiStatus("voice_status", voiceStatusLabel(m.cfg.TTS.Current()), false),
+		aiToggle("aware_library", "AWARE LIBRARY: "+onOff(m.cfg.DeviceContext.Library), m.cfg.DeviceContext.Library),
+		aiToggle("aware_saves", "AWARE SAVES: "+onOff(m.cfg.DeviceContext.Saves), m.cfg.DeviceContext.Saves),
+		aiToggle("aware_playlog", "AWARE PLAY LOG: "+onOff(m.cfg.DeviceContext.PlayLog), m.cfg.DeviceContext.PlayLog),
+		aiToggle("aware_system", "AWARE SYSTEM: "+onOff(m.cfg.DeviceContext.System), m.cfg.DeviceContext.System),
+		aiToggle("aware_achievements", "AWARE ACHIEVEMENTS: "+onOff(m.cfg.DeviceContext.Achievements), m.cfg.DeviceContext.Achievements),
+		aiCycle("library_detail", "LIBRARY DETAIL: "+strings.ToUpper(m.cfg.LibraryDetail)),
+		aiCycle("request_timeout", fmt.Sprintf("TIMEOUT: %d%s", m.cfg.RequestTimeout, secondsUnit)),
+		aiCycle("proactive_talk", "PROACTIVE TALK: "+strings.ToUpper(m.cfg.ProactiveTalk)),
+		{OverlayItem{Code: "mod", Label: "MOD: " + m.modLabel(), Selected: true}, true},
+		// Blank separator setting the destructive Restore Defaults apart.
+		{OverlayItem{Code: "spacer", Spacer: true}, false},
+		{OverlayItem{Code: "restore_defaults", Label: "RESTORE DEFAULTS"}, true},
+		{OverlayItem{Code: "about", Label: "ABOUT"}, true},
+	}
+}
+
+// Move advances the focus by delta, skipping non-navigable slots (hidden rows,
+// read-only status rows, and the separator), wrapping at both ends.
 func (m *SettingsMenu) Move(delta int) {
 	if m == nil {
 		return
 	}
-	const count = 17
+	const count = settingsSlotCount
 	step := 1
 	if delta < 0 {
 		step = -1
 	}
-	m.focus = ((m.focus + delta) % count + count) % count
+	m.focus = ((m.focus+delta)%count + count) % count
 	for m.shouldSkip(m.focus) {
 		m.focus = (m.focus + step + count) % count
 	}
 }
 
 func (m *SettingsMenu) shouldSkip(idx int) bool {
-	isAI := m.cfg.Mode == config.ModeAI
-	if idx >= 3 && idx <= 5 {
-		return !isAI // provider rows focusable only in AI mode
-	}
-	if idx == 6 {
-		return true // voice is a read-only status row
-	}
-	if idx == 1 && strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) != "debug" {
+	slots := m.slots()
+	if idx < 0 || idx >= len(slots) {
 		return true
 	}
-	return false
+	return !slots[idx].navigable
 }
 
 func (m *SettingsMenu) ToggleFocused() error {
@@ -159,6 +236,12 @@ func (m *SettingsMenu) ToggleFocused() error {
 		} else {
 			m.cfg.Mode = config.ModeIdle
 		}
+	case 3:
+		m.cfg.STT.Cycle(1)
+	case 4:
+		m.cfg.Chat.Cycle(1)
+	case 5:
+		m.cfg.TTS.Cycle(1)
 	case 7:
 		m.cfg.DeviceContext.Library = !m.cfg.DeviceContext.Library
 	case 8:
@@ -199,9 +282,13 @@ func (m *SettingsMenu) ToggleFocused() error {
 		m.cfg.ProactiveTalk = next
 	case 15:
 		m.cycleMod()
-	case 16:
+	case 17:
 		if m.onRestore != nil {
 			return m.onRestore()
+		}
+	case 18:
+		if m.about != nil {
+			m.aboutActive = true
 		}
 	default:
 		return fmt.Errorf("unsupported focus %d", m.focus)
@@ -228,51 +315,51 @@ func (m *SettingsMenu) Cycle(delta int) error {
 		m.cfg.TTS.Cycle(delta)
 		return nil
 	default:
+		// Arrows adjust values only; pure action rows (ABOUT, RESTORE DEFAULTS)
+		// are activated by the A button (ToggleFocused), never by cycling.
+		if m.isActionRow() {
+			return nil
+		}
 		return m.ToggleFocused()
 	}
 }
 
-func (m *SettingsMenu) Overlay() OverlayState {
-	isDebug := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) == "debug"
-	isAI := m.cfg.Mode == config.ModeAI
-	items := []OverlayItem{
-		{Code: "log_level", Label: "LOG: " + strings.ToUpper(m.cfg.LogLevel),
-			Selected: true, Focused: m.focus == 0},
-		{Code: "log_system_prompt", Label: "LOG SYSTEM PROMPT: " + onOff(m.cfg.LogSystemPrompt),
-			Selected: m.cfg.LogSystemPrompt, Focused: m.focus == 1, Hidden: !isDebug},
-		{Code: "mode", Label: "MODE: " + strings.ToUpper(m.cfg.Mode),
-			Selected: true, Focused: m.focus == 2},
-		{Code: "stt_status", Label: providerModelLabel("STT", m.cfg.STT.Current()), Disabled: !isAI, Focused: m.focus == 3},
-		{Code: "chat_status", Label: providerModelLabel("CHAT", m.cfg.Chat.Current()), Disabled: !isAI, Focused: m.focus == 4},
-		{Code: "tts_status", Label: providerModelLabel("TTS", m.cfg.TTS.Current()), Disabled: !isAI, Focused: m.focus == 5},
-		{Code: "voice_status", Label: voiceStatusLabel(m.cfg.TTS.Current()), Disabled: !isAI},
-		{Code: "aware_library", Label: "AWARE LIBRARY: " + onOff(m.cfg.DeviceContext.Library),
-			Selected: m.cfg.DeviceContext.Library, Focused: m.focus == 7},
-		{Code: "aware_saves", Label: "AWARE SAVES: " + onOff(m.cfg.DeviceContext.Saves),
-			Selected: m.cfg.DeviceContext.Saves, Focused: m.focus == 8},
-		{Code: "aware_playlog", Label: "AWARE PLAY LOG: " + onOff(m.cfg.DeviceContext.PlayLog),
-			Selected: m.cfg.DeviceContext.PlayLog, Focused: m.focus == 9},
-		{Code: "aware_system", Label: "AWARE SYSTEM: " + onOff(m.cfg.DeviceContext.System),
-			Selected: m.cfg.DeviceContext.System, Focused: m.focus == 10},
-		{Code: "aware_achievements", Label: "AWARE ACHIEVEMENTS: " + onOff(m.cfg.DeviceContext.Achievements),
-			Selected: m.cfg.DeviceContext.Achievements, Focused: m.focus == 11},
-		{Code: "library_detail", Label: "LIBRARY DETAIL: " + strings.ToUpper(m.cfg.LibraryDetail),
-			Selected: true, Focused: m.focus == 12},
-		{Code: "request_timeout", Label: fmt.Sprintf("TIMEOUT: %ds", m.cfg.RequestTimeout),
-			Selected: true, Focused: m.focus == 13},
-		{Code: "proactive_talk", Label: "PROACTIVE TALK: " + strings.ToUpper(m.cfg.ProactiveTalk),
-			Selected: true, Focused: m.focus == 14},
-		{Code: "mod", Label: "MOD: " + m.modLabel(),
-			Selected: true, Focused: m.focus == 15},
-		{Code: "restore_defaults", Label: "RESTORE DEFAULTS", Focused: m.focus == 16},
+// isActionRow reports whether the focused row is a pure action (it does
+// something when activated rather than holding a cyclable value).
+func (m *SettingsMenu) isActionRow() bool {
+	slots := m.slots()
+	if m.focus < 0 || m.focus >= len(slots) {
+		return false
 	}
+	switch slots[m.focus].item.Code {
+	case "about", "restore_defaults":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *SettingsMenu) Overlay() OverlayState {
+	if m.AboutActive() {
+		return OverlayState{
+			Visible: true,
+			Title:   m.title,
+			Footer:  "PRESS ANY BUTTON TO RETURN",
+			About:   m.about,
+		}
+	}
+	slots := m.slots()
+	items := make([]OverlayItem, len(slots))
 	// FocusIndex is the index into the VISIBLE (non-Hidden) row list so the
-	// renderer's scroll viewport stays correct when the debug-only
-	// log_system_prompt row is hidden.
+	// renderer's scroll viewport stays correct when AI-only and debug-only rows
+	// are hidden.
 	focusVisible := 0
 	visible := 0
-	for i := range items {
-		if items[i].Hidden {
+	for i, s := range slots {
+		it := s.item
+		it.Focused = s.navigable && i == m.focus
+		items[i] = it
+		if it.Hidden {
 			continue
 		}
 		if i == m.focus {

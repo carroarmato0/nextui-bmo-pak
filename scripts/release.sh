@@ -51,10 +51,22 @@ fi
 
 CACHE_DIR="$(pwd)/.go_cache"
 mkdir -p "$CACHE_DIR"
+# Build version (shown on the About screen). Priority:
+#   1. "<sha>-dirty" when the working tree has uncommitted changes
+#   2. the exact git tag on HEAD, if any
+#   3. the short commit SHA otherwise
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-if [ "$GIT_COMMIT" != "unknown" ] && ! git diff --quiet 2>/dev/null; then
-    GIT_COMMIT="${GIT_COMMIT}-dirty"
+GIT_TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
+if [ "$GIT_COMMIT" = "unknown" ]; then
+    VERSION="unknown"
+elif [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    VERSION="${GIT_COMMIT}-dirty"
+elif [ -n "$GIT_TAG" ]; then
+    VERSION="$GIT_TAG"
+else
+    VERSION="$GIT_COMMIT"
 fi
+echo "==> Build version: $VERSION"
 
 DEV_IMAGE="bmo-pak-dev"
 ensure_dev_image() {
@@ -96,12 +108,13 @@ build_platform() {
         -w /workspace \
         -e IN_CONTAINER=1 \
         -e GOCACHE=/go/build-cache \
-        -e GIT_COMMIT="$GIT_COMMIT" \
+        -e VERSION="$VERSION" \
         "bmo-pak-${platform}-dev" \
         sh -c "
             mkdir -p bin/${platform} lib/${platform}
             CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
                 go build -a -tags netgo -buildvcs=false \
+                -ldflags \"-X github.com/carroarmato0/nextui-bmo/internal/buildinfo.Version=\$VERSION\" \
                 -o bin/${platform}/bmo-pak ./cmd/bmo-pak
             echo 'Built: bin/${platform}/bmo-pak'
             SDL2_SO=\$(ls \"\$SYSROOT/usr/lib\"/libSDL2-2.0.so.0.* 2>/dev/null | grep -v '\.so\$' | head -1)

@@ -59,6 +59,18 @@ type OverlayState struct {
 	Items      []OverlayItem
 	Footer     string
 	FocusIndex int
+	About      *AboutState // when set, the panel shows the About screen
+}
+
+// AboutState mirrors ui.AboutState for the renderer: the centred About panel
+// with a QR code. QR is the module matrix (true = dark) including its quiet zone.
+type AboutState struct {
+	Name        string
+	Description []string
+	Version     string
+	Attribution []string
+	URL         string
+	QR          [][]bool
 }
 
 type OverlayItem struct {
@@ -68,6 +80,8 @@ type OverlayItem struct {
 	Focused  bool
 	Disabled bool
 	Hidden   bool
+	Spacer   bool // blank separator row: no box/label, just vertical space
+	Indent   bool // nest the row right by one box width + margin
 }
 
 type Layout struct {
@@ -612,49 +626,57 @@ func (r *Renderer) drawZ(x, y, size int32, c rgba) {
 }
 
 var glyphs = map[rune][7]uint8{
-	' ': {0, 0, 0, 0, 0, 0, 0},
-	'!': {4, 4, 4, 4, 4, 0, 4},
-	',': {0, 0, 0, 0, 0, 4, 8},
-	'-': {0, 0, 0, 31, 0, 0, 0},
-	'.': {0, 0, 0, 0, 0, 0, 4},
-	'/': {1, 2, 4, 8, 16, 0, 0},
-	':': {0, 4, 0, 0, 4, 0, 0},
-	'0': {14, 17, 19, 21, 25, 17, 14},
-	'1': {4, 12, 4, 4, 4, 4, 14},
-	'2': {14, 17, 1, 2, 4, 8, 31},
-	'3': {30, 1, 1, 14, 1, 1, 30},
-	'4': {2, 6, 10, 18, 31, 2, 2},
-	'5': {31, 16, 30, 1, 1, 17, 14},
-	'6': {6, 8, 16, 30, 17, 17, 14},
-	'7': {31, 1, 2, 4, 8, 8, 8},
-	'8': {14, 17, 17, 14, 17, 17, 14},
-	'9': {14, 17, 17, 15, 1, 2, 12},
-	'A': {14, 17, 17, 31, 17, 17, 17},
-	'B': {30, 17, 17, 30, 17, 17, 30},
-	'C': {14, 17, 16, 16, 16, 17, 14},
-	'D': {30, 17, 17, 17, 17, 17, 30},
-	'E': {31, 16, 16, 30, 16, 16, 31},
-	'F': {31, 16, 16, 30, 16, 16, 16},
-	'G': {14, 17, 16, 23, 17, 17, 15},
-	'H': {17, 17, 17, 31, 17, 17, 17},
-	'I': {14, 4, 4, 4, 4, 4, 14},
-	'J': {7, 2, 2, 2, 18, 18, 12},
-	'K': {17, 18, 20, 24, 20, 18, 17},
-	'L': {16, 16, 16, 16, 16, 16, 31},
-	'M': {17, 27, 21, 21, 17, 17, 17},
-	'N': {17, 25, 21, 19, 17, 17, 17},
-	'O': {14, 17, 17, 17, 17, 17, 14},
-	'P': {30, 17, 17, 30, 16, 16, 16},
-	'Q': {14, 17, 17, 17, 21, 18, 13},
-	'R': {30, 17, 17, 30, 20, 18, 17},
-	'S': {15, 16, 16, 14, 1, 1, 30},
-	'T': {31, 4, 4, 4, 4, 4, 4},
-	'U': {17, 17, 17, 17, 17, 17, 14},
-	'V': {17, 17, 17, 17, 17, 10, 4},
-	'W': {17, 17, 17, 21, 21, 21, 10},
-	'X': {17, 17, 10, 4, 10, 17, 17},
-	'Y': {17, 17, 10, 4, 4, 4, 4},
-	'Z': {31, 1, 2, 4, 8, 16, 31},
+	' ':  {0, 0, 0, 0, 0, 0, 0},
+	'!':  {4, 4, 4, 4, 4, 0, 4},
+	',':  {0, 0, 0, 0, 0, 4, 8},
+	'-':  {0, 0, 0, 31, 0, 0, 0},
+	'.':  {0, 0, 0, 0, 0, 0, 4},
+	'/':  {1, 2, 4, 8, 16, 0, 0},
+	':':  {0, 4, 0, 0, 4, 0, 0},
+	'(':  {2, 4, 8, 8, 8, 4, 2},
+	')':  {8, 4, 2, 2, 2, 4, 8},
+	'\'': {4, 4, 8, 0, 0, 0, 0},
+	'@':  {14, 17, 23, 21, 23, 16, 14},
+	'0':  {14, 17, 19, 21, 25, 17, 14},
+	'1':  {4, 12, 4, 4, 4, 4, 14},
+	'2':  {14, 17, 1, 2, 4, 8, 31},
+	'3':  {30, 1, 1, 14, 1, 1, 30},
+	'4':  {2, 6, 10, 18, 31, 2, 2},
+	'5':  {31, 16, 30, 1, 1, 17, 14},
+	'6':  {6, 8, 16, 30, 17, 17, 14},
+	'7':  {31, 1, 2, 4, 8, 8, 8},
+	'8':  {14, 17, 17, 14, 17, 17, 14},
+	'9':  {14, 17, 17, 15, 1, 2, 12},
+	'A':  {14, 17, 17, 31, 17, 17, 17},
+	'B':  {30, 17, 17, 30, 17, 17, 30},
+	'C':  {14, 17, 16, 16, 16, 17, 14},
+	'D':  {30, 17, 17, 17, 17, 17, 30},
+	'E':  {31, 16, 16, 30, 16, 16, 31},
+	'F':  {31, 16, 16, 30, 16, 16, 16},
+	'G':  {14, 17, 16, 23, 17, 17, 15},
+	'H':  {17, 17, 17, 31, 17, 17, 17},
+	'I':  {14, 4, 4, 4, 4, 4, 14},
+	'J':  {7, 2, 2, 2, 18, 18, 12},
+	'K':  {17, 18, 20, 24, 20, 18, 17},
+	'L':  {16, 16, 16, 16, 16, 16, 31},
+	'M':  {17, 27, 21, 21, 17, 17, 17},
+	'N':  {17, 25, 21, 19, 17, 17, 17},
+	'O':  {14, 17, 17, 17, 17, 17, 14},
+	'P':  {30, 17, 17, 30, 16, 16, 16},
+	'Q':  {14, 17, 17, 17, 21, 18, 13},
+	'R':  {30, 17, 17, 30, 20, 18, 17},
+	'S':  {15, 16, 16, 14, 1, 1, 30},
+	'T':  {31, 4, 4, 4, 4, 4, 4},
+	'U':  {17, 17, 17, 17, 17, 17, 14},
+	'V':  {17, 17, 17, 17, 17, 10, 4},
+	'W':  {17, 17, 17, 21, 21, 21, 10},
+	'X':  {17, 17, 10, 4, 10, 17, 17},
+	'Y':  {17, 17, 10, 4, 4, 4, 4},
+	'Z':  {31, 1, 2, 4, 8, 16, 31},
+	// Private-use rune rendering a lowercase "s". drawText force-uppercases
+	// ASCII, so callers that genuinely need a lowercase glyph (the timeout's
+	// seconds unit) use this rune instead. Keep in sync with ui.secondsUnit.
+	'\uE073': {0, 0, 15, 16, 14, 1, 30},
 }
 
 func (r *Renderer) drawText(x, y, scale int32, c rgba, text string) {
@@ -682,6 +704,85 @@ func (r *Renderer) drawText(x, y, scale int32, c rgba, text string) {
 	}
 }
 
+// drawTextCentered draws text horizontally centred on cx. Glyphs advance
+// 6*scale and are 5*scale wide, so the visible run spans 6*n*scale - scale.
+func (r *Renderer) drawTextCentered(cx, y, scale int32, c rgba, text string) {
+	n := int32(len([]rune(text)))
+	if n == 0 {
+		return
+	}
+	w := 6*n*scale - scale
+	r.drawText(cx-w/2, y, scale, c, text)
+}
+
+// drawAbout renders the centred About panel: name, description, version, a
+// scannable QR code, the project URL and artwork attribution, with a dismissal
+// hint pinned to the bottom. It is laid out top-to-bottom from a running y.
+func (r *Renderer) drawAbout(panelX, panelY, panelW, panelH int32, about AboutState, footer string) {
+	var (
+		light  = rgba{214, 235, 227, 255}
+		body   = rgba{176, 213, 206, 255}
+		accent = rgba{255, 241, 145, 255}
+		dim    = rgba{140, 170, 170, 255}
+	)
+	cx := panelX + panelW/2
+	y := panelY + 24
+
+	r.drawTextCentered(cx, y, 5, light, about.Name) // 35px name
+	y += 35 + 24
+
+	for _, line := range about.Description {
+		r.drawTextCentered(cx, y, 3, body, line) // 21px body, 9px leading
+		y += 30
+	}
+	// The version sits on its own with generous margins above and below.
+	y += 22
+	r.drawTextCentered(cx, y, 4, accent, "VERSION "+about.Version) // 28px, prominent
+	y += 28 + 30
+
+	// Size the QR to a target square, snapping to a whole-pixel module size so
+	// the code stays crisp, then centre it. Bound it by the space left above the
+	// URL/attribution/footer so it never overruns a short panel.
+	if n := int32(len(about.QR)); n > 0 {
+		belowReserve := int32(36) + int32(len(about.Attribution))*30 + 48
+		avail := (panelY + panelH) - y - belowReserve
+		target := clampInt32(panelH*30/100, 120, 320)
+		if avail > 0 && target > avail {
+			target = avail
+		}
+		module := target / n
+		if module < 2 {
+			module = 2
+		}
+		qrSize := module * n
+		qx := cx - qrSize/2
+		// White field (the matrix's quiet-zone border keeps the margin) so the
+		// code scans against the dark panel.
+		r.fillRectColor(qx, y, qrSize, qrSize, rgba{255, 255, 255, 255})
+		for row := int32(0); row < n; row++ {
+			for col := int32(0); col < n; col++ {
+				if about.QR[row][col] {
+					r.fillRectColor(qx+col*module, y+row*module, module, module, rgba{0, 0, 0, 255})
+				}
+			}
+		}
+		y += qrSize + 18
+	}
+
+	url := strings.TrimPrefix(strings.TrimPrefix(about.URL, "https://"), "http://")
+	r.drawTextCentered(cx, y, 3, body, url)
+	y += 36
+
+	for _, line := range about.Attribution {
+		r.drawTextCentered(cx, y, 3, dim, line) // 21px, 9px leading
+		y += 30
+	}
+
+	if strings.TrimSpace(footer) != "" {
+		r.drawTextCentered(cx, panelY+panelH-34, 3, body, footer)
+	}
+}
+
 // overlayWindow returns the scroll offset (index of the first rendered visible
 // row) such that focus stays inside [offset, offset+maxRows). It clamps so the
 // window never runs past the content. Degenerate inputs yield 0.
@@ -704,24 +805,32 @@ func overlayWindow(total, maxRows, focus int) int {
 }
 
 func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
-	panelW := clampInt32(layout.W*78/100, 360, layout.W-2*layout.Margin)
-	panelH := clampInt32(layout.H*76/100, 260, layout.H-2*layout.Margin)
+	panelW := clampInt32(layout.W*92/100, 360, layout.W-2*layout.Margin)
+	panelH := clampInt32(layout.H*90/100, 260, layout.H-2*layout.Margin)
 	panelX := (layout.W - panelW) / 2
 	panelY := (layout.H - panelH) / 2
 	r.fillRoundedRect(panelX, panelY, panelW, panelH, clampInt32(layout.CornerRadius/2, 12, 48), rgba{10, 29, 39, 255})
 	r.fillRoundedRect(panelX+4, panelY+4, panelW-8, panelH-8, clampInt32(layout.CornerRadius/2, 10, 40), rgba{22, 53, 62, 255})
 
-	top := panelY + 22
-	left := panelX + 22
+	if overlay.About != nil {
+		r.drawAbout(panelX, panelY, panelW, panelH, *overlay.About, overlay.Footer)
+		return
+	}
+
+	top := panelY + 16
+	left := panelX + 16
 	r.drawText(left, top, 4, rgba{214, 235, 227, 255}, overlay.Title)
 	top += 40 // title is 28px (7 rows × 4px); 12px breathing room below
 	for _, line := range overlay.Subtitle {
-		r.drawText(left, top, 2, rgba{176, 213, 206, 255}, line)
-		top += 24 // subtitle line is 14px (7 rows × 2px); 10px gap between lines
+		r.drawText(left, top, 3, rgba{176, 213, 206, 255}, line)
+		top += 32 // subtitle line is 21px (7 rows × 3px); 11px gap between lines
 	}
 	top += 18
 
-	const rowStride = int32(26) // normalized stride for every visible row
+	const rowTextScale = int32(3) // row labels at 21px (7 rows × 3px) for legibility
+	const rowStride = int32(32)   // normalized stride sized for 21px rows + gap
+	const boxSize = int32(14)     // selection checkbox, sized to match the row text
+	const labelX = int32(24)      // x offset of the label past the checkbox
 
 	// Collect visible rows (Hidden excluded) so scrolling math is stable.
 	visibleIdx := make([]int, 0, len(overlay.Items))
@@ -732,7 +841,7 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 		visibleIdx = append(visibleIdx, i)
 	}
 
-	footerY := panelY + panelH - 28
+	footerY := panelY + panelH - 34
 	// Reserve a row of headroom above the footer for the ▼ affordance.
 	contentBottom := footerY - rowStride
 	maxRows := int((contentBottom - top) / rowStride)
@@ -753,12 +862,30 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 
 	for _, vi := range visibleIdx[offset:end] {
 		item := overlay.Items[vi]
-		if item.Disabled {
-			r.fillRectColor(left, top+3, 10, 10, rgba{40, 65, 70, 255})
-			r.drawText(left+20, top, 2, rgba{95, 115, 115, 255}, item.Label)
+		if item.Spacer {
+			// Blank separator: consume a row of height, draw nothing.
 			top += rowStride
 			continue
 		}
+		// Indented rows nest under their parent by one box width + margin
+		// (labelX already equals boxSize plus that margin), so an indented box
+		// lines up under the parent row's label.
+		rowLeft := left
+		if item.Indent {
+			rowLeft += labelX
+		}
+		if item.Disabled {
+			r.fillRectColor(rowLeft, top+3, boxSize, boxSize, rgba{40, 65, 70, 255})
+			r.drawText(rowLeft+labelX, top, rowTextScale, rgba{95, 115, 115, 255}, item.Label)
+			top += rowStride
+			continue
+		}
+		labelColor := rgba{214, 235, 227, 255}
+		if item.Focused {
+			labelColor = rgba{255, 241, 145, 255}
+		}
+		// The box colour alone conveys on/off and focus — green selected, yellow
+		// focused, teal otherwise (no checkmark).
 		boxColor := rgba{79, 139, 141, 255}
 		if item.Selected {
 			boxColor = rgba{170, 232, 183, 255}
@@ -766,16 +893,8 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 		if item.Focused {
 			boxColor = rgba{255, 241, 145, 255}
 		}
-		r.fillRectColor(left, top+3, 10, 10, boxColor)
-		if item.Selected {
-			r.drawLine(left+2, top+8, left+4, top+11, rgba{16, 49, 56, 255})
-			r.drawLine(left+4, top+11, left+8, top+3, rgba{16, 49, 56, 255})
-		}
-		labelColor := rgba{214, 235, 227, 255}
-		if item.Focused {
-			labelColor = rgba{255, 241, 145, 255}
-		}
-		r.drawText(left+20, top, 2, labelColor, item.Label)
+		r.fillRectColor(rowLeft, top+3, boxSize, boxSize, boxColor)
+		r.drawText(rowLeft+labelX, top, rowTextScale, labelColor, item.Label)
 		top += rowStride
 	}
 
@@ -785,7 +904,7 @@ func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {
 	}
 
 	if strings.TrimSpace(overlay.Footer) != "" {
-		r.drawText(left, footerY, 2, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
+		r.drawText(left, footerY, 3, rgba{176, 213, 206, 255}, strings.ToUpper(overlay.Footer))
 	}
 }
 
