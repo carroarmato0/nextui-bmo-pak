@@ -27,6 +27,25 @@ findings are a primary deliverable, separate from the mod itself.
   rather than loudly. *Fix:* note in `faces.md` that unsupported elements are
   dropped without error, so visual verification is required.
 
+- **Mod override SVGs are validated as RAW XML, but the documented template
+  idiom (and the built-in `look_around`) put template actions inside attribute
+  values with quotes — which is invalid raw XML.** On mod load the device runs
+  `config.CheckOverrides`, which validates each `faces/*.svg` as XML on the raw
+  bytes *before* template execution. A face whose attribute uses
+  `cx="{{printf "%.1f" $lx}}"` (exactly what the embedded
+  `internal/face/assets/look_around.svg` does) is rejected as `not valid XML`
+  and silently folded to `neutral` — observed on-device as
+  `[WARN] mod override error: faces/look_around.svg: not valid XML`. So an
+  author who copies the built-in idle-animation idiom ships a face the validator
+  refuses. Workaround: keep attribute templates quote-free (`cx="{{$lx}}"`).
+  *Fix (one of):* (a) `CheckOverrides` should `RenderRest` before validating, so
+  it checks what is actually drawn (the renderer already does); or (b) document
+  in `faces.md`/`animations.md` that attribute-embedded template values must not
+  contain quotes, and change the built-in `look_around` to a quote-free form.
+  **Tooling lesson:** a validation test that renders the template first (our
+  initial `TestFacesRender`) will *not* catch this — the test must call the same
+  `config.CheckOverrides` path the device uses (now `TestDeviceValidation`).
+
 ## Confusing / underspecified
 
 - **"Stage into `./dist`" collides with `dist/` being gitignored.** The natural
