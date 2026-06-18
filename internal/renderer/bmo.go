@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"strings"
@@ -146,6 +147,12 @@ type Renderer struct {
 	faces  *face.Cache
 	anims  *face.Engine
 	exprTr exprTracker
+
+	// Dirty-present state: lastRendered holds the most recently presented
+	// frame, and dirtyPresents counts how many more times the current frame
+	// must be presented to fill the swap chain. See shouldPresent.
+	lastRendered  []uint32
+	dirtyPresents int
 }
 
 type rgba struct {
@@ -250,10 +257,11 @@ func (r *Renderer) Blank() error {
 		return fmt.Errorf("renderer is nil")
 	}
 	r.fillRectColor(0, 0, r.W, r.H, rgba{0, 0, 0, 255})
-	// 3 covers triple buffering (the deepest swap chain we expect); the extra
-	// presents are harmless on single-buffered backends.
+	// Present once per swap-chain buffer; the extra presents are harmless on
+	// single-buffered backends. This deliberately bypasses the dirty-present
+	// gate (the three black frames are identical) so every buffer is cleared.
 	var err error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < swapChainDepth; i++ {
 		if err = r.present(); err != nil {
 			return err
 		}
@@ -330,7 +338,7 @@ func (r *Renderer) Draw(frame FrameState) error {
 		// Hide the face while the settings overlay is open so eye arcs
 		// cannot bleed outside the panel regardless of the current expression.
 		r.drawOverlay(layout, *frame.Overlay)
-		return r.present()
+		return r.presentDirty()
 	}
 
 	canonical := face.Canonical(frame.Expression)
@@ -342,6 +350,63 @@ func (r *Renderer) Draw(frame FrameState) error {
 		r.drawSleepMarks(layout, phase)
 	}
 	r.drawCornerClock(layout, frame)
+	return r.presentDirty()
+}
+
+// swapChainDepth is the deepest display swap chain we expect (triple buffering
+// on the Smart Pro's pvrsrvkm/EGL backend). A changed frame must be presented
+// this many times so every buffer in the chain holds it; otherwise the next
+// vsync can flip a stale buffer back onto the screen. The Brick's
+// single-buffered fbdev path simply ignores the extra presents.
+const swapChainDepth = 3
+
+// framebufferEqual reports whether two ARGB pixel buffers are byte-identical.
+// It uses the runtime's SIMD memequal via bytes.Equal, which short-circuits on
+// the first differing pixel: cheap when frames differ (animation), and a full
+// scan only when they match (a static frame we are about to skip presenting).
+func framebufferEqual(a, b []uint32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	ab := unsafe.Slice((*byte)(unsafe.Pointer(&a[0])), len(a)*4)
+	bb := unsafe.Slice((*byte)(unsafe.Pointer(&b[0])), len(b)*4)
+	return bytes.Equal(ab, bb)
+}
+
+// shouldPresent decides whether the freshly rendered r.pixels must be uploaded
+// and presented. Presenting (a full-frame SDL_UpdateTexture every frame) is the
+// dominant CPU cost, so we skip it when the output has not changed.
+//
+// The decision is content-based, which makes it universal across arbitrary mod
+// faces and animations: any draw that alters a single pixel re-triggers
+// presentation, and a static custom face settles to zero presents. On a change
+// we present for swapChainDepth frames so every buffer in a multi-buffered swap
+// chain receives the new frame (mirroring Blank), preventing a stale buffer
+// from flipping back on the next vsync.
+func (r *Renderer) shouldPresent() bool {
+	if !framebufferEqual(r.pixels, r.lastRendered) {
+		if len(r.lastRendered) != len(r.pixels) {
+			r.lastRendered = make([]uint32, len(r.pixels))
+		}
+		copy(r.lastRendered, r.pixels)
+		r.dirtyPresents = swapChainDepth
+	}
+	if r.dirtyPresents > 0 {
+		r.dirtyPresents--
+		return true
+	}
+	return false
+}
+
+// presentDirty presents only while shouldPresent reports the frame still needs
+// to reach the display (changed, or the swap chain not yet filled).
+func (r *Renderer) presentDirty() error {
+	if !r.shouldPresent() {
+		return nil
+	}
 	return r.present()
 }
 
