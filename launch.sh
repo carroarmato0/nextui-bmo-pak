@@ -41,4 +41,11 @@ BUNDLED_SDL_LIB="$PAK_DIR/lib/$PLATFORM"
 export LD_LIBRARY_PATH="${NATIVE_SDL_LIB:+$NATIVE_SDL_LIB:}$BUNDLED_SDL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 cd "$PAK_DIR"
-exec "$PAK_DIR/bin/$PLATFORM/bmo-pak" "$@"
+# Opt-in profiling: scripts/debug.sh writes flags here; profile-restore removes
+# it. Absent in normal use, so this is a no-op for end users.
+PROFILE_FLAGS=""
+if [ -f "$PAK_DIR/.profile-flags" ]; then
+    PROFILE_FLAGS="$(cat "$PAK_DIR/.profile-flags")"
+fi
+# shellcheck disable=SC2086 # word-splitting of PROFILE_FLAGS is intentional
+exec "$PAK_DIR/bin/$PLATFORM/bmo-pak" $PROFILE_FLAGS "$@"
