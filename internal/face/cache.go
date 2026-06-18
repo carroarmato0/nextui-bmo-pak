@@ -4,6 +4,28 @@ import (
 	"sync"
 )
 
+// staticCacheModBudget bounds how many *non-canonical* (mod-supplied) face
+// frames stay resident. The built-in canonical set is pinned and excluded from
+// this budget, so the idle rotation never thrashes; only a mod's own custom
+// emotion faces — an unbounded axis — are LRU-evicted past this limit. At the
+// device's ~1024x768 / 1280x720 output each frame is ~3 MiB, so a 12-frame
+// mod budget caps custom-face residency at ~36 MiB on top of the pinned
+// canonical set. Beyond the budget, the least-recently-used custom face is
+// dropped and re-rasterized on demand (one static Rasterize, cheap vs an OOM).
+const staticCacheModBudget = 12
+
+// canonicalKeySet is the set of cache keys that are pinned (never evicted).
+// CanonicalNames are already canonical lowercase strings, which is exactly the
+// key form Library.Resolve yields for a canonical expression (and for a mod
+// override of one), so membership identifies a pinned frame.
+var canonicalKeySet = func() map[string]bool {
+	m := make(map[string]bool, len(CanonicalNames))
+	for _, n := range CanonicalNames {
+		m[n] = true
+	}
+	return m
+}()
+
 // Cache rasterizes and caches face frames at the current output resolution.
 type Cache struct {
 	lib      *Library
@@ -12,11 +34,37 @@ type Cache struct {
 	frames   map[string][]uint32
 	failed   map[string]bool
 	resolved map[string]string
+	lru      []string // unpinned (mod) keys, least-recently-used first
 }
 
 // NewCache returns a Cache backed by lib.
 func NewCache(lib *Library) *Cache {
 	return &Cache{lib: lib}
+}
+
+// noteUseLocked records a use of key for LRU ordering. Pinned (canonical) keys
+// are not tracked — they are never evicted. Caller holds c.mu.
+func (c *Cache) noteUseLocked(key string) {
+	if canonicalKeySet[key] {
+		return
+	}
+	for i, k := range c.lru {
+		if k == key {
+			c.lru = append(c.lru[:i], c.lru[i+1:]...)
+			break
+		}
+	}
+	c.lru = append(c.lru, key)
+}
+
+// evictLocked drops least-recently-used unpinned frames until the unpinned
+// resident count fits staticCacheModBudget. Caller holds c.mu.
+func (c *Cache) evictLocked() {
+	for len(c.lru) > staticCacheModBudget {
+		oldest := c.lru[0]
+		c.lru = c.lru[1:]
+		delete(c.frames, oldest)
+	}
 }
 
 // Warm pre-rasterizes every canonical expression at w×h without holding the
@@ -70,6 +118,8 @@ func (c *Cache) warmFrame(name string, w, h int) {
 	if !c.failed[name] {
 		if _, ok := c.frames[name]; !ok {
 			c.frames[name] = buf
+			c.noteUseLocked(name)
+			c.evictLocked()
 		}
 	}
 }
@@ -92,6 +142,7 @@ func (c *Cache) Frame(expr string, w, h int) []uint32 {
 		c.resolved[expr] = key
 	}
 	if buf, ok := c.frames[key]; ok {
+		c.noteUseLocked(key)
 		return buf
 	}
 	if c.failed[key] {
@@ -100,6 +151,8 @@ func (c *Cache) Frame(expr string, w, h int) []uint32 {
 	buf := c.renderLocked(key, w, h)
 	if buf != nil {
 		c.frames[key] = buf
+		c.noteUseLocked(key)
+		c.evictLocked()
 	} else {
 		c.failed[key] = true
 	}
@@ -122,6 +175,7 @@ func (c *Cache) resizeLocked(w, h int) {
 	c.w, c.h = w, h
 	c.frames = make(map[string][]uint32)
 	c.failed = make(map[string]bool)
+	c.lru = nil
 }
 
 // renderLocked rasterizes canonical at w×h, falling back from override to
