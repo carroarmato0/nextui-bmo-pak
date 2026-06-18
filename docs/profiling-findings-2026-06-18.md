@@ -69,6 +69,14 @@ From `bmo-perf-sample.csv` (155 rows, 2 s interval):
 1. **[highest impact — CPU/battery/heat] Skip the texture upload + present when the frame is unchanged.**
    Evidence: `SDL_UpdateTexture` (32 %) + `memmove` (23 %) = ~49 % of CPU; `present()` at `internal/renderer/bmo.go:348` uploads and presents unconditionally every `Draw`. Fix: dirty-track `r.pixels` (cheap rolling hash, or a `dirty` flag set by the draw primitives) and skip `tex.Update`+`Clear`+`Copy`+`Present` when identical to the last presented frame. The corner clock (once/min) and time-driven idle anims naturally mark themselves dirty, so animation is unaffected. Expected win: idle CPU from ~46 % toward single digits; large battery/thermal improvement. Mind the multi-buffer-on-exit rule ([[reference_blank_on_exit_multibuffer]]) — keep the 3× black-present on shutdown.
 
+> **✅ DONE (2026-06-18) on `fix/bound-face-cache`.** The static `Cache` now pins
+> the canonical set (fixed built-in list, always hot via the idle rotation —
+> never evicted, so the default config is unchanged) and LRU-evicts only
+> non-canonical mod faces past `staticCacheModBudget` (12 frames ≈ 36 MiB).
+> A mod with arbitrarily many custom `.svg` faces can no longer grow static
+> residency without bound; cold custom faces re-rasterize on demand. (The
+> animation engine was already bounded by `animMemoryBudget` = 128 MiB.)
+
 2. **[OOM driver — memory] Bound the face frame cache.**
    Evidence: `face.Cache.frames` (`internal/face/cache.go:12`) is unbounded and never evicted; ~265 MB live ≈ 88 retained full-res frames; `HeapSys` plateau at 291 MB. Fix: cap the cache (LRU by recency) and/or retain only the active expression's frames plus a small idle set, evicting inactive animated-face frame-sets. Aligns with [[reference_idle_full_set_oom]] ("serve amplitude faces from the static cache; only animate when speaking or time-driven"). Expected win: peak RSS down by 150–250 MB, removing the OOM headroom problem.
 
