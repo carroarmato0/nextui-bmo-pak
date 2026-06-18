@@ -1,6 +1,8 @@
 package perf
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,3 +55,52 @@ func TestCPUPercent(t *testing.T) {
 		t.Fatalf("cpuPercent(zero wall) = %f, want 0", v)
 	}
 }
+
+func TestFormatRow(t *testing.T) {
+	row := formatRow(sampleRow{
+		uptimeS:      12.5,
+		state:        "speaking",
+		vmrssKB:      45678,
+		goHeapAllocK: 2048,
+		goHeapSysK:   8192,
+		goNumGC:      7,
+		cpuPct:       33.3,
+		goroutines:   42,
+	})
+	want := "12.50,speaking,45678,2048,8192,7,33.30,42\n"
+	if row != want {
+		t.Fatalf("formatRow = %q, want %q", row, want)
+	}
+}
+
+func TestSamplerWritesHeaderAndRows(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "perf-sample.csv")
+	s := NewSampler(path, 10*time.Millisecond, func() string { return "idle" }, testLogger{})
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(45 * time.Millisecond)
+	s.Stop()
+	s.Stop() // idempotent
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if lines[0] != csvHeader {
+		t.Fatalf("header = %q, want %q", lines[0], csvHeader)
+	}
+	if len(lines) < 3 { // header + first immediate row + at least one tick + final
+		t.Fatalf("expected several rows, got %d:\n%s", len(lines), data)
+	}
+	if !strings.Contains(lines[1], ",idle,") {
+		t.Fatalf("row missing state tag: %q", lines[1])
+	}
+}
+
+type testLogger struct{}
+
+func (testLogger) Infof(string, ...any)  {}
+func (testLogger) Errorf(string, ...any) {}
