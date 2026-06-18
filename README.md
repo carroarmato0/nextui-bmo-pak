@@ -56,9 +56,9 @@ The correct binary is selected automatically at launch.
 
 ## Gallery
 
-| Neutral | Happy | Surprised | Love | Laugh | Sleeping |
+| Neutral | Happy | Surprised | Love | Sparkle | Sleeping |
 | --- | --- | --- | --- | --- | --- |
-| ![neutral](docs/images/faces/neutral.png) | ![happy](docs/images/faces/happy.png) | ![surprised](docs/images/faces/surprised.png) | ![love](docs/images/faces/love.png) | ![laugh](docs/images/faces/laugh.png) | ![sleeping](docs/images/faces/sleeping.png) |
+| ![neutral](docs/images/faces/neutral.png) | ![happy](docs/images/faces/happy.png) | ![surprised](docs/images/faces/surprised.png) | ![love](docs/images/faces/love.png) | ![sparkle](docs/images/faces/sparkle.png) | ![sleeping](docs/images/faces/sleeping.png) |
 
 ---
 
@@ -158,6 +158,8 @@ each provider its own `base_url` and `api_key`.
 | --- | --- |
 | A | Push-to-talk / confirm |
 | B | Cancel / exit |
+| X | Speak a random quote |
+| Y | Next face / animation (gallery preview) |
 | Start | Open/close Settings |
 | Menu | Exit to NextUI |
 

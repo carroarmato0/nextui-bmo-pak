@@ -206,6 +206,15 @@ adb push mods/pixel /mnt/SDCARD/.userdata/tg5040/BMO/mods/
 Open **Settings → MOD** on the device and select **Pixel**. BMO becomes
 Pixel on the next interaction.
 
+### 7. Check your work on the device
+
+With your mod selected, two buttons let you validate it without waiting:
+
+- **Y** — step through every face your mod resolves, one per press. Confirm each
+  override loads, is centred, and animates as intended.
+- **X** — speak a random line from your `quotes.txt` in your mod's voice
+  (requires AI mode with a TTS voice configured).
+
 ---
 
 ## Reference

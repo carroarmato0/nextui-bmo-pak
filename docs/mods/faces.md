@@ -31,11 +31,10 @@ You do not need to provide all of them — missing files use the built-in defaul
 | `listening.svg` | Listening | PTT recording active |
 | `thinking.svg` | Thinking | AI processing |
 | `speaking.svg` | Speaking | TTS playback |
-| `sleeping.svg` | Sleeping | Quota exhausted |
+| `sleeping.svg` | Sleeping | Quota exhausted (animated) |
 | `concerned.svg` | Concerned | Error / setup required |
 | `smile.svg` | Smile | Gentle smile |
 | `happy.svg` | Happy | Wide grin |
-| `laugh.svg` | Laughing | Squint eyes, open mouth |
 | `content.svg` | Content | Calm, eyes closed |
 | `sad.svg` | Sad | Downturned mouth |
 | `angry.svg` | Angry | Furrowed brows |
@@ -59,21 +58,33 @@ You do not need to provide all of them — missing files use the built-in defaul
 | `dismayed.svg` | Dismayed | Wide eyes, `D:` gasp |
 | `adoring.svg` | Adoring | Shiny eyes, blush, sparkles |
 | `sparkle.svg` | Sparkle | Gold 4-point sparkle eyes |
+| `look_around.svg` | Look around (idle) | Eyes scan left↔right during silence — time-animated |
+| `whistle.svg` | Whistle (idle) | Pursed mouth + rising music note during silence — time-animated |
+
+`look_around.svg` and `whistle.svg` are **idle animations**: BMO plays them on
+its own while waiting, so they are templates driven by a clock rather than by
+voice. Overriding them as a plain static `.svg` works too (you just lose the
+motion). See [animations.md](./animations.md) for how the time driver works.
 
 ---
 
 ## SVG format
 
-Every face is a **full scene** in a `280 × 210` viewBox:
+Every face is a **full scene** in a `280 × 210` viewBox. This is the exact
+canonical layout every built-in face starts from — copy it verbatim so your
+eyes and mouth line up with the rest of the set:
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
   <!-- body -->
   <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
-  <rect x="6" y="5" width="268" height="200" rx="26" fill="#4ECBA8"/>
+  <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
   <!-- screen -->
-  <rect x="22" y="20" width="202" height="155" rx="14" fill="#90e5c8"/>
-  <!-- face elements go here -->
+  <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
+  <!-- eyes -->
+  <circle cx="80" cy="78" r="6.5" fill="#1a1a1a"/>
+  <circle cx="199" cy="78" r="6.5" fill="#1a1a1a"/>
+  <!-- mouth / expression goes here -->
 </svg>
 ```
 
@@ -98,35 +109,65 @@ and the built-in default is used instead — BMO never shows a broken face.
 You can also use alias filenames. For example, `cry.svg` resolves to `crying`,
 `shocked.svg` to `surprised`, and `tongue.svg` to `playful` when no exact
 override exists. The lookup order is: exact filename → canonical name → built-in
-default. (`happy`, `laugh`, `excited`, `sad`, and `angry` are now their own
+default. (`happy`, `excited`, `sad`, and `angry` are now their own
 expressions, not aliases of `smile`/`concerned`.)
 
 ---
 
-## Speaking mouth (`speaking.svg`)
+## Lip-syncing mouth (`{{.m}}` templates)
 
-The built-in `speaking.svg` is a **Go template** that is rendered at multiple
-mouth-openness levels to animate the speaking mouth with audio amplitude.
+A face can animate its mouth in time with BMO's voice. To do this, write the
+SVG as a **Go template** with a single parameter `.m` — the mouth openness,
+`0.0` at rest rising to `1.0` at full volume. BMO renders the template at six
+openness levels and steps through them with the live audio amplitude.
 
-If your override file contains `{{` template markers, BMO treats it as a
-template and renders all levels. The available parameters are:
+Every built-in emotion uses the same two-line idiom: declare `$m`, draw your
+own resting mouth at `$m == 0`, and delegate every open level to the shared
+`talkmouth` partial (the teeth-and-tongue mouth built into BMO, auto-registered
+for every face template):
 
-| Parameter | Description |
-|-----------|-------------|
-| `{{.MouthH}}` | Mouth rectangle height in viewBox units (6–36) |
-| `{{.MouthRx}}` | Mouth rectangle corner radius |
-| `{{.TeethPath}}` | Pre-computed SVG path data for the teeth band |
-| `{{.InteriorPath}}` | Pre-computed SVG path data for the mouth interior |
-| `{{.TonguePath}}` | Pre-computed SVG path data for the tongue |
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$m := or .m 0.0}}
+  <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
+  <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
+  <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
+  <circle cx="80" cy="78" r="6.5" fill="#1a1a1a"/>
+  <circle cx="199" cy="78" r="6.5" fill="#1a1a1a"/>
+  {{if eq $m 0.0}}
+  <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  {{else}}{{template "talkmouth" $m}}{{end}}
+</svg>
+```
+
+You are free to ignore `talkmouth` and draw your own mouth shapes keyed off
+`$m` thresholds instead — `talkmouth` is just the built-in BMO mouth offered as
+a shortcut. The arithmetic helpers `add`, `sub`, and `mul` are available inside
+templates (e.g. `{{printf "%.1f" (add 106.0 (mul $m 4.0))}}`).
 
 If your override has **no** `{{` markers it is used as a **static face** during
 speech — BMO will not animate the mouth, but your design will display correctly.
+The dedicated `speaking.svg` face shown during TTS is the one exception in the
+built-in set: it is a six-frame `speaking_0…speaking_5` sequence (see
+[animations.md](./animations.md)) rather than an `.m` template.
+
+> **Idle animations** (`look_around.svg`, `whistle.svg`, `sleeping.svg`) are
+> also templates, but driven by *time* rather than amplitude — their parameter
+> is a clock value (`.x` for the eye scan, `.t` for the note/Z drift). See
+> [animations.md](./animations.md) for the driver details.
 
 ---
 
 ## Previewing your faces
 
-Maintainers render the full embedded face set with:
+**On the device (recommended for mod authors).** Press the **Y** button while
+BMO is idle to step through every face the active mod resolves — one face (or
+idle animation) per press. This is the quickest way to confirm your overrides
+load, are centred, and animate as intended, without waiting for the idle
+scheduler to cycle to them. Any interaction (a quote, push-to-talk, exit)
+returns BMO to normal idle behaviour. Press **X** to hear a random `quotes.txt`
+line in your mod's voice.
+
+**On a desktop (maintainers).** Render the full embedded face set with:
 
 ```
 go run ./cmd/render-faces

@@ -25,8 +25,12 @@ built-in speaking-mouth animation for free.
   start with an empty animation set. If you want animated expressions you
   must declare them in `animations`.
 
-The only built-in animation is `speaking`: six mouth-openness frames driven
-by real-time lip-sync amplitude.
+The built-in set is larger than just `speaking`. Every core emotion
+(`neutral`, `happy`, `smile`, `excited`, `content`, `concerned`, `sad`,
+`angry`, and the expressive emotions) is a six-step **amplitude** template on
+param `m` that lip-syncs while BMO talks; `speaking` is a six-frame amplitude
+animation; and `look_around`, `whistle`, and `sleeping` are **time** animations
+that play during silence. Overlay mods inherit all of them for free.
 
 ---
 
@@ -99,24 +103,33 @@ Advances frames at a fixed rate, independent of audio.
 
 ## Template-based animation
 
-Instead of listing explicit frame files, you can use a Go-template SVG
-rendered at multiple parameter values:
+Instead of listing explicit frame files, you can use a single Go-template SVG
+rendered at multiple parameter values. This is how every built-in emotion
+lip-syncs. The convention is param `m`, ranging `0` (rest) → `1` (mouth fully
+open):
 
 ```json
 {
-  "template": "speaking",
-  "param": "MouthH",
-  "from": 6,
-  "to": 36,
+  "template": "happy",
+  "param": "m",
+  "from": 0,
+  "to": 1,
   "steps": 6,
-  "driver": "amplitude"
+  "driver": { "type": "amplitude", "curve": "sqrt" }
 }
 ```
 
-`template` is the base name of an `.svg` file containing `{{.MouthH}}`
-(or another `{{.Param}}`) placeholders. BMO renders `steps` images across
-`[from, to]` and uses them as frames. See [faces.md](./faces.md) for the
-template parameters supported by the built-in `speaking.svg`.
+`template` is the base name of an `.svg` file containing `{{.m}}` (or whatever
+name you set in `param`) placeholders. BMO renders `steps` images across
+`[from, to]` and uses them as frames — here, six mouth-openness levels stepped
+by voice amplitude. Inside the template, draw your rest mouth at `m == 0` and
+open the shared mouth with `{{template "talkmouth" $m}}`; see
+[faces.md](./faces.md#lip-syncing-mouth-m-templates) for the full idiom.
+
+Time animations use the same template form with a clock parameter — e.g. the
+built-in `look_around` renders `template: "look_around"` over `param: "x"` from
+`-1` to `1` with a `time` driver, and `whistle` over `param: "t"` from `0` to
+`1`.
 
 `template` and `frames` are mutually exclusive; providing both (or
 neither) is a parse error and the animation entry is silently skipped.

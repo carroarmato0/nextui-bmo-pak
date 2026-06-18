@@ -4,7 +4,7 @@
 
 `quotes.txt` holds the pool of verbatim one-liners BMO may speak
 spontaneously between conversations (when proactive talk is enabled in
-`config.json`).
+`config.json`), or on demand when you press the **X** button.
 
 Each non-blank, non-comment line is one quote, spoken exactly as written —
 no paraphrasing, no LLM involvement. Rules:
@@ -40,6 +40,8 @@ Put down the controller and nobody gets hurt.
 - Quotes are chosen at random from the pool; there is no guaranteed order.
 - Proactive quoting is off by default (`proactive_talk: "off"` in
   `config.json`). Set it to `occasional`, `regular`, `chatty`, or `rare`
-  to enable it.
+  to enable it. The **X** button speaks a quote regardless of the
+  `proactive_talk` setting, so you can test your pool without enabling
+  proactive talk — it does require AI mode (a TTS voice must be configured).
 - Quotes are spoken with the current TTS voice and speaking style — the
   same voice and `voice.txt` instructions as regular conversation.
