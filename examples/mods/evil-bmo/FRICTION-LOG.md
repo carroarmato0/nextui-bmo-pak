@@ -64,6 +64,15 @@ findings are a primary deliverable, separate from the mod itself.
   talking mouth. *Fix:* a one-line "self-contained mods get no lip-sync for
   free — declare it" callout near the top of `animations.md` would help.
 
+- **`cmd/generate-audio` honored the mod's `voice.txt` but not its
+  `persona.txt`.** When generating the spoken system clips (hello/goodbye/…),
+  the tool loaded the active mod's voice for TTS *delivery* but hardcoded
+  `config.DefaultSystemPrompt` for the chat that writes the clip *text* — so a
+  character mod's clips spoke the default cheerful BMO words in the mod's voice.
+  Fixed on this branch: the tool now loads `activeMod.PersonaPath()` too, so
+  clips are fully in-character. *Fix upstreamed in this branch;* worth a note in
+  any "audio clips" mod doc that clip generation uses the mod persona + voice.
+
 ## Worked as documented (worth noting)
 
 - The `{{$m := or .m 0.0}}` … `{{template "talkmouth" $m}}` lip-sync idiom from

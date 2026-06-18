@@ -13,6 +13,12 @@ mkdir -p "$STAGE/faces"
 cp "$SRC/mod.json" "$SRC/persona.txt" "$SRC/voice.txt" "$SRC/quotes.txt" "$STAGE/"
 cp "$SRC"/faces/*.svg "$STAGE/faces/"
 
+# Voice clips (hello/goodbye/etc) are optional; copy them only if present.
+if compgen -G "$SRC/audio/*.pcm" > /dev/null; then
+  mkdir -p "$STAGE/audio"
+  cp "$SRC"/audio/*.pcm "$STAGE/audio/"
+fi
+
 echo "Staged to $STAGE:"
 find "$STAGE" -type f | sort
 
