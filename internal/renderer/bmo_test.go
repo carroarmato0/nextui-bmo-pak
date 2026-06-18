@@ -132,3 +132,44 @@ func TestShouldPresentResizeCountsAsChange(t *testing.T) {
 		t.Fatalf("lastRendered len = %d, want %d", len(r.lastRendered), len(r.pixels))
 	}
 }
+
+func TestFrameSignatureStaticVsAnimating(t *testing.T) {
+	r := &Renderer{W: 1024, H: 768} // anims nil → not time-driven
+	if got := r.frameSignature(FrameState{Expression: "neutral"}, "neutral"); got != "neutral|1024|768" {
+		t.Fatalf("static sig = %q, want neutral|1024|768", got)
+	}
+	// Every per-tick-animating case must yield "" (never skippable).
+	if r.frameSignature(FrameState{Speaking: true}, "neutral") != "" {
+		t.Error("speaking must not be skippable")
+	}
+	if r.frameSignature(FrameState{QuotaExhausted: true}, "neutral") != "" {
+		t.Error("quota clock must not be skippable")
+	}
+	if r.frameSignature(FrameState{}, "sleeping") != "" {
+		t.Error("sleeping (animated Z marks) must not be skippable")
+	}
+	ov := OverlayState{Visible: true}
+	if r.frameSignature(FrameState{Overlay: &ov}, "neutral") != "" {
+		t.Error("open overlay must not be skippable")
+	}
+}
+
+func TestStaticFrameUnchanged(t *testing.T) {
+	r := &Renderer{}
+	if r.staticFrameUnchanged("") {
+		t.Error("empty sig (animating) must never skip")
+	}
+	r.lastSig = "neutral|1024|768"
+	r.dirtyPresents = 0
+	if !r.staticFrameUnchanged("neutral|1024|768") {
+		t.Error("matching static sig with drained swap chain should skip")
+	}
+	r.dirtyPresents = 1
+	if r.staticFrameUnchanged("neutral|1024|768") {
+		t.Error("must not skip while the swap chain is still filling")
+	}
+	r.dirtyPresents = 0
+	if r.staticFrameUnchanged("smile|1024|768") {
+		t.Error("a different static sig must not skip")
+	}
+}

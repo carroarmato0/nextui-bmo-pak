@@ -153,6 +153,9 @@ type Renderer struct {
 	// must be presented to fill the swap chain. See shouldPresent.
 	lastRendered  []uint32
 	dirtyPresents int
+	// lastSig is the signature of the last rendered static frame; an identical
+	// static frame can skip the whole rebuild. See frameSignature.
+	lastSig string
 }
 
 type rgba struct {
@@ -332,6 +335,16 @@ func (r *Renderer) Draw(frame FrameState) error {
 	if phase == 0 {
 		phase = float64(frame.Now.UnixNano()) / 1e9
 	}
+	canonical := face.Canonical(frame.Expression)
+
+	// A static frame is byte-identical to the one already on screen, so skip the
+	// whole rebuild+present once every swap-chain buffer holds it. Animating
+	// frames yield an empty signature and always fall through to a full rebuild.
+	sig := r.frameSignature(frame, canonical)
+	if r.staticFrameUnchanged(sig) {
+		return nil
+	}
+	r.lastSig = sig
 
 	r.fillRectColor(0, 0, r.W, r.H, rgba{0x4e, 0xcb, 0xa8, 255}) // body teal
 	if frame.Overlay != nil && frame.Overlay.Visible {
@@ -341,7 +354,6 @@ func (r *Renderer) Draw(frame FrameState) error {
 		return r.presentDirty()
 	}
 
-	canonical := face.Canonical(frame.Expression)
 	if !r.blitFace(frame.Expression, frame, phase) {
 		r.drawPlainFace(layout)
 	}
@@ -351,6 +363,30 @@ func (r *Renderer) Draw(frame FrameState) error {
 	}
 	r.drawCornerClock(layout, frame)
 	return r.presentDirty()
+}
+
+// frameSignature returns a stable identifier for a *static* frame whose output
+// depends only on the expression and surface size. blitFace serves
+// non-time-driven faces from a single cached frame, so such a frame is
+// byte-identical every tick. It returns "" for any frame that animates per tick
+// (speaking lip-sync, an open overlay, the quota clock, the sleeping Z marks,
+// or a time-driven mod face), so those always rebuild and are never skipped.
+func (r *Renderer) frameSignature(frame FrameState, canonical string) string {
+	if frame.Speaking ||
+		frame.QuotaExhausted ||
+		canonical == face.ExprSleeping ||
+		(frame.Overlay != nil && frame.Overlay.Visible) ||
+		(r.anims != nil && r.anims.IsTimeDriven(frame.Expression)) {
+		return ""
+	}
+	return fmt.Sprintf("%s|%d|%d", canonical, r.W, r.H)
+}
+
+// staticFrameUnchanged reports whether sig identifies a static frame identical
+// to the one already presented to every swap-chain buffer, so the whole
+// rebuild+present can be skipped this tick.
+func (r *Renderer) staticFrameUnchanged(sig string) bool {
+	return sig != "" && sig == r.lastSig && r.dirtyPresents == 0
 }
 
 // swapChainDepth is the deepest display swap chain we expect (triple buffering
