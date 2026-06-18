@@ -2,13 +2,13 @@
   <rect x="0" y="0" width="280" height="210" fill="#D62828"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#D62828"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#F25C5C"/>
-  <path d="M 60 60 L 96 74" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
-  <path d="M 183 74 L 219 60" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 60 60 L 96 72" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M 220 60 L 184 72" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
   <circle cx="80"  cy="78" r="6.5" fill="#1a1a1a"/>
   <circle cx="199" cy="78" r="6.5" fill="#1a1a1a"/>
   {{if eq $m 0.0}}
-  <path d="M 106 111 Q 140 133 174 111" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
-  <path d="M 106 111 Q 140 133 174 111" stroke="#1a1a1a" stroke-width="0" fill="#1a1a1a"/>
-  <ellipse cx="140" cy="120" rx="34" ry="9" fill="#1a1a1a"/>
+  <path d="M 108 108 Q 140 136 172 108 Z" fill="#1a1a1a"/>
+  <path d="M 130 108 L 128 121" stroke="#F25C5C" stroke-width="2"/>
+  <path d="M 150 108 L 152 121" stroke="#F25C5C" stroke-width="2"/>
   {{else}}{{template "talkmouth" $m}}{{end}}
 </svg>

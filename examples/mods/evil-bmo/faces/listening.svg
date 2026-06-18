@@ -2,9 +2,12 @@
   <rect x="0" y="0" width="280" height="210" fill="#D62828"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#D62828"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#F25C5C"/>
-  <rect x="76" y="64" width="8" height="28" rx="4" ry="4" fill="#1a1a1a"/>
-  <rect x="195" y="64" width="8" height="28" rx="4" ry="4" fill="#1a1a1a"/>
-  <circle cx="78" cy="67" r="2" fill="#e4e4e4"/>
-  <circle cx="197" cy="67" r="2" fill="#e4e4e4"/>
-  <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- left side: wide, intent stare -->
+  <path d="M 62 60 Q 80 55 98 60" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <circle cx="80" cy="80" r="8" fill="#1a1a1a"/>
+  <!-- right side: half the face squeezed shut to concentrate -->
+  <path d="M 180 74 L 214 66" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M 184 84 Q 199 75 214 84" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <!-- mouth pulled to the squeezed side, concentrating pucker -->
+  <path d="M 130 118 Q 150 112 164 120" stroke="#1a1a1a" stroke-width="4.5" fill="none" stroke-linecap="round"/>
 </svg>
