@@ -5,6 +5,61 @@ import (
 	"time"
 )
 
+func TestBeginRemarkOnlyStartsFromIdle(t *testing.T) {
+	m := NewMachine()
+
+	// From idle, a remark starts and the machine is thinking.
+	if !m.BeginRemark() {
+		t.Fatal("BeginRemark from idle should succeed")
+	}
+	if got := m.Snapshot().Current; got != StateThinking {
+		t.Errorf("after BeginRemark, state = %v, want thinking", got)
+	}
+
+	// Already thinking: a second remark must be refused (no overlap).
+	if m.BeginRemark() {
+		t.Error("BeginRemark while thinking should fail")
+	}
+
+	// While speaking: still refused.
+	m.Transition(EventSpeak)
+	if m.BeginRemark() {
+		t.Error("BeginRemark while speaking should fail")
+	}
+
+	// Back to idle: a remark can start again.
+	m.Transition(EventRest)
+	if got := m.Snapshot().Current; got != StateIdle {
+		t.Fatalf("after EventRest, state = %v, want idle", got)
+	}
+	if !m.BeginRemark() {
+		t.Error("BeginRemark from idle (after rest) should succeed")
+	}
+}
+
+func TestBeginRemarkIsAtomicUnderConcurrency(t *testing.T) {
+	m := NewMachine()
+	const n = 50
+	results := make(chan bool, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func() {
+			<-start
+			results <- m.BeginRemark()
+		}()
+	}
+	close(start)
+	wins := 0
+	for i := 0; i < n; i++ {
+		if <-results {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Errorf("exactly one concurrent BeginRemark should win, got %d", wins)
+	}
+}
+
 func TestTransitionFlow(t *testing.T) {
 	tests := []struct {
 		name    string

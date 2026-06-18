@@ -565,6 +565,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			if activeMenu != nil || audioPipeline == nil {
 				return
 			}
+			// Cancel any in-progress spontaneous reaction so the quote replaces
+			// it (returning the machine to idle) instead of overlapping its
+			// audio. A no-op when nothing is playing.
+			audioPipeline.InterruptSpeech()
 			quotes := quotesFn()
 			if len(quotes) == 0 {
 				return
@@ -583,7 +587,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// preview. Only meaningful from idle (other states drive their own face);
 		// it activates the override the idle branch reads each tick.
 		if action == input.NavGallery {
-			if activeMenu != nil || machine.Snapshot().Current != assistant.StateIdle {
+			if activeMenu != nil {
+				return
+			}
+			// Cancel a spontaneous reaction so stepping the gallery interrupts
+			// it (and frees the machine) rather than being ignored mid-speech.
+			if audioPipeline != nil {
+				audioPipeline.InterruptSpeech()
+			}
+			if machine.Snapshot().Current != assistant.StateIdle {
 				return
 			}
 			galleryFaces = galleryFaceNames()
