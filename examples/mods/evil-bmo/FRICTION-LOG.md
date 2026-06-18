@@ -93,6 +93,21 @@ findings are a primary deliverable, separate from the mod itself.
   without letting a stuck clip hang the exit. Lesson: clip length matters — keep
   system clips short, or rely on the now-dynamic wait.
 
+- **A missing `sleeping.svg` looked broken, not absent.** The renderer always
+  draws the floating `zzZ` sleep marks for the `sleeping` expression, but a
+  self-contained mod without a `sleeping.svg` folds the face itself to its
+  `neutral` — so Evil BMO "slept" as a wide-awake smirk with zzZ stuck to the
+  side. Functional faces that the engine decorates (sleeping's Z marks) really
+  need a matching face in a self-contained mod. *Fix (mod-side):* ship a
+  closed-eye `sleeping.svg`. Worth a doc note that `sleeping` pairs with
+  engine-drawn Z marks, so its face should have closed/resting eyes.
+
+- **Spontaneous reactions could overlap user-triggered ones (app bug, fixed).**
+  Pressing X (quote) while a proactive remark was mid-flight played both at once.
+  Root cause was a state-guard that didn't treat "already thinking" as busy.
+  Fixed with an atomic `Machine.BeginRemark` and making X/Y interrupt the current
+  reaction. Not mod-specific, but surfaced while exercising the mod's quotes.
+
 ## Worked as documented (worth noting)
 
 - The `{{$m := or .m 0.0}}` … `{{template "talkmouth" $m}}` lip-sync idiom from
