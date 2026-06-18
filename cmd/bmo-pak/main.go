@@ -251,9 +251,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Warnf("memory unreadable, starting empty: %v", merr)
 	}
 	deviceCtx.SetMemory(memory)
-	deviceCtx.SetQuotes(func() []string {
+	quotesFn := func() []string {
 		return devctx.ParseQuotes(config.LoadPromptFile(quotesPath, config.DefaultQuotes))
-	})
+	}
+	deviceCtx.SetQuotes(quotesFn)
 	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
 	proactive.SetInterval(config.ProactiveInterval(cfg.ProactiveTalk))
 
@@ -477,11 +478,40 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 
+	// Gallery override: the Y button (NavGallery) steps through every face the
+	// active mod actually provides, so the user can flip through them on demand
+	// instead of waiting for the idle scheduler to cycle. galleryActive freezes
+	// the idle scheduler on galleryFaces[galleryIdx]; any non-idle state (a quote,
+	// PTT, exit) clears it and normal idle scheduling resumes. The list is rebuilt
+	// on each press so it always reflects the active mod (which may change at
+	// runtime via reloadMod) and only includes faces the mod actually resolves.
+	var galleryFaces []string
+	galleryIdx := -1
+	galleryActive := false
+	galleryFaceNames := func() []string {
+		var names []string
+		seen := map[string]bool{}
+		add := func(n string) {
+			if seen[n] || faceCache.Source(n) == face.SourceNone {
+				return
+			}
+			seen[n] = true
+			names = append(names, n)
+		}
+		for _, n := range face.CanonicalNames {
+			add(n)
+		}
+		for _, n := range face.EmotionFaceNamesInDir(activeMod.FacesDir()) {
+			add(n)
+		}
+		return names
+	}
+
 	// handleNav maps decoded evdev navigation intents to menu/overlay actions.
 	// Physical button layout (TrimUI, confirmed via getevent): A=BTN_EAST(305)
 	// is confirm/PTT (handled by the PTT path), B=BTN_SOUTH(304) cancels,
-	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates.
-	// Y=BTN_NORTH(307) is unmapped — AI providers are configured in config.json.
+	// Start opens settings, Menu=BTN_MODE(316) exits to NextUI, D-pad navigates,
+	// X=BTN_WEST(308) speaks a random quote, Y=BTN_NORTH(307) steps the face gallery.
 	handleNav := func(action input.NavAction) {
 		// MENU (BTN_MODE) exits to NextUI after playing the goodbye clip.
 		if action == input.NavMenu {
@@ -512,6 +542,44 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			} else {
 				setActiveMenu(settingsMenu)
 			}
+			return
+		}
+
+		// X (BTN_WEST) speaks a random verbatim quote. Ignored while a menu is
+		// open; SpeakVerbatim itself no-ops unless AI/TTS is enabled and the
+		// machine is idle, so a press during speech/listening does nothing.
+		if action == input.NavQuote {
+			if activeMenu != nil || audioPipeline == nil {
+				return
+			}
+			quotes := quotesFn()
+			if len(quotes) == 0 {
+				return
+			}
+			text := quotes[rand.Intn(len(quotes))]
+			remarkPipeline := audioPipeline
+			go func() {
+				if err := remarkPipeline.SpeakVerbatim(ctx, text, nil); err != nil {
+					logger.Warnf("quote playback failed: %v", err)
+				}
+			}()
+			return
+		}
+
+		// Y (BTN_NORTH) steps to the next face/animation for a quick gallery
+		// preview. Only meaningful from idle (other states drive their own face);
+		// it activates the override the idle branch reads each tick.
+		if action == input.NavGallery {
+			if activeMenu != nil || machine.Snapshot().Current != assistant.StateIdle {
+				return
+			}
+			galleryFaces = galleryFaceNames()
+			if len(galleryFaces) == 0 {
+				return
+			}
+			galleryActive = true
+			galleryIdx = (galleryIdx + 1) % len(galleryFaces)
+			logger.Debugf("gallery: %s (%d/%d)", galleryFaces[galleryIdx], galleryIdx+1, len(galleryFaces))
 			return
 		}
 
@@ -645,6 +713,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		snap := machine.Snapshot()
 		expr := string(snap.Expression)
 
+		// Any non-idle state drives its own face, so a gallery preview ends the
+		// moment BMO starts listening/thinking/speaking; normal idle scheduling
+		// then resumes on the next return to idle.
+		if snap.Current != assistant.StateIdle {
+			galleryActive = false
+		}
+
 		// Prewarm the LLM-directed emotion's animation as soon as it is known.
 		// SetEmotion fires before the TTS network round-trip, so the 6-frame
 		// build completes during synthesis and the mouth opens on the very first
@@ -660,13 +735,17 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		switch snap.Current {
 		case assistant.StateIdle:
 			errorSince = time.Time{}
-			if now.After(nextIdleUpdate) {
+			if galleryActive && galleryIdx >= 0 && galleryIdx < len(galleryFaces) {
+				// Gallery preview: hold the user-selected face and freeze the idle
+				// scheduler until they step again or interact.
+				currentIdleExpression = assistant.Expression(galleryFaces[galleryIdx])
+			} else if now.After(nextIdleUpdate) {
 				step := scheduler.Next(now.Sub(snap.LastInteraction))
 				currentIdleExpression = step.Expression
 				nextIdleUpdate = now.Add(step.HoldFor)
 			}
 			expr = string(currentIdleExpression)
-			if audioPipeline != nil && proactive.Due(now) {
+			if !galleryActive && audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
 				remarkPipeline := audioPipeline
 				// ProactiveNudge refreshes device context (sqlite play-log,

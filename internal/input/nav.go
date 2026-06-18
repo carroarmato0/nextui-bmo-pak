@@ -22,6 +22,8 @@ const (
 	NavCancel                   // B/East or Select — close overlay or exit
 	NavSave                     // Start — save / open settings
 	NavMenu                     // Mode/Guide — exit to NextUI
+	NavQuote                    // X/West — speak a random verbatim quote
+	NavGallery                  // Y/North — step to the next face / animation
 )
 
 const (
@@ -167,6 +169,10 @@ func navActionForKey(code uint16) (NavAction, bool) {
 		return NavSave, true
 	case 316: // BTN_MODE / menu button
 		return NavMenu, true
+	case 308: // BTN_WEST / physical X — speak a random quote
+		return NavQuote, true
+	case 307: // BTN_NORTH / physical Y — next face / animation
+		return NavGallery, true
 	case btnDpadUp:
 		return NavUp, true
 	case btnDpadDown:
