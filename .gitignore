@@ -35,7 +35,9 @@ Thumbs.db
 
 # Local AI tooling state (per-machine, not shared)
 .superpowers/
-.claude/
+# Ignore .claude/ per-machine state, but share project skills in git.
+.claude/*
+!.claude/skills/
 .headroom/
 .remember/
 .serena/

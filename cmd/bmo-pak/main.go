@@ -25,6 +25,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/input"
 	"github.com/carroarmato0/nextui-bmo/internal/mod"
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
+	"github.com/carroarmato0/nextui-bmo/internal/perf"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 	"github.com/carroarmato0/nextui-bmo/internal/renderer"
 	"github.com/carroarmato0/nextui-bmo/internal/ui"
@@ -173,6 +174,45 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	machine.RecordInteraction(time.Now().UTC())
 	logger.Infof("initial state: %s", machine.State())
 	logger.Debugf("assistant snapshot: %+v", machine.Snapshot())
+
+	// Opt-in profiling. All facets are inert unless their flag is set via the
+	// .profile-flags file that launch.sh injects. Stop/flush hooks are deferred
+	// so they run on the graceful-exit path (the same path that presents black
+	// 3x); a kill -9 loses the final flush, which is why each sampler row is
+	// written immediately rather than buffered.
+	if pf := parsePerfFlags(os.Args[1:]); pf.enabled() {
+		if pf.cpuProfile != "" {
+			if stop, err := perf.StartCPUProfile(pf.cpuProfile); err != nil {
+				logger.Errorf("cpuprofile: %v", err)
+			} else {
+				logger.Infof("cpuprofile: writing to %s", pf.cpuProfile)
+				defer stop()
+			}
+		}
+		if pf.pprofAddr != "" {
+			perf.StartLiveServer(pf.pprofAddr, logger)
+		}
+		if pf.sampleFile != "" {
+			sampler := perf.NewSampler(pf.sampleFile, pf.interval,
+				func() string { return string(machine.State()) }, logger)
+			if err := sampler.Start(); err != nil {
+				logger.Errorf("perfsample: %v", err)
+			} else {
+				logger.Infof("perfsample: writing to %s every %s", pf.sampleFile, pf.interval)
+				defer sampler.Stop()
+			}
+		}
+		if pf.memProfile != "" {
+			memProfile := pf.memProfile
+			defer func() {
+				if err := perf.WriteHeapProfile(memProfile); err != nil {
+					logger.Errorf("memprofile: %v", err)
+				} else {
+					logger.Infof("memprofile: written to %s", memProfile)
+				}
+			}()
+		}
+	}
 
 	// Device awareness: read-only collectors feeding the DEVICE AWARENESS
 	// block of the system prompt. BMO_SDCARD_ROOT overrides the SD card
