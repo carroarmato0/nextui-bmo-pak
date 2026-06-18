@@ -37,7 +37,8 @@ func WriteHeapProfile(path string) error {
 }
 
 // StartLiveServer serves net/http/pprof on addr in a background goroutine.
-// Errors are logged, never fatal.
+// Errors are logged, never fatal. The goroutine has no shutdown hook and lives
+// until process exit — acceptable for this opt-in, debug-only facet.
 func StartLiveServer(addr string, log Logger) {
 	go func() {
 		log.Infof("perf: live pprof listening on %s", addr)

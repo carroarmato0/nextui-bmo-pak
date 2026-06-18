@@ -104,3 +104,16 @@ type testLogger struct{}
 
 func (testLogger) Infof(string, ...any)  {}
 func (testLogger) Errorf(string, ...any) {}
+
+func TestSamplerStopWithoutSuccessfulStart(t *testing.T) {
+	// Stop must not panic or deadlock when Start was never called (or failed):
+	// no goroutine was launched and no file was opened.
+	s := NewSampler(filepath.Join(t.TempDir(), "x.csv"), time.Second, nil, testLogger{})
+	done := make(chan struct{})
+	go func() { s.Stop(); s.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop deadlocked when Start never succeeded")
+	}
+}

@@ -119,9 +119,10 @@ type Sampler struct {
 	prevTime  time.Time
 	start     time.Time
 
-	stopCh chan struct{}
-	doneCh chan struct{}
-	once   sync.Once
+	stopCh  chan struct{}
+	doneCh  chan struct{}
+	once    sync.Once
+	started bool // true only after Start succeeds; guards Stop
 }
 
 // NewSampler creates a sampler. state returns the current app state to tag each
@@ -156,6 +157,7 @@ func (s *Sampler) Start() error {
 	s.prevTime = s.start
 	s.prevTicks = s.readTicks() // seed so the first CPU% delta is meaningful
 	s.writeSample()             // immediate baseline
+	s.started = true
 	go s.loop()
 	return nil
 }
@@ -177,6 +179,9 @@ func (s *Sampler) loop() {
 // Stop halts sampling, writes a final row, and closes the file. Idempotent.
 func (s *Sampler) Stop() {
 	s.once.Do(func() {
+		if !s.started {
+			return // Start never succeeded: no goroutine, no open file
+		}
 		close(s.stopCh)
 		<-s.doneCh
 		s.writeSample() // final row
