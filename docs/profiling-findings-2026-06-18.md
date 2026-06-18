@@ -56,6 +56,16 @@ From `bmo-perf-sample.csv` (155 rows, 2 s interval):
 
 ## Action Items (ranked by impact)
 
+> **✅ DONE & verified on-device (2026-06-18, Brick).** Implemented as two commits
+> on `fix/renderer-dirty-present`: (1) skip `present()` when the framebuffer is
+> byte-identical to the last presented frame (presenting `swapChainDepth`× after
+> a change to keep multi-buffered backends consistent); (2) skip the entire
+> `Draw` rebuild for static frames (output determined by expression+size).
+> **Measured idle CPU on a static face: ~46% → ~1.5–2% (~25×).** listening
+> 38%→10%, thinking 36%→4.5%. Animated faces (whistle/look_around) and speaking
+> lip-sync correctly still rebuild+present every frame. Item #2 (cache cap) and
+> #3 (rasterizer pooling) remain open — RSS is unchanged (~300 MB peak).
+
 1. **[highest impact — CPU/battery/heat] Skip the texture upload + present when the frame is unchanged.**
    Evidence: `SDL_UpdateTexture` (32 %) + `memmove` (23 %) = ~49 % of CPU; `present()` at `internal/renderer/bmo.go:348` uploads and presents unconditionally every `Draw`. Fix: dirty-track `r.pixels` (cheap rolling hash, or a `dirty` flag set by the draw primitives) and skip `tex.Update`+`Clear`+`Copy`+`Present` when identical to the last presented frame. The corner clock (once/min) and time-driven idle anims naturally mark themselves dirty, so animation is unaffected. Expected win: idle CPU from ~46 % toward single digits; large battery/thermal improvement. Mind the multi-buffer-on-exit rule ([[reference_blank_on_exit_multibuffer]]) — keep the 3× black-present on shutdown.
 
