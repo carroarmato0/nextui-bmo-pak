@@ -1,0 +1,14 @@
+# Pinned for reproducible "Hey BMO" training. openWakeWord 0.5.1 is the version
+# whose base melspectrogram/embedding models the pak bundles — keep this in sync
+# with OWW_VERSION in scripts/fetch-wakeword-assets.sh.
+openwakeword==0.5.1
+torch==2.2.2
+onnx==1.16.0
+onnxruntime==1.26.0
+audiomentations==0.35.0
+numpy==1.26.4
+pyyaml==6.0.1
+tqdm==4.66.4
+scipy==1.13.1
+# piper-sample-generator is installed from GitHub in the notebook (no PyPI
+# release); the notebook pins it to a specific commit.
