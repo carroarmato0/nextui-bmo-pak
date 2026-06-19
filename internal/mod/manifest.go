@@ -1,7 +1,3 @@
-// Package mod discovers and resolves BMO mods: subfolders of mods/ that
-// customize persona, voice, quotes, faces, and audio. mods/default has
-// overlay semantics (per-asset fallback to embedded BMO); any other folder
-// is a self-contained character.
 package mod
 
 import (

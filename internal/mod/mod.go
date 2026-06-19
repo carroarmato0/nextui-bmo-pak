@@ -36,8 +36,11 @@ func (m Mod) DisplayName() string {
 	return m.ID
 }
 
-// Path accessors operate on Root. They are valid only for directory mods and
-// are used by cmd/generate-audio (a directory-only build tool) and for logging.
+// Path accessors operate on Root and are valid only for directory mods.
+// PersonaPath/VoicePath feed cmd/generate-audio (a directory-only build tool);
+// PersonaPath/VoicePath/QuotesPath also feed config.RemoveOverrides (the
+// settings "reset overrides" action). FacesDir/AudioDir are retained for
+// tooling and tests — runtime reads go through the mod's fs.FS, not these.
 func (m Mod) PersonaPath() string { return filepath.Join(m.Root, "persona.txt") }
 func (m Mod) VoicePath() string   { return filepath.Join(m.Root, "voice.txt") }
 func (m Mod) QuotesPath() string  { return filepath.Join(m.Root, "quotes.txt") }

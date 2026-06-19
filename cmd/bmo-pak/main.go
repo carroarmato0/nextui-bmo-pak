@@ -112,7 +112,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		activeMod = mod.Active(mods, mod.DefaultID)
 		_ = activeMod.Open(nil)
 	}
-	defer func() { _ = activeMod.Close() }()
+	// closePrev holds the previous mod's closer; on a switch it is closed one
+	// generation later (not immediately) so a pipeline-goroutine read in flight
+	// on the old FS cannot hit a closed zip reader. Both are closed on exit.
+	var closePrev func() error
+	defer func() {
+		_ = activeMod.Close()
+		if closePrev != nil {
+			_ = closePrev()
+		}
+	}()
 
 	// Sub-FS helpers rooting at the mod's faces/ and audio/ subtrees. fs.Sub
 	// only errors on an invalid path; "faces"/"audio" are constant-valid, so the
@@ -394,15 +403,21 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	reloadMod := func(id string) {
 		active := mod.Active(mods, id)
-		// Close the previous mod's FS before opening the next. On open failure,
-		// keep the default mod (its FS opened so reads don't fault).
-		_ = activeMod.Close()
 		if err := active.Open(logger.Warnf); err != nil {
 			logger.Warnf("open mod %q: %v; keeping default", id, err)
 			active = mod.Active(mods, mod.DefaultID)
 			_ = active.Open(logger.Warnf)
 		}
+		// Publish the new mod's FS before closing the old one, and defer the old
+		// close by one generation so an in-flight read on the previous FS finishes
+		// against a still-open reader. The generation two switches back is safe to
+		// close now. (Directory mods Close to a no-op; this only matters for zips.)
+		prev := activeMod
 		activeMod = active
+		if closePrev != nil {
+			_ = closePrev()
+		}
+		closePrev = prev.Close
 		personaPath = active.PersonaPath()
 		voicePath = active.VoicePath()
 		quotesPath = active.QuotesPath()
