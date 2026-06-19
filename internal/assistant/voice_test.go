@@ -612,7 +612,7 @@ func TestPipelineLogsTokenUsage(t *testing.T) {
 
 	logs := logger.joined()
 	// whisper-1 reports no usage: STT line falls back to audio seconds.
-	if !strings.Contains(logs, "pipeline STT:") || !strings.Contains(logs, "tokens: n/a (1.0s audio)") {
+	if !strings.Contains(logs, "pipeline STT (whisper-1):") || !strings.Contains(logs, "tokens: n/a (1.0s audio)") {
 		t.Errorf("STT log missing usage fallback: %q", logs)
 	}
 	if !strings.Contains(logs, "tokens: 612 prompt + 43 completion") {
@@ -640,10 +640,10 @@ func TestRemarkLogsTokenUsage(t *testing.T) {
 		t.Fatalf("speak remark: %v", err)
 	}
 	logs := logger.joined()
-	if !strings.Contains(logs, "remark Chat:") || !strings.Contains(logs, "tokens: 705 prompt + 38 completion") {
+	if !strings.Contains(logs, "remark Chat (gpt-4o-mini):") || !strings.Contains(logs, "tokens: 705 prompt + 38 completion") {
 		t.Errorf("remark chat log missing token usage: %q", logs)
 	}
-	if !strings.Contains(logs, "remark TTS:") || !strings.Contains(logs, "input: 7 chars") {
+	if !strings.Contains(logs, "remark TTS (tts-1):") || !strings.Contains(logs, "input: 7 chars") {
 		t.Errorf("remark TTS log missing input chars: %q", logs)
 	}
 }

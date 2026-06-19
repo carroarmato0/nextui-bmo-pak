@@ -300,8 +300,8 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline STT: %dms | tokens: %s (%.1fs audio)",
-			time.Since(sttStart).Milliseconds(), usageString(transcription.Usage),
+		p.logger.Infof("pipeline STT (%s): %dms | tokens: %s (%.1fs audio)",
+			p.sttModel, time.Since(sttStart).Milliseconds(), usageString(transcription.Usage),
 			audioSeconds(len(pcm), p.sampleRate, p.captureChannels))
 	}
 	transcript := strings.TrimSpace(transcription.Text)
@@ -334,8 +334,8 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline Chat: %dms | tokens: %s",
-			time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
+		p.logger.Infof("pipeline Chat (%s): %dms | tokens: %s",
+			p.chatModel, time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
 	}
 	reply := strings.TrimSpace(chat.Text)
 	if reply == "" {
@@ -375,8 +375,8 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		return p.handleBatchError(ctx, batchCtx, err, false)
 	}
 	if p.logger != nil {
-		p.logger.Infof("pipeline TTS: %dms (%d bytes) | input: %d chars | total: %dms",
-			time.Since(ttsStart).Milliseconds(), len(speech), len(spoken),
+		p.logger.Infof("pipeline TTS (%s): %dms (%d bytes) | input: %d chars | total: %dms",
+			p.ttsModel, time.Since(ttsStart).Milliseconds(), len(speech), len(spoken),
 			time.Since(totalStart).Milliseconds())
 	}
 
@@ -502,8 +502,8 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
-		p.logger.Infof("remark Chat: %dms | tokens: %s",
-			time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
+		p.logger.Infof("remark Chat (%s): %dms | tokens: %s",
+			p.chatModel, time.Since(chatStart).Milliseconds(), usageString(chat.Usage))
 	}
 	reply := strings.TrimSpace(chat.Text)
 	if reply == "" {
@@ -536,8 +536,8 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
-		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
-			time.Since(ttsStart).Milliseconds(), len(speech), len(spoken))
+		p.logger.Infof("remark TTS (%s): %dms (%d bytes) | input: %d chars",
+			p.ttsModel, time.Since(ttsStart).Milliseconds(), len(speech), len(spoken))
 	}
 	if onSpoken != nil {
 		onSpoken(spoken)
@@ -586,8 +586,8 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 		return p.remarkFail(ctx, reqCtx, err)
 	}
 	if p.logger != nil {
-		p.logger.Infof("remark TTS: %dms (%d bytes) | input: %d chars",
-			time.Since(ttsStart).Milliseconds(), len(speech), len(text))
+		p.logger.Infof("remark TTS (%s): %dms (%d bytes) | input: %d chars",
+			p.ttsModel, time.Since(ttsStart).Milliseconds(), len(speech), len(text))
 	}
 	if onSpoken != nil {
 		onSpoken(text)
