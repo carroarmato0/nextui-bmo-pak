@@ -2,35 +2,33 @@ package face
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"regexp"
 	"strings"
 )
 
 // Library resolves expression names to SVG bytes. The embedded defaults are
-// the source of truth; an optional on-disk faces/ directory overrides per file.
-// In self-contained mode the embedded defaults are NOT used: a named mod owns
-// its whole face set, and a missing expression folds to the mod's own neutral.
+// the source of truth; an optional fs.FS (rooted at the mod's faces/) overrides
+// per file. In self-contained mode the embedded defaults are NOT used: a named
+// mod owns its whole face set, and a missing expression folds to the mod's own
+// neutral.
 type Library struct {
-	dir           string
+	fsys          fs.FS // rooted at the mod's faces/; nil = embedded only
 	selfContained bool
 	logf          func(string, ...any)
 }
 
-// NewLibrary returns a Library that checks dir for overrides before falling
-// back to embedded defaults. dir may not exist; missing dirs are silently
-// ignored.
-func NewLibrary(dir string) *Library {
-	return NewLibraryMode(dir, false)
+// NewLibrary builds an overlay library: on-disk faces override embedded
+// defaults per file. fsys may be nil (embedded only).
+func NewLibrary(fsys fs.FS) *Library {
+	return NewLibraryMode(fsys, false)
 }
 
-// NewLibraryMode is like NewLibrary but, when selfContained is true, disables
-// the embedded fallback: only the on-disk faces/ directory is consulted, and a
-// missing expression folds to the directory's neutral.svg (or, if that is also
-// missing, resolves to nothing so the renderer draws its plain fallback).
-func NewLibraryMode(dir string, selfContained bool) *Library {
-	return &Library{dir: dir, selfContained: selfContained, logf: func(string, ...any) {}}
+// NewLibraryMode builds a library. When selfContained is true, embedded
+// fallback is disabled: only fsys is consulted and a missing expression folds
+// to neutral.svg.
+func NewLibraryMode(fsys fs.FS, selfContained bool) *Library {
+	return &Library{fsys: fsys, selfContained: selfContained, logf: func(string, ...any) {}}
 }
 
 // SetLogf sets the logger used for warnings (e.g. parse failures of overrides).
@@ -59,12 +57,12 @@ func (l *Library) Bytes(expr string) ([]byte, bool) {
 		names = []string{raw, canonical}
 	}
 
-	if l.dir != "" {
+	if l.fsys != nil {
 		for _, name := range names {
 			if !fileNameRe.MatchString(name) {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(l.dir, name+".svg"))
+			data, err := fs.ReadFile(l.fsys, name+".svg")
 			if err != nil {
 				continue
 			}
@@ -79,8 +77,8 @@ func (l *Library) Bytes(expr string) ([]byte, bool) {
 	if l.selfContained {
 		// Owns its whole set: no embedded fallback. Fold a missing expression
 		// to the mod's own neutral, if it ships one.
-		if canonical != ExprNeutral && l.dir != "" {
-			data, err := os.ReadFile(filepath.Join(l.dir, ExprNeutral+".svg"))
+		if canonical != ExprNeutral && l.fsys != nil {
+			data, err := fs.ReadFile(l.fsys, ExprNeutral+".svg")
 			if err == nil && len(bytes.TrimSpace(data)) > 0 {
 				return data, true
 			}
@@ -100,8 +98,8 @@ func (l *Library) Bytes(expr string) ([]byte, bool) {
 // SVG renders under its own name; otherwise the canonical name.
 func (l *Library) Resolve(expr string) string {
 	raw := strings.ToLower(strings.TrimSpace(expr))
-	if l.dir != "" && fileNameRe.MatchString(raw) {
-		if _, err := os.Stat(filepath.Join(l.dir, raw+".svg")); err == nil {
+	if l.fsys != nil && fileNameRe.MatchString(raw) {
+		if _, err := fs.Stat(l.fsys, raw+".svg"); err == nil {
 			return raw
 		}
 	}
@@ -141,8 +139,8 @@ func (l *Library) rawBytes(name string) ([]byte, bool) {
 	if !fileNameRe.MatchString(name) {
 		return nil, false
 	}
-	if l.dir != "" {
-		if data, err := os.ReadFile(filepath.Join(l.dir, name+".svg")); err == nil && len(bytes.TrimSpace(data)) > 0 {
+	if l.fsys != nil {
+		if data, err := fs.ReadFile(l.fsys, name+".svg"); err == nil && len(bytes.TrimSpace(data)) > 0 {
 			return data, true
 		}
 	}

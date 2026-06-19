@@ -8,7 +8,7 @@ import (
 )
 
 func TestCacheFrameRendersTemplatedNeutral(t *testing.T) {
-	lib := NewLibrary(t.TempDir()) // embedded defaults only
+	lib := NewLibrary(os.DirFS(t.TempDir())) // embedded defaults only
 	c := NewCache(lib)
 	buf := c.Frame(ExprNeutral, 80, 60)
 	if buf == nil {
@@ -20,7 +20,7 @@ func TestCacheFrameRendersTemplatedNeutral(t *testing.T) {
 }
 
 func TestCacheFrameReturnsBuffer(t *testing.T) {
-	c := NewCache(NewLibrary(""))
+	c := NewCache(NewLibrary(nil))
 	buf := c.Frame(ExprNeutral, 320, 240)
 	if len(buf) != 320*240 {
 		t.Fatalf("expected %d pixels, got %d", 320*240, len(buf))
@@ -28,7 +28,7 @@ func TestCacheFrameReturnsBuffer(t *testing.T) {
 }
 
 func TestCacheFrameResizeInvalidates(t *testing.T) {
-	c := NewCache(NewLibrary(""))
+	c := NewCache(NewLibrary(nil))
 	buf1 := c.Frame(ExprNeutral, 320, 240)
 	buf2 := c.Frame(ExprNeutral, 640, 480)
 	if &buf1[0] == &buf2[0] {
@@ -40,7 +40,7 @@ func TestCacheFrameResizeInvalidates(t *testing.T) {
 }
 
 func TestCacheFrameAliasReuse(t *testing.T) {
-	c := NewCache(NewLibrary(""))
+	c := NewCache(NewLibrary(nil))
 	a := c.Frame("idle", 320, 240)
 	b := c.Frame(ExprNeutral, 320, 240)
 	if a == nil || b == nil {
@@ -56,7 +56,7 @@ func TestCacheCorruptOverrideFallsBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte("<svg garbage"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := NewCache(NewLibrary(dir))
+	c := NewCache(NewLibrary(os.DirFS(dir)))
 	buf := c.Frame(ExprNeutral, 320, 240)
 	if buf == nil {
 		t.Fatal("corrupt override must fall back to embedded default, not nil")
@@ -78,7 +78,7 @@ func TestFrameRendersCustomName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(grumpy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := NewCache(NewLibraryMode(dir, true))
+	c := NewCache(NewLibraryMode(os.DirFS(dir), true))
 
 	g := c.Frame("grumpy", 28, 21)
 	if g == nil {
@@ -106,11 +106,11 @@ func TestCacheSourceDelegates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := NewCache(NewLibraryMode(dir, true))
+	c := NewCache(NewLibraryMode(os.DirFS(dir), true))
 	if got := c.Source("grumpy"); got != "mod-override" {
 		t.Fatalf("Source = %q, want mod-override", got)
 	}
-	embedded := NewCache(NewLibrary(""))
+	embedded := NewCache(NewLibrary(nil))
 	if got := embedded.Source(ExprNeutral); got != "embedded-default" {
 		t.Fatalf("Source = %q, want embedded-default", got)
 	}

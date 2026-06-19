@@ -78,7 +78,7 @@ func TestWhistleLookAroundAreFunctionalIdleFaces(t *testing.T) {
 	}
 }
 
-func TestEmotionFaceNamesInDir(t *testing.T) {
+func TestEmotionFaceNamesInFS(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("<svg/>"), 0o644); err != nil {
@@ -91,7 +91,7 @@ func TestEmotionFaceNamesInDir(t *testing.T) {
 	write("speaking.svg") // functional — excluded
 	write("notes.txt")    // not an svg — excluded
 
-	got := EmotionFaceNamesInDir(dir)
+	got := EmotionFaceNamesInFS(os.DirFS(dir))
 	want := []string{"grumpy", "happy", "neutral"} // sorted, functional/non-svg dropped
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -101,12 +101,12 @@ func TestEmotionFaceNamesInDir(t *testing.T) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
-	if EmotionFaceNamesInDir(filepath.Join(dir, "missing")) != nil {
-		t.Error("missing dir should yield nil")
+	if EmotionFaceNamesInFS(nil) != nil {
+		t.Error("nil fsys should yield nil")
 	}
 }
 
-func TestFaceNamesInDir(t *testing.T) {
+func TestFaceNamesInFSFull(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("<svg/>"), 0o644); err != nil {
@@ -114,12 +114,12 @@ func TestFaceNamesInDir(t *testing.T) {
 		}
 	}
 	write("happy.svg")
-	write("look_around.svg") // functional — INCLUDED here (unlike EmotionFaceNamesInDir)
+	write("look_around.svg") // functional — INCLUDED here (unlike EmotionFaceNamesInFS)
 	write("neutral.svg")
 	write("speaking.svg") // functional — included
 	write("notes.txt")    // not an svg — excluded
 
-	got := FaceNamesInDir(dir)
+	got := FaceNamesInFS(os.DirFS(dir))
 	want := []string{"happy", "look_around", "neutral", "speaking"} // sorted, functional kept
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -129,7 +129,7 @@ func TestFaceNamesInDir(t *testing.T) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
-	if FaceNamesInDir(filepath.Join(dir, "missing")) != nil {
-		t.Error("missing dir should yield nil")
+	if FaceNamesInFS(nil) != nil {
+		t.Error("nil fsys should yield nil")
 	}
 }

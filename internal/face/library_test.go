@@ -4,10 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 func TestLibraryFallsBackToEmbedded(t *testing.T) {
-	lib := NewLibrary(filepath.Join(t.TempDir(), "does-not-exist"))
+	lib := NewLibrary(os.DirFS(filepath.Join(t.TempDir(), "does-not-exist")))
 	data, fromDisk := lib.Bytes(ExprNeutral)
 	if fromDisk {
 		t.Fatal("expected embedded source")
@@ -24,7 +25,7 @@ func TestLibraryDiskOverrideWins(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	data, fromDisk := lib.Bytes("neutral")
 	if !fromDisk || string(data) != custom {
 		t.Fatalf("expected disk override, fromDisk=%v", fromDisk)
@@ -38,7 +39,7 @@ func TestLibraryAliasResolution(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "crying.svg"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	data, fromDisk := lib.Bytes("cry")
 	if !fromDisk || string(data) != custom {
 		t.Fatalf("expected disk override for alias, fromDisk=%v", fromDisk)
@@ -50,7 +51,7 @@ func TestLibraryBlankFileIgnored(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte("   \n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	_, fromDisk := lib.Bytes(ExprNeutral)
 	if fromDisk {
 		t.Fatal("blank override file must fall back to embedded")
@@ -58,7 +59,7 @@ func TestLibraryBlankFileIgnored(t *testing.T) {
 }
 
 func TestLibraryPathTraversalBlocked(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(os.DirFS(t.TempDir()))
 	if _, fromDisk := lib.Bytes("../../etc/passwd"); fromDisk {
 		t.Fatal("path traversal must not read from disk")
 	}
@@ -74,7 +75,7 @@ func TestSelfContainedFoldsMissingToModNeutral(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(neutral), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 
 	// An expression the mod ships is served directly.
 	if data, fromDisk := lib.Bytes("happy"); !fromDisk || string(data) != happy {
@@ -93,14 +94,14 @@ func TestSelfContainedNoNeutralReturnsNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "happy.svg"), []byte(happy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	if data, fromDisk := lib.Bytes("sad"); data != nil || fromDisk {
 		t.Fatal("self-contained mod with no neutral must return (nil,false), not embedded")
 	}
 }
 
 func TestNonSelfContainedStillFallsBackToEmbedded(t *testing.T) {
-	lib := NewLibraryMode(t.TempDir(), false)
+	lib := NewLibraryMode(os.DirFS(t.TempDir()), false)
 	data, fromDisk := lib.Bytes(ExprNeutral)
 	if fromDisk {
 		t.Fatal("expected embedded source")
@@ -117,7 +118,7 @@ func TestResolveRawWhenFileExists(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "grumpy.svg"), []byte(svg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	if got := lib.Resolve("grumpy"); got != "grumpy" {
 		t.Fatalf("Resolve(grumpy) = %q, want grumpy", got)
 	}
@@ -132,7 +133,7 @@ func TestResolveRawWhenFileExists(t *testing.T) {
 }
 
 func TestResolveCanonicalWhenNoDir(t *testing.T) {
-	lib := NewLibrary(filepath.Join(t.TempDir(), "missing"))
+	lib := NewLibrary(os.DirFS(filepath.Join(t.TempDir(), "missing")))
 	if got := lib.Resolve("cry"); got != ExprCrying {
 		t.Fatalf("Resolve(cry) = %q, want %q", got, ExprCrying)
 	}
@@ -145,7 +146,7 @@ func TestResolveCanonicalWhenNoDir(t *testing.T) {
 const sourceTestSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210"><rect width="280" height="210" fill="#123"/></svg>`
 
 func TestSourceEmbeddedDefault(t *testing.T) {
-	lib := NewLibrary(filepath.Join(t.TempDir(), "missing"))
+	lib := NewLibrary(os.DirFS(filepath.Join(t.TempDir(), "missing")))
 	if got := lib.Source(ExprNeutral); got != "embedded-default" {
 		t.Fatalf("Source = %q, want embedded-default", got)
 	}
@@ -156,7 +157,7 @@ func TestSourceModOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(sourceTestSVG), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	if got := lib.Source("neutral"); got != "mod-override" {
 		t.Fatalf("Source = %q, want mod-override", got)
 	}
@@ -167,7 +168,7 @@ func TestSourceOverrideViaAlias(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "crying.svg"), []byte(sourceTestSVG), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	if got := lib.Source("cry"); got != "mod-override" {
 		t.Fatalf("Source = %q, want mod-override", got)
 	}
@@ -178,7 +179,7 @@ func TestSourceSelfContainedFoldsToModNeutral(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte(sourceTestSVG), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	if got := lib.Source("sad"); got != "mod-override" {
 		t.Fatalf("Source = %q, want mod-override (folded to mod neutral)", got)
 	}
@@ -189,7 +190,7 @@ func TestSourceSelfContainedNoFaceIsNone(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "happy.svg"), []byte(sourceTestSVG), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	if got := lib.Source("sad"); got != "none" {
 		t.Fatalf("Source = %q, want none", got)
 	}
@@ -200,8 +201,34 @@ func TestSourceBlankOverrideFallsBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "neutral.svg"), []byte("   \n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(os.DirFS(dir))
 	if got := lib.Source(ExprNeutral); got != "embedded-default" {
 		t.Fatalf("Source = %q, want embedded-default (blank ignored)", got)
+	}
+}
+
+func TestLibraryReadsOverrideFromFS(t *testing.T) {
+	fsys := fstest.MapFS{
+		"neutral.svg": {Data: []byte("<svg id=\"override\"/>")},
+	}
+	lib := NewLibraryMode(fsys, true)
+	data, fromDisk := lib.Bytes("neutral")
+	if !fromDisk {
+		t.Fatal("expected override to come from fsys")
+	}
+	if string(data) != "<svg id=\"override\"/>" {
+		t.Errorf("got %q", data)
+	}
+}
+
+func TestFaceNamesInFS(t *testing.T) {
+	fsys := fstest.MapFS{
+		"neutral.svg": {Data: []byte("<svg/>")},
+		"angry.svg":   {Data: []byte("<svg/>")},
+		"notes.txt":   {Data: []byte("ignore me")},
+	}
+	got := FaceNamesInFS(fsys)
+	if len(got) != 2 || got[0] != "angry" || got[1] != "neutral" {
+		t.Errorf("FaceNamesInFS = %v, want [angry neutral]", got)
 	}
 }

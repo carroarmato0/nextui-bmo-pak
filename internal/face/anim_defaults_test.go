@@ -1,6 +1,9 @@
 package face
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestDefaultCoreAnimations(t *testing.T) {
 	defs := DefaultAnimations()
@@ -45,7 +48,7 @@ func TestDefaultSpeakingAnimation(t *testing.T) {
 }
 
 func TestDefaultSpeakingFramesRasterizeAndDiffer(t *testing.T) {
-	lib := NewLibrary(t.TempDir()) // overlay: embedded assets only
+	lib := NewLibrary(os.DirFS(t.TempDir())) // overlay: embedded assets only
 	frames, err := buildFrames(lib, DefaultAnimations()[ExprSpeaking], 80, 60)
 	if err != nil {
 		t.Fatalf("buildFrames: %v", err)
@@ -59,7 +62,7 @@ func TestDefaultSpeakingFramesRasterizeAndDiffer(t *testing.T) {
 }
 
 func TestDefaultCoreFramesRasterizeAndDiffer(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(os.DirFS(t.TempDir()))
 	for _, name := range []string{ExprNeutral, ExprHappy, ExprSad} {
 		frames, err := buildFrames(lib, DefaultAnimations()[name], 80, 60)
 		if err != nil {
@@ -113,7 +116,7 @@ func TestDefaultIdleAnimations(t *testing.T) {
 			if def.Driver.Kind != DriverTime || def.Driver.Mode != tc.mode || def.Driver.FPS != tc.fps {
 				t.Fatalf("driver=%+v", def.Driver)
 			}
-			lib := NewLibrary(t.TempDir())
+			lib := NewLibrary(os.DirFS(t.TempDir()))
 			frames, err := buildFrames(lib, def, 80, 60)
 			if err != nil {
 				t.Fatalf("buildFrames: %v", err)

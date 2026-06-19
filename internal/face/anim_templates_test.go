@@ -1,6 +1,9 @@
 package face
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // talkingEmotions are every emotion whose mouth is driven by voice amplitude:
 // they render their own resting mouth at silence and open the shared
@@ -14,7 +17,7 @@ var talkingEmotions = []string{
 }
 
 func TestCoreTemplatesRenderRestAndOpen(t *testing.T) {
-	lib := NewLibrary(t.TempDir()) // embedded assets only
+	lib := NewLibrary(os.DirFS(t.TempDir())) // embedded assets only
 	for _, name := range talkingEmotions {
 		data, ok := lib.rawBytes(name)
 		if !ok {
@@ -41,7 +44,7 @@ func TestCoreTemplatesRenderRestAndOpen(t *testing.T) {
 }
 
 func TestEmotionTalkingMouthOpensWithTeeth(t *testing.T) {
-	lib := NewLibrary(t.TempDir()) // embedded assets only
+	lib := NewLibrary(os.DirFS(t.TempDir())) // embedded assets only
 
 	const (
 		teeth  = 0xe4e4e4 // white teeth band

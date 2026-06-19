@@ -83,7 +83,7 @@ func (c *Cache) Warm(w, h int) {
 
 	// Pre-rasterize the active mod's custom emotion faces so a custom name does
 	// not stutter on first use. warmFrame is idempotent for names already warmed.
-	for _, name := range EmotionFaceNamesInDir(c.lib.dir) {
+	for _, name := range EmotionFaceNamesInFS(c.lib.fsys) {
 		c.warmFrame(name, w, h)
 	}
 }

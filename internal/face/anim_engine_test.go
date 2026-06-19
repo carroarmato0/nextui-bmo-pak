@@ -16,7 +16,7 @@ func newTestEngine(t *testing.T) *Engine {
 			t.Fatal(err)
 		}
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	defs := map[string]AnimationDef{
 		"talk": {Frames: []string{"talk_0", "talk_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
 	}
@@ -107,7 +107,7 @@ func newMultiTestEngine(t *testing.T) *Engine {
 			t.Fatal(err)
 		}
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	defs := map[string]AnimationDef{
 		"a": {Frames: []string{"a_0", "a_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
 		"b": {Frames: []string{"b_0", "b_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}},
@@ -150,7 +150,7 @@ func TestEnginePinnedSurvivesEviction(t *testing.T) {
 			}
 		}
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	defs := map[string]AnimationDef{}
 	for _, n := range names {
 		defs[n] = AnimationDef{Frames: []string{n + "_0", n + "_1"}, Driver: Driver{Kind: DriverAmplitude, Curve: "linear"}}
@@ -178,7 +178,7 @@ func TestEnginePinnedSurvivesEviction(t *testing.T) {
 // distinct from the rest frame. Before WS1, emotions had no animation defs so
 // the mouth never moved while speaking.
 func TestSpeakingEmotionAnimates(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(os.DirFS(t.TempDir()))
 	eng := NewEngine(lib, DefaultAnimations())
 	w, h := 80, 60
 	eng.Prewarm(ExprNeutral, w, h)
@@ -206,7 +206,7 @@ func TestSpeakingEmotionAnimates(t *testing.T) {
 // mouth floor: every default emotion face (and speaking) is amplitude-driven,
 // time-driven idle faces are not, and unknown faces report false.
 func TestIsAmplitude(t *testing.T) {
-	eng := NewEngine(NewLibrary(t.TempDir()), DefaultAnimations())
+	eng := NewEngine(NewLibrary(os.DirFS(t.TempDir())), DefaultAnimations())
 	for _, expr := range []string{ExprNeutral, ExprHappy, ExprUnamused, ExprSkeptical, ExprAngry, ExprSpeaking} {
 		if !eng.IsAmplitude(expr) {
 			t.Errorf("IsAmplitude(%q) = false, want true (amplitude lip-sync face)", expr)
@@ -235,7 +235,7 @@ func newTimeDrivenEngine(t *testing.T) *Engine {
 	if err := os.WriteFile(filepath.Join(dir, "look_1.svg"), []byte(greenSVG), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lib := NewLibraryMode(dir, true)
+	lib := NewLibraryMode(os.DirFS(dir), true)
 	defs := map[string]AnimationDef{
 		// FPS 4, loop: step = int(clock*4) % 2.
 		"look": {Frames: []string{"look_0", "look_1"}, Driver: Driver{Kind: DriverTime, FPS: 4, Mode: modeLoop}},

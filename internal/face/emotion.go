@@ -1,8 +1,7 @@
 package face
 
 import (
-	"os"
-	"path/filepath"
+	"io/fs"
 	"sort"
 	"strings"
 )
@@ -48,25 +47,23 @@ func EmotionNames() []string {
 	return out
 }
 
-// EmotionFaceNamesInDir lists the emotion faces a mod ships on disk: the base
-// names of *.svg files in dir, excluding functional faces and unsafe names,
-// sorted. A missing or unreadable dir yields nil.
-func EmotionFaceNamesInDir(dir string) []string {
-	return faceNamesInDir(dir, true)
+// FaceNamesInFS lists every face a mod ships: base names of *.svg files at the
+// root of fsys (rooted at the mod's faces/), sorted, INCLUDING functional/idle
+// faces.
+func FaceNamesInFS(fsys fs.FS) []string {
+	return faceNamesInFS(fsys, false)
 }
 
-// FaceNamesInDir lists every face a mod ships on disk: the base names of *.svg
-// files in dir with a safe name, sorted, INCLUDING functional/idle faces
-// (look_around, listening, speaking…). Use this — not EmotionFaceNamesInDir —
-// when you need the mod's full set of distinctly-rendered expressions, e.g. to
-// restrict the idle rotation to faces the mod actually provides. A missing or
-// unreadable dir yields nil.
-func FaceNamesInDir(dir string) []string {
-	return faceNamesInDir(dir, false)
+// EmotionFaceNamesInFS lists only the emotion faces (functional/idle excluded).
+func EmotionFaceNamesInFS(fsys fs.FS) []string {
+	return faceNamesInFS(fsys, true)
 }
 
-func faceNamesInDir(dir string, excludeFunctional bool) []string {
-	entries, err := os.ReadDir(dir)
+func faceNamesInFS(fsys fs.FS, excludeFunctional bool) []string {
+	if fsys == nil {
+		return nil
+	}
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil
 	}
@@ -75,10 +72,12 @@ func faceNamesInDir(dir string, excludeFunctional bool) []string {
 		if e.IsDir() {
 			continue
 		}
-		if !strings.EqualFold(filepath.Ext(e.Name()), ".svg") {
+		name := e.Name()
+		dot := strings.LastIndex(name, ".")
+		if dot < 0 || !strings.EqualFold(name[dot:], ".svg") {
 			continue
 		}
-		base := strings.ToLower(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
+		base := strings.ToLower(name[:dot])
 		if !fileNameRe.MatchString(base) {
 			continue
 		}
