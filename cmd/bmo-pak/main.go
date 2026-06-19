@@ -47,24 +47,6 @@ const mouthReleaseDecay = 0.85
 // only stops it snapping to the closed grin between syllables.
 const mouthFloorCap = 0.04
 
-// gapBridgedFaces are the emotions whose rest pose is a prominent closed/flat
-// mouth distinct from the talkmouth's closed state. Without flooring, their
-// m==0 rest mouth flashes (e.g. below the talkmouth) on inter-syllable gaps
-// while speaking. mouthFloorCap holds a thin opening across those gaps for
-// these faces only; see the speakAmp floor in the render loop.
-//
-// NOTE: this is a hardcoded, name-coupled list — a self-contained mod shipping
-// a custom emotion with a distinctive rest mouth still needs gap bridging it
-// cannot opt into. A mod-declarable capability is the durable fix (tracked
-// separately); this set covers the built-in/Figma emotion names today.
-var gapBridgedFaces = map[string]bool{
-	face.ExprExcited:   true,
-	face.ExprSmile:     true,
-	face.ExprAngry:     true,
-	face.ExprUnamused:  true,
-	face.ExprSkeptical: true,
-}
-
 func main() {
 	if err := run(os.Stdout, os.Stderr); err != nil {
 		log.Fatal(err)
@@ -957,15 +939,17 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		} else {
 			heldAmp = rawAmp + (heldAmp-rawAmp)*mouthReleaseDecay
 		}
-		// Faces in gapBridgedFaces rest as a prominent closed/flat mouth that
-		// otherwise snapped in and out on every inter-syllable gap (their m==0 rest
-		// pose flashing below the talkmouth). Keep the mouth tracking the raw volume
-		// so it still reacts naturally, but never let it drop below a thin opening
-		// while the envelope is settling — this bridges the gaps without flattening
-		// the dynamics, then eases shut to the rest pose once the audio truly stops.
-		// Other emotions and the clip face use the raw RMS as-is.
+		// Every amplitude-driven (lip-sync) face rests at m==0 as some distinct
+		// mouth pose; without bridging, that rest pose flashes on every
+		// inter-syllable gap while speaking (the regression first seen on
+		// excited/angry, then unamused below the talkmouth). Keep the mouth
+		// tracking the raw volume so it still reacts naturally, but never let it
+		// drop below a thin opening while the release envelope is settling — this
+		// bridges the gaps without flattening the dynamics, then eases shut to the
+		// rest pose once the audio truly stops. Gating on IsAmplitude applies this
+		// uniformly to built-in and mod faces alike (no hardcoded name list).
 		speakAmp := rawAmp
-		if gapBridgedFaces[strings.ToLower(expr)] {
+		if animEngine.IsAmplitude(expr) {
 			floor := heldAmp
 			if floor > mouthFloorCap {
 				floor = mouthFloorCap

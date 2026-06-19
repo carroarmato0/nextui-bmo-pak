@@ -139,6 +139,15 @@ func (e *Engine) IsTimeDriven(expr string) bool {
 	return ok && def.Driver.Kind == DriverTime
 }
 
+// IsAmplitude reports whether expr is a voice-amplitude-driven (lip-sync) face.
+// The render loop uses this to apply the inter-syllable mouth floor to every
+// such face uniformly — so no emotion's rest mouth flashes during silence gaps
+// while speaking — instead of a hardcoded per-name list.
+func (e *Engine) IsAmplitude(expr string) bool {
+	def, ok := e.defs[normExpr(expr)]
+	return ok && def.Driver.Kind == DriverAmplitude
+}
+
 // Prewarm asynchronously builds expr's frames at w×h so the first display is
 // smooth. Safe to call from any goroutine; a no-op for static expressions.
 func (e *Engine) Prewarm(expr string, w, h int) {

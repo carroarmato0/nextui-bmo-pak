@@ -202,6 +202,26 @@ func TestSpeakingEmotionAnimates(t *testing.T) {
 	}
 }
 
+// TestIsAmplitude verifies the render-loop gate that applies the inter-syllable
+// mouth floor: every default emotion face (and speaking) is amplitude-driven,
+// time-driven idle faces are not, and unknown faces report false.
+func TestIsAmplitude(t *testing.T) {
+	eng := NewEngine(NewLibrary(t.TempDir()), DefaultAnimations())
+	for _, expr := range []string{ExprNeutral, ExprHappy, ExprUnamused, ExprSkeptical, ExprAngry, ExprSpeaking} {
+		if !eng.IsAmplitude(expr) {
+			t.Errorf("IsAmplitude(%q) = false, want true (amplitude lip-sync face)", expr)
+		}
+	}
+	for _, expr := range []string{ExprLookAround, ExprWhistle, ExprSleeping} {
+		if eng.IsAmplitude(expr) {
+			t.Errorf("IsAmplitude(%q) = true, want false (time-driven idle face)", expr)
+		}
+	}
+	if eng.IsAmplitude("no-such-face") {
+		t.Error("IsAmplitude(unknown) = true, want false")
+	}
+}
+
 // newTimeDrivenEngine builds an engine with a two-frame, time-driven "loop"
 // animation whose frames are visually distinct, so a step index can be
 // correlated to the pixels AnimFrame returns.
