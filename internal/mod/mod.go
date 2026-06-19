@@ -1,24 +1,31 @@
 package mod
 
 import (
+	"archive/zip"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// DefaultID is the reserved folder name with overlay semantics.
+// DefaultID is the overlay mod that falls back per-asset to embedded BMO.
 const DefaultID = "default"
 
-// Mod is a resolved mod: a folder under mods/ plus its (optional) manifest.
+// Mod is a selectable character under mods/: a directory or a .zip archive.
 type Mod struct {
-	ID        string   // folder name; the default entry uses DefaultID
-	Root      string   // absolute path to mods/<id> (may not exist on disk)
-	Manifest  Manifest // zero value when no mod.json
-	IsDefault bool     // ID == DefaultID — overlay semantics
+	ID        string
+	Root      string // mods/<id> or mods/<id>.zip — identity, logging, dir-only tools
+	Manifest  Manifest
+	IsDefault bool
+
+	// FS is rooted at the mod's contents (mod.json at root, faces/ and audio/
+	// as subtrees). Populated by Open; nil until then.
+	FS fs.FS
+
+	closer func() error
 }
 
-// DisplayName is what the Settings menu shows: the manifest name if set, else
-// a friendly label for the default entry, else the folder id.
+// DisplayName is the manifest name if set, else a friendly default.
 func (m Mod) DisplayName() string {
 	if name := strings.TrimSpace(m.Manifest.Name); name != "" {
 		return name
@@ -29,16 +36,58 @@ func (m Mod) DisplayName() string {
 	return m.ID
 }
 
+// Path accessors operate on Root. They are valid only for directory mods and
+// are used by cmd/generate-audio (a directory-only build tool) and for logging.
 func (m Mod) PersonaPath() string { return filepath.Join(m.Root, "persona.txt") }
 func (m Mod) VoicePath() string   { return filepath.Join(m.Root, "voice.txt") }
 func (m Mod) QuotesPath() string  { return filepath.Join(m.Root, "quotes.txt") }
 func (m Mod) FacesDir() string    { return filepath.Join(m.Root, "faces") }
-func (m Mod) AudioDir() string    { return m.Root } // clips.Library appends "audio/"
+func (m Mod) AudioDir() string    { return filepath.Join(m.Root, "audio") }
 
-// FacesHasSVG reports whether the mod's faces/ directory holds at least one
-// .svg file. A missing or unreadable directory counts as none.
+// Open populates m.FS from Root. Directories use os.DirFS; .zip archives are
+// opened and rooted at their top-level <id>/ folder when present, otherwise at
+// the archive root (logging a warning via logf, which may be nil). Callers must
+// Close the mod when done so zip file descriptors are released.
+func (m *Mod) Open(logf func(format string, args ...any)) error {
+	if strings.HasSuffix(m.Root, ".zip") {
+		zr, err := zip.OpenReader(m.Root)
+		if err != nil {
+			return err
+		}
+		var fsys fs.FS = zr
+		if info, err := fs.Stat(zr, m.ID); err == nil && info.IsDir() {
+			if sub, err := fs.Sub(zr, m.ID); err == nil {
+				fsys = sub
+			}
+		} else if logf != nil {
+			logf("mod %q: zip has no top-level %q/ folder; reading from archive root", m.ID, m.ID)
+		}
+		m.FS = fsys
+		m.closer = zr.Close
+		return nil
+	}
+	m.FS = os.DirFS(m.Root)
+	m.closer = nil
+	return nil
+}
+
+// Close releases the mod's source (a no-op for directories).
+func (m *Mod) Close() error {
+	if m.closer != nil {
+		err := m.closer()
+		m.closer = nil
+		return err
+	}
+	return nil
+}
+
+// FacesHasSVG reports whether the mod ships at least one faces/*.svg. Requires
+// Open to have populated FS.
 func (m Mod) FacesHasSVG() bool {
-	entries, err := os.ReadDir(m.FacesDir())
+	if m.FS == nil {
+		return false
+	}
+	entries, err := fs.ReadDir(m.FS, "faces")
 	if err != nil {
 		return false
 	}
@@ -50,9 +99,8 @@ func (m Mod) FacesHasSVG() bool {
 	return false
 }
 
-// SelfContained reports whether the mod owns its entire face set with no
-// embedded fallback. True only for a named mod that ships ≥1 face; the default
-// overlay and a named mod with no faces both inherit embedded BMO art.
+// SelfContained reports whether the mod ships its own faces and is not the
+// overlay default (so it must not inherit embedded faces/animations).
 func (m Mod) SelfContained() bool {
 	return !m.IsDefault && m.FacesHasSVG()
 }
