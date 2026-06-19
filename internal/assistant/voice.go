@@ -688,7 +688,10 @@ func (p *VoicePipeline) playPaced(ctx context.Context, pcm []byte) error {
 	if bytesPerChunk <= 0 {
 		return p.writer.WritePCM(pcm)
 	}
-	amps := audio.RMSChunks(pcm, p.sampleRate, p.playbackChannels, speakChunkMs)
+	// Normalize so a quiet TTS voice drives the full mouth range, not just the
+	// lowest steps (raw speech RMS rarely exceeds ~0.2). Per-utterance, so it
+	// adapts to whichever provider/voice is active.
+	amps := audio.NormalizePeakRMS(audio.RMSChunks(pcm, p.sampleRate, p.playbackChannels, speakChunkMs))
 	lead := audio.PlaybackBufferMs / speakChunkMs
 	chunkDur := time.Duration(speakChunkMs) * time.Millisecond
 	nChunks := (len(pcm) + bytesPerChunk - 1) / bytesPerChunk

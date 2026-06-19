@@ -187,7 +187,9 @@ func (p *Player) playPaced(ctx context.Context, pcm []byte) error {
 	if bytesPerChunk <= 0 {
 		return p.writer.WritePCM(pcm)
 	}
-	amps := audio.RMSChunks(pcm, p.sampleRate, p.channels, chunkMs)
+	// Normalize peak loudness to the full mouth range so clips lip-sync as
+	// expressively as live TTS regardless of how the clip was recorded.
+	amps := audio.NormalizePeakRMS(audio.RMSChunks(pcm, p.sampleRate, p.channels, chunkMs))
 	lead := playbackBufferMs / chunkMs
 	chunkDur := time.Duration(chunkMs) * time.Millisecond
 	nChunks := (len(pcm) + bytesPerChunk - 1) / bytesPerChunk
