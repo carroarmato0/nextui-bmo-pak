@@ -105,6 +105,26 @@ func TestDetectorSilenceDoesNotFire(t *testing.T) {
 	}
 }
 
+func BenchmarkDetectorStep(b *testing.B) {
+	lib := os.Getenv("ONNXRUNTIME_LIB")
+	mel := os.Getenv("WAKEWORD_MEL")
+	emb := os.Getenv("WAKEWORD_EMB")
+	wake := os.Getenv("WAKEWORD_WAKE")
+	if lib == "" || mel == "" || emb == "" || wake == "" {
+		b.Skip("set ONNXRUNTIME_LIB, WAKEWORD_MEL, WAKEWORD_EMB, WAKEWORD_WAKE to run")
+	}
+	d, err := New(Config{LibraryPath: lib, MelModel: mel, EmbModel: emb, WakeModel: wake, Threads: 2})
+	if err != nil {
+		b.Fatalf("New: %v", err)
+	}
+	defer d.Close()
+	frame := make([]byte, hopSamples*2) // one 80 ms S16LE hop
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		d.Write(frame)
+	}
+}
+
 func TestDetectorRefractorySuppressesRepeat(t *testing.T) {
 	// Pure-logic guard: a fresh detector starts past the refractory window so a
 	// first crossing fires, then is suppressed for RefractorySteps hops. We
