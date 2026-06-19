@@ -160,9 +160,10 @@ BMO is idle; when it hears the wake phrase it records your utterance and runs
 the same pipeline push-to-talk uses. Detection is suppressed while BMO is
 speaking (plus a short guard) so it never wakes on its own voice.
 
-- **CONTINUED CONVO** (`continued_conversation`: `off`/`short`/`long`) reopens a
-  follow-up window after each reply so you — or another BMO — can keep talking
-  without re-triggering. `long` is tuned for two-BMO conversations.
+- **CONTINUED CONVO** (`continued_conversation`: `off`/`short`/`long`, default
+  `short`) reopens a follow-up window after each reply so you — or another BMO —
+  can keep talking without re-triggering. `long` is tuned for two-BMO
+  conversations.
 - The always-on microphone has a real battery/thermal cost, so the wake word is
   **off by default**.
 - The shipped model is a stock "hey jarvis" placeholder until a dedicated

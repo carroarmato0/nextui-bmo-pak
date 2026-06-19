@@ -193,15 +193,16 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		Version:       1,
-		SetupComplete: true,
-		Mode:          ModeIdle,
-		InputTrigger:  InputTriggerPTT,
-		PTTButtons:    DefaultPTTButtons(),
-		LogLevel:      DefaultLogLevel,
-		Personality:   DefaultPersonality,
-		DeviceContext: DefaultDeviceContext(),
-		ProactiveTalk: ProactiveOff,
+		Version:               1,
+		SetupComplete:         true,
+		Mode:                  ModeIdle,
+		InputTrigger:          InputTriggerPTT,
+		PTTButtons:            DefaultPTTButtons(),
+		LogLevel:              DefaultLogLevel,
+		Personality:           DefaultPersonality,
+		DeviceContext:         DefaultDeviceContext(),
+		ProactiveTalk:         ProactiveOff,
+		ContinuedConversation: ContinuedConvoShort,
 	}
 }
 
@@ -265,7 +266,8 @@ func (c *Config) Normalize() {
 	switch c.ContinuedConversation {
 	case ContinuedConvoOff, ContinuedConvoShort, ContinuedConvoLong:
 	default:
-		c.ContinuedConversation = ContinuedConvoOff
+		// Empty or unknown: default to short (a brief follow-up window).
+		c.ContinuedConversation = ContinuedConvoShort
 	}
 	if len(c.PTTButtons) == 0 {
 		c.PTTButtons = DefaultPTTButtons()

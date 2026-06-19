@@ -298,7 +298,7 @@ func (m *SettingsMenu) toggleWakeWord() {
 	}
 	m.cfg.InputTrigger = config.InputTriggerWakeWord
 	if m.cfg.ContinuedConversation == "" {
-		m.cfg.ContinuedConversation = config.ContinuedConvoOff
+		m.cfg.ContinuedConversation = config.ContinuedConvoShort
 	}
 }
 

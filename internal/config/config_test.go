@@ -407,8 +407,14 @@ func TestValidateRejectsAIWithActiveNamingNoProvider(t *testing.T) {
 func TestContinuedConversationNormalizeDefaults(t *testing.T) {
 	c := Config{ContinuedConversation: "BOGUS"}
 	c.Normalize()
-	if c.ContinuedConversation != ContinuedConvoOff {
-		t.Fatalf("got %q want %q", c.ContinuedConversation, ContinuedConvoOff)
+	if c.ContinuedConversation != ContinuedConvoShort {
+		t.Fatalf("got %q want %q", c.ContinuedConversation, ContinuedConvoShort)
+	}
+}
+
+func TestDefaultContinuedConversationIsShort(t *testing.T) {
+	if got := Default().ContinuedConversation; got != ContinuedConvoShort {
+		t.Fatalf("Default().ContinuedConversation = %q, want %q", got, ContinuedConvoShort)
 	}
 }
 
