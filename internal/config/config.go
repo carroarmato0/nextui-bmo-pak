@@ -19,6 +19,11 @@ const (
 	InputTriggerPTT      = "ptt"
 	InputTriggerWakeWord = "wake_word"
 
+	// Continued-conversation follow-up window lengths after a reply finishes.
+	ContinuedConvoOff   = "off"
+	ContinuedConvoShort = "short" // ~8s window
+	ContinuedConvoLong  = "long"  // ~20s window (two-BMO conversations)
+
 	// Proactive talk levels: how often BMO may make a spontaneous idle
 	// remark. Off is the default — it is the only feature that spends API
 	// money unprompted.
@@ -162,23 +167,28 @@ func DefaultDeviceContext() DeviceContext {
 }
 
 type Config struct {
-	Version       int           `json:"version,omitempty"`
-	SetupComplete bool          `json:"setup_complete,omitempty"`
-	Mode          string        `json:"mode"`
-	InputTrigger  string        `json:"input_trigger,omitempty"`
-	STT           ProviderSet   `json:"stt"`
-	Chat          ProviderSet   `json:"chat"`
-	TTS           ProviderSet   `json:"tts"`
-	PTTButtons    []string      `json:"ptt_buttons,omitempty"`
-	LogLevel      string        `json:"log_level"`
-	Personality   string        `json:"personality"`
-	ActiveMod     string        `json:"active_mod,omitempty"`
-	ReducedMotion bool          `json:"reduced_motion"`
-	DeviceContext DeviceContext `json:"device_context"`
-	ProactiveTalk string        `json:"proactive_talk"`
-	LibraryDetail string        `json:"library_detail"`
-	LogSystemPrompt bool `json:"log_system_prompt,omitempty"`
-	RequestTimeout  int  `json:"request_timeout,omitempty"`
+	Version       int    `json:"version,omitempty"`
+	SetupComplete bool   `json:"setup_complete,omitempty"`
+	Mode          string `json:"mode"`
+	InputTrigger  string `json:"input_trigger,omitempty"`
+	// WakeWordEnabled turns on the on-device "Hey BMO" detector (hands-free
+	// trigger). ContinuedConversation controls the follow-up window after a
+	// reply (off/short/long); see the ContinuedConvo* constants.
+	WakeWordEnabled       bool          `json:"wake_word_enabled,omitempty"`
+	ContinuedConversation string        `json:"continued_conversation,omitempty"`
+	STT                   ProviderSet   `json:"stt"`
+	Chat                  ProviderSet   `json:"chat"`
+	TTS                   ProviderSet   `json:"tts"`
+	PTTButtons            []string      `json:"ptt_buttons,omitempty"`
+	LogLevel              string        `json:"log_level"`
+	Personality           string        `json:"personality"`
+	ActiveMod             string        `json:"active_mod,omitempty"`
+	ReducedMotion         bool          `json:"reduced_motion"`
+	DeviceContext         DeviceContext `json:"device_context"`
+	ProactiveTalk         string        `json:"proactive_talk"`
+	LibraryDetail         string        `json:"library_detail"`
+	LogSystemPrompt       bool          `json:"log_system_prompt,omitempty"`
+	RequestTimeout        int           `json:"request_timeout,omitempty"`
 }
 
 func Default() Config {
@@ -251,6 +261,11 @@ func (c *Config) Normalize() {
 	}
 	if c.InputTrigger == "" {
 		c.InputTrigger = InputTriggerPTT
+	}
+	switch c.ContinuedConversation {
+	case ContinuedConvoOff, ContinuedConvoShort, ContinuedConvoLong:
+	default:
+		c.ContinuedConversation = ContinuedConvoOff
 	}
 	if len(c.PTTButtons) == 0 {
 		c.PTTButtons = DefaultPTTButtons()

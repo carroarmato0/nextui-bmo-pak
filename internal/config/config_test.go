@@ -403,3 +403,32 @@ func TestValidateRejectsAIWithActiveNamingNoProvider(t *testing.T) {
 		t.Fatal("Validate() error = nil, want error for active naming no provider")
 	}
 }
+
+func TestContinuedConversationNormalizeDefaults(t *testing.T) {
+	c := Config{ContinuedConversation: "BOGUS"}
+	c.Normalize()
+	if c.ContinuedConversation != ContinuedConvoOff {
+		t.Fatalf("got %q want %q", c.ContinuedConversation, ContinuedConvoOff)
+	}
+}
+
+func TestContinuedConversationNormalizeKeepsValid(t *testing.T) {
+	c := Config{ContinuedConversation: ContinuedConvoLong}
+	c.Normalize()
+	if c.ContinuedConversation != ContinuedConvoLong {
+		t.Fatalf("normalize clobbered valid value: %q", c.ContinuedConversation)
+	}
+}
+
+func TestWakeWordValidatesTrigger(t *testing.T) {
+	c := Default()
+	c.Mode = ModeAI
+	c.WakeWordEnabled = true
+	c.InputTrigger = InputTriggerWakeWord
+	c.STT = ProviderSet{Active: "s", Providers: []Provider{{Name: "s", Model: "whisper-1"}}}
+	c.Chat = ProviderSet{Active: "c", Providers: []Provider{{Name: "c", Model: "gpt-4o-mini"}}}
+	c.TTS = ProviderSet{Active: "t", Providers: []Provider{{Name: "t", Model: "tts-1"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid wake-word config rejected: %v", err)
+	}
+}
