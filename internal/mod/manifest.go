@@ -6,8 +6,7 @@ package mod
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"io/fs"
 )
 
 // CurrentAPIVersion is the mod-format contract this build implements. Bump it
@@ -43,10 +42,10 @@ func (m Manifest) EffectiveAPIVersion() int {
 	return m.APIVersion
 }
 
-// LoadManifest reads modRoot/mod.json. A missing or malformed file is
-// tolerated: it returns the zero Manifest (whose EffectiveAPIVersion is 1).
-func LoadManifest(modRoot string) Manifest {
-	data, err := os.ReadFile(filepath.Join(modRoot, "mod.json"))
+// LoadManifest reads and parses mod.json from the root of fsys. A missing or
+// malformed file yields the zero Manifest (mods need no manifest).
+func LoadManifest(fsys fs.FS) Manifest {
+	data, err := fs.ReadFile(fsys, "mod.json")
 	if err != nil {
 		return Manifest{}
 	}

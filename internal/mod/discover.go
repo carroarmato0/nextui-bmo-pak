@@ -17,7 +17,7 @@ func Discover(modsRoot string) []Mod {
 		Root:      filepath.Join(modsRoot, DefaultID),
 		IsDefault: true,
 	}
-	def.Manifest = LoadManifest(def.Root)
+	def.Manifest = LoadManifest(os.DirFS(def.Root))
 	out := []Mod{def}
 
 	entries, err := os.ReadDir(modsRoot)
@@ -43,7 +43,7 @@ func Discover(modsRoot string) []Mod {
 		out = append(out, Mod{
 			ID:       name,
 			Root:     root,
-			Manifest: LoadManifest(root),
+			Manifest: LoadManifest(os.DirFS(root)),
 		})
 	}
 	return out
