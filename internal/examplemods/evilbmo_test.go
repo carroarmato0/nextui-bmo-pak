@@ -1,4 +1,4 @@
-package evilbmo
+package examplemods
 
 import (
 	"bytes"
@@ -15,6 +15,15 @@ import (
 	modpkg "github.com/carroarmato0/nextui-bmo/internal/mod"
 )
 
+// modRoot points at the Evil BMO example mod, relative to this package's
+// directory. go test runs with the package dir as the working directory, so the
+// mod is two levels up under examples/mods. Keeping the test here (rather than
+// inside the mod dir) lets examples/mods/evil-bmo stay a data-only showcase.
+func modRoot(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("..", "..", "examples", "mods", "evil-bmo")
+}
+
 // TestDeviceValidation mirrors exactly what the app runs when it loads a mod:
 // config.CheckOverrides validates that persona/voice/quotes are non-blank and
 // that every faces/*.svg is valid XML on the RAW bytes — before any template
@@ -28,17 +37,6 @@ func TestDeviceValidation(t *testing.T) {
 			t.Errorf("CheckOverrides (device mod-load validation): %v", e)
 		}
 	}
-}
-
-// modRoot is the directory this test runs in (the mod source dir). go test
-// sets the working directory to the package dir, so this is examples/mods/evil-bmo.
-func modRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	return wd
 }
 
 func TestManifest(t *testing.T) {

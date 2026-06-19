@@ -196,6 +196,22 @@ rather than a desktop SVG viewer. In particular, degenerate arc sweeps that look
 correct in ImageMagick can render opposite on the device — use Bézier curves for
 rounded shapes where precision matters.
 
+Two gotchas if you write your own desktop preview/validation script:
+
+> **Templated faces aren't valid XML until rendered.** A face with `{{.m}}` /
+> `{{.x}}` actions inside attribute values is not well-formed XML as written, so
+> rasterizing or XML-validating the *raw* bytes fails with "invalid XML". Run
+> them through `face.RenderRest` first (it executes the template at its rest
+> value); the device does this for you. Note the device's mod-load validator
+> checks the **raw** bytes, so an attribute template must stay quote-free —
+> `cx="{{$x}}"` is fine, `cx="{{printf "%.1f" $x}}"` is rejected.
+>
+> **Unsupported elements are dropped silently.** `oksvg` warns but does not error
+> on elements it can't render (`clipPath`, `filter`, `text`, `pattern`, CSS
+> classes…) — a rasterize check "passes" while the element is simply missing.
+> Verify faces visually (on-device **Y**-step or a rendered PNG), not just by a
+> successful render.
+
 ---
 
 ## Technical notes

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Stage the tracked Evil BMO mod into dist/ and push it to the device.
-# Usage: examples/mods/evil-bmo/deploy.sh   (run from repo root)
+# Usage: scripts/deploy-evil-bmo-mod.sh   (run from repo root)
 set -euo pipefail
 
 SRC="examples/mods/evil-bmo"
 STAGE="dist/mods/evil-bmo"
 DEVICE_DIR="/mnt/SDCARD/.userdata/tg5040/BMO/mods"
 
-# Copy only the runtime assets (exclude dev-only files: tests, docs, this script).
+# Copy the mod's runtime assets into the staging dir. (The example dir is now
+# data-only; its validation test lives in internal/examplemods.)
 rm -rf "$STAGE"
 mkdir -p "$STAGE/faces"
 cp "$SRC/mod.json" "$SRC/persona.txt" "$SRC/voice.txt" "$SRC/quotes.txt" "$STAGE/"
