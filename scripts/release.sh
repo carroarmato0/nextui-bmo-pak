@@ -163,5 +163,23 @@ rm -f dist/BMO.pak.zip
     zip -qr ../BMO.pak.zip .
 )
 
+# Package each example mod as its own distributable archive. The zip contains a
+# top-level <name>/ directory, so a user unzips it straight into their device's
+# BMO/mods/ folder (matching the install flow in docs/MODDING.md).
+if [ -d examples/mods ]; then
+    echo "==> Packaging example mods..."
+    mkdir -p dist/mods
+    for moddir in examples/mods/*/; do
+        [ -d "$moddir" ] || continue
+        modname=$(basename "$moddir")
+        rm -f "dist/mods/$modname.zip"
+        (
+            cd examples/mods
+            zip -qr "../../dist/mods/$modname.zip" "$modname"
+        )
+        echo "Packaged: dist/mods/$modname.zip"
+    done
+fi
+
 echo "==> Release artifacts:"
-find dist -maxdepth 5 \( -name 'BMO.pak.zip' -o -name 'bmo-pak' -o -name '*.so*' \) | sort
+find dist -maxdepth 5 \( -name '*.zip' -o -name 'bmo-pak' -o -name '*.so*' \) | sort
