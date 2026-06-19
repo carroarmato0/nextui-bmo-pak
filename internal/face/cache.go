@@ -135,7 +135,7 @@ func (c *Cache) Frame(expr string, w, h int) []uint32 {
 	}
 	key, ok := c.resolved[expr]
 	if !ok {
-		// Resolve performs one os.Stat; cached per distinct expr so the render
+		// Resolve performs one fs.Stat; cached per distinct expr so the render
 		// loop never re-stats on a hit. resolved is size-independent, so it is
 		// intentionally not cleared on resize.
 		key = c.lib.Resolve(expr)
