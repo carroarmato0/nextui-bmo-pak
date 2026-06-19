@@ -123,8 +123,10 @@ BMO folds every unreadable field to its default.
 
 ## Installing a mod
 
-1. Obtain the mod (e.g. unzip `my-bmo.zip`).
-2. Copy the folder to `<dataRoot>/BMO/mods/my-bmo/` on the device SD card.
+1. Obtain the mod. It is either a folder (`my-bmo/`) or a single archive
+   (`my-bmo.zip`) — BMO reads both, so there is no need to unzip.
+2. Drop it into `<dataRoot>/BMO/mods/` on the device SD card: copy the
+   `my-bmo/` folder there, **or** copy `my-bmo.zip` there as-is.
 3. On BMO, press **Start** to open Settings.
 4. Navigate to **MOD** and select `my-bmo`.
 5. Close Settings. Persona, voice, and quotes apply on the next interaction
@@ -133,8 +135,30 @@ BMO folds every unreadable field to its default.
 For a TrimUI Smart Pro the full path would be:
 
 ```
-/mnt/SDCARD/.userdata/tg5040/BMO/mods/my-bmo/
+/mnt/SDCARD/.userdata/tg5040/BMO/mods/my-bmo/        # folder, or
+/mnt/SDCARD/.userdata/tg5040/BMO/mods/my-bmo.zip     # archive
 ```
+
+---
+
+## Distributing as a `.zip`
+
+A mod can ship as a single `.zip` archive — BMO loads it directly, so users
+don't have to unzip.
+
+- **Filename is the mod id.** `evil-bmo.zip` loads as the mod `evil-bmo`.
+- **Wrap the mod in a top-level folder inside the archive.** The archive should
+  contain `evil-bmo/mod.json`, `evil-bmo/faces/…`, etc. — exactly what you get
+  from `zip -r evil-bmo.zip evil-bmo`. (Files at the archive root are tolerated
+  with a warning, but the wrapping folder is the supported layout.)
+- **Drop the `.zip` into `mods/`** on the device, alongside any folder mods.
+- **A directory wins over a same-named `.zip`.** If both `mods/evil-bmo/` and
+  `mods/evil-bmo.zip` exist, BMO uses the directory (so an extracted, edited
+  copy overrides the archive) and logs a warning. This keeps the edit/iterate
+  workflow intact.
+
+`scripts/release.sh` produces ready-to-ship archives at `dist/mods/<id>.zip`,
+and `scripts/deploy-mods.sh` pushes the example mods to a connected device.
 
 ---
 
