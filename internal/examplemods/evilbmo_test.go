@@ -1,6 +1,7 @@
 package examplemods
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
@@ -209,5 +210,67 @@ func TestAnimations(t *testing.T) {
 		if _, err := os.Stat(facePath); err != nil {
 			t.Errorf("animation %q references missing face %s.svg", key, def.Template.File)
 		}
+	}
+}
+
+// zipExampleMod packages examples/mods/evil-bmo into <tmp>/evil-bmo.zip with a
+// top-level evil-bmo/ folder, exactly like scripts/release.sh, and returns the
+// archive path.
+func zipExampleMod(t *testing.T) string {
+	t.Helper()
+	src := modRoot(t)
+	dst := filepath.Join(t.TempDir(), "evil-bmo.zip")
+	f, err := os.Create(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	err = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		w, err := zw.Create(filepath.ToSlash(filepath.Join("evil-bmo", rel)))
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("walk/zip: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
+
+func TestZippedExampleModValidates(t *testing.T) {
+	m := modpkg.Mod{ID: "evil-bmo", Root: zipExampleMod(t)}
+	if err := m.Open(nil); err != nil {
+		t.Fatalf("Open zip: %v", err)
+	}
+	defer m.Close()
+
+	if errs := config.CheckOverrides(m.FS); len(errs) != 0 {
+		t.Errorf("CheckOverrides on zip: %v", errs)
+	}
+	if got := modpkg.LoadManifest(m.FS).Name; got != "Evil BMO" {
+		t.Errorf("zip manifest Name = %q, want %q", got, "Evil BMO")
+	}
+	if !m.FacesHasSVG() || !m.SelfContained() {
+		t.Error("zipped evil-bmo should be self-contained")
 	}
 }
