@@ -368,7 +368,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        spoken,
-		Format:       "pcm",
+		Format:       "wav",
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
@@ -380,7 +380,7 @@ func (p *VoicePipeline) ProcessBatch(ctx context.Context, pcm []byte) error {
 			time.Since(totalStart).Milliseconds())
 	}
 
-	speech = p.resampleTTS(speech)
+	speech = p.decodeAndResampleTTS(speech)
 
 	// Synthesis is done: we are committed to speaking. Hand B over from
 	// CancelBatch (which aborts the request) to InterruptSpeech (which stops
@@ -529,7 +529,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        spoken,
-		Format:       "pcm",
+		Format:       "wav",
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
@@ -542,7 +542,7 @@ func (p *VoicePipeline) SpeakRemark(ctx context.Context, nudge string, onSpoken 
 	if onSpoken != nil {
 		onSpoken(spoken)
 	}
-	speech = p.resampleTTS(speech)
+	speech = p.decodeAndResampleTTS(speech)
 
 	return p.speak(ctx, speech)
 }
@@ -579,7 +579,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 		Model:        p.ttsModel,
 		Voice:        p.ttsVoice,
 		Input:        text,
-		Format:       "pcm",
+		Format:       "wav",
 		Instructions: p.currentTTSInstructions(),
 	})
 	if err != nil {
@@ -592,7 +592,7 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 	if onSpoken != nil {
 		onSpoken(text)
 	}
-	speech = p.resampleTTS(speech)
+	speech = p.decodeAndResampleTTS(speech)
 
 	return p.speak(ctx, speech)
 }
@@ -667,10 +667,11 @@ func (p *VoicePipeline) InterruptSpeech() bool {
 // windows of this size and the mouth amplitude is updated per window.
 const speakChunkMs = 20
 
-// ttsPCMSampleRate is the sample rate of the raw "pcm" response format of the
-// OpenAI speech API (24kHz mono S16LE). Raw PCM carries no header, so the
-// rate cannot be detected from the payload.
-const ttsPCMSampleRate = 24000
+// ttsPCMFallbackSampleRate is assumed for a TTS response that is NOT a WAV
+// container (a raw headerless PCM stream). OpenAI's legacy "pcm" format is
+// 24kHz mono S16LE; servers that return WAV carry their real rate in the
+// header (see decodeAndResampleTTS).
+const ttsPCMFallbackSampleRate = 24000
 
 // playPaced streams pcm to the playback writer at real-time rate instead of
 // dumping it into the pipe at once. Dumping parks seconds of audio in the
@@ -754,13 +755,33 @@ func (p *VoicePipeline) aiModeEnabled() bool {
 	return p.machine == nil || p.machine.AIEnabled()
 }
 
-// resampleTTS converts the 24kHz mono S16LE output from OpenAI's "pcm" format
-// to the device playback rate and channel count. Resampling as mono then
-// upmixing avoids the 2× speed regression that results from passing
-// playbackChannels directly to ResampleS16LE on mono input.
-func (p *VoicePipeline) resampleTTS(pcm []byte) []byte {
-	out := audio.ResampleS16LE(pcm, ttsPCMSampleRate, p.sampleRate, 1)
-	if p.playbackChannels > 1 {
+// decodeAndResampleTTS converts a TTS response into device-rate playback PCM.
+// A WAV response is decoded for its true sample rate/channels; a raw response
+// is assumed to be ttsPCMFallbackSampleRate mono.
+func (p *VoicePipeline) decodeAndResampleTTS(speech []byte) []byte {
+	pcm, srcRate, srcChannels, ok := audio.DecodeWAV(speech)
+	if !ok {
+		if p.logger != nil {
+			p.logger.Debugf("TTS response not WAV; assuming %dHz mono raw PCM", ttsPCMFallbackSampleRate)
+		}
+		pcm, srcRate, srcChannels = speech, ttsPCMFallbackSampleRate, 1
+	}
+	return p.resampleTTS(pcm, srcRate, srcChannels)
+}
+
+// resampleTTS converts srcChannels-channel S16LE at srcRate to the device
+// playback rate and channel count. Mono is resampled then upmixed (avoids the
+// 2x-speed regression from passing playbackChannels to ResampleS16LE on mono
+// input); already-multichannel audio is resampled in place.
+func (p *VoicePipeline) resampleTTS(pcm []byte, srcRate, srcChannels int) []byte {
+	if srcRate <= 0 {
+		srcRate = ttsPCMFallbackSampleRate
+	}
+	if srcChannels <= 0 {
+		srcChannels = 1
+	}
+	out := audio.ResampleS16LE(pcm, srcRate, p.sampleRate, srcChannels)
+	if srcChannels == 1 && p.playbackChannels > 1 {
 		out = audio.UpmixMonoToStereo(out)
 	}
 	return out

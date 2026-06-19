@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -1082,4 +1083,60 @@ func TestEmotionVocabularyDefaultsToBuiltin(t *testing.T) {
 	if got := len(pipe.currentEmotionVocab()); got != len(face.EmotionNames()) {
 		t.Fatalf("default vocab len = %d, want %d", got, len(face.EmotionNames()))
 	}
+}
+
+func TestDecodeAndResampleTTS(t *testing.T) {
+	pcm := make([]byte, 480) // 0.01s of 24kHz mono S16LE
+	for i := range pcm {
+		pcm[i] = byte(i)
+	}
+
+	t.Run("WAV header stripped, mono identity at matching rate", func(t *testing.T) {
+		p := &VoicePipeline{sampleRate: 24000, playbackChannels: 1}
+		wav := buildTestWAV(pcm, 24000, 1)
+		out := p.decodeAndResampleTTS(wav)
+		if len(out) != len(pcm) {
+			t.Fatalf("len(out) = %d, want %d (header should be stripped, no resample)", len(out), len(pcm))
+		}
+	})
+
+	t.Run("mono upmixed to stereo", func(t *testing.T) {
+		p := &VoicePipeline{sampleRate: 24000, playbackChannels: 2}
+		out := p.decodeAndResampleTTS(buildTestWAV(pcm, 24000, 1))
+		if len(out) != 2*len(pcm) {
+			t.Fatalf("len(out) = %d, want %d (mono upmixed to stereo)", len(out), 2*len(pcm))
+		}
+	})
+
+	t.Run("non-WAV falls back to raw PCM", func(t *testing.T) {
+		p := &VoicePipeline{sampleRate: 24000, playbackChannels: 1}
+		out := p.decodeAndResampleTTS(pcm) // raw, no RIFF header
+		if len(out) != len(pcm) {
+			t.Fatalf("len(out) = %d, want %d (raw PCM treated as 24kHz mono)", len(out), len(pcm))
+		}
+	})
+}
+
+// buildTestWAV mirrors internal/audio's canonical S16LE WAV header so the
+// assistant test can build TTS-response fixtures without importing test code.
+func buildTestWAV(pcm []byte, rate, channels int) []byte {
+	bitsPerSample := 16
+	blockAlign := channels * bitsPerSample / 8
+	byteRate := rate * blockAlign
+	var b bytes.Buffer
+	b.WriteString("RIFF")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(36+len(pcm)))
+	b.WriteString("WAVE")
+	b.WriteString("fmt ")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(16))
+	_ = binary.Write(&b, binary.LittleEndian, uint16(1))
+	_ = binary.Write(&b, binary.LittleEndian, uint16(channels))
+	_ = binary.Write(&b, binary.LittleEndian, uint32(rate))
+	_ = binary.Write(&b, binary.LittleEndian, uint32(byteRate))
+	_ = binary.Write(&b, binary.LittleEndian, uint16(blockAlign))
+	_ = binary.Write(&b, binary.LittleEndian, uint16(bitsPerSample))
+	b.WriteString("data")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(len(pcm)))
+	b.Write(pcm)
+	return b.Bytes()
 }
