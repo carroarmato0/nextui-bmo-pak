@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,19 @@ func LoadPromptFile(path, def string) string {
 	return strings.TrimSpace(def)
 }
 
+// LoadPromptFS returns the trimmed content of name within fsys if present and
+// non-blank, else the built-in def. Mirrors LoadPromptFile for fs.FS sources.
+func LoadPromptFS(fsys fs.FS, name, def string) string {
+	if fsys != nil {
+		if data, err := fs.ReadFile(fsys, name); err == nil {
+			if content := strings.TrimSpace(string(data)); content != "" {
+				return content
+			}
+		}
+	}
+	return strings.TrimSpace(def)
+}
+
 // RemoveOverrides deletes override files so the app falls back to built-in
 // defaults. Missing files are silently ignored; returns the first real error.
 func RemoveOverrides(paths ...string) error {
@@ -52,45 +66,39 @@ func RemoveOverrides(paths ...string) error {
 	return firstErr
 }
 
-// CheckOverrides validates override files in homeDir and returns any errors
-// found. It checks persona.txt, voice.txt, and quotes.txt for non-blank
-// content, and validates all *.svg files in the faces/ subdirectory as
-// well-formed XML.
-func CheckOverrides(homeDir string) []error {
+// CheckOverrides validates a mod's override files in fsys, returning any
+// problems: persona.txt / voice.txt / quotes.txt present-but-blank, and any
+// faces/*.svg that is not valid XML. A missing file is not an error.
+func CheckOverrides(fsys fs.FS) []error {
 	var errs []error
 
-	checkText := func(path, label string) {
-		data, err := os.ReadFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			return
-		}
+	checkText := func(name, label string) {
+		data, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", label, err))
-			return
+			return // absent is fine
 		}
 		if strings.TrimSpace(string(data)) == "" {
 			errs = append(errs, fmt.Errorf("%s exists but is blank", label))
 		}
 	}
 
-	checkText(PersonaPath(homeDir), "persona.txt")
-	checkText(VoicePath(homeDir), "voice.txt")
-	checkText(QuotesPath(homeDir), "quotes.txt")
+	checkText("persona.txt", "persona.txt")
+	checkText("voice.txt", "voice.txt")
+	checkText("quotes.txt", "quotes.txt")
 
-	entries, err := os.ReadDir(FacesDir(homeDir))
+	entries, err := fs.ReadDir(fsys, "faces")
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("faces dir: %w", err))
 		}
 		return errs
 	}
 
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".svg" {
+		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".svg") {
 			continue
 		}
-		p := filepath.Join(FacesDir(homeDir), e.Name())
-		data, err := os.ReadFile(p)
+		data, err := fs.ReadFile(fsys, "faces/"+e.Name())
 		if err != nil {
 			errs = append(errs, fmt.Errorf("faces/%s: %w", e.Name(), err))
 			continue

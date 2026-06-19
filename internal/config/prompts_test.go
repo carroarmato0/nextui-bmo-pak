@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 func TestLoadPromptFileAbsent(t *testing.T) {
@@ -71,7 +72,7 @@ func TestCheckOverridesValidPersonaReturnsNoError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "persona.txt"), []byte("I am BMO"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	errs := CheckOverrides(dir)
+	errs := CheckOverrides(os.DirFS(dir))
 	if len(errs) != 0 {
 		t.Fatalf("want no errors for valid persona.txt, got %v", errs)
 	}
@@ -86,7 +87,7 @@ func TestCheckOverridesInvalidSVGReturnsError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(facesDir, "neutral.svg"), []byte("not xml!!!"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	errs := CheckOverrides(dir)
+	errs := CheckOverrides(os.DirFS(dir))
 	if len(errs) == 0 {
 		t.Fatal("want error for invalid SVG, got none")
 	}
@@ -102,7 +103,7 @@ func TestCheckOverridesValidSVGReturnsNoError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(facesDir, "neutral.svg"), svg, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	errs := CheckOverrides(dir)
+	errs := CheckOverrides(os.DirFS(dir))
 	if len(errs) != 0 {
 		t.Fatalf("want no errors for valid SVG, got %v", errs)
 	}
@@ -113,8 +114,45 @@ func TestCheckOverridesBlankPersonaReturnsError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "persona.txt"), []byte("   "), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	errs := CheckOverrides(dir)
+	errs := CheckOverrides(os.DirFS(dir))
 	if len(errs) == 0 {
 		t.Fatal("want error for blank persona.txt, got none")
+	}
+}
+
+func TestCheckOverridesFSValid(t *testing.T) {
+	fsys := fstest.MapFS{
+		"persona.txt":       {Data: []byte("be evil")},
+		"faces/neutral.svg": {Data: []byte("<svg></svg>")},
+	}
+	if errs := CheckOverrides(fsys); len(errs) != 0 {
+		t.Errorf("CheckOverrides = %v, want none", errs)
+	}
+}
+
+func TestCheckOverridesFSBlankPersona(t *testing.T) {
+	fsys := fstest.MapFS{"persona.txt": {Data: []byte("   ")}}
+	if errs := CheckOverrides(fsys); len(errs) == 0 {
+		t.Error("expected an error for blank persona.txt")
+	}
+}
+
+func TestCheckOverridesFSInvalidSVG(t *testing.T) {
+	fsys := fstest.MapFS{"faces/x.svg": {Data: []byte("<svg><unclosed>")}}
+	if errs := CheckOverrides(fsys); len(errs) == 0 {
+		t.Error("expected an error for invalid SVG")
+	}
+}
+
+func TestLoadPromptFSOverride(t *testing.T) {
+	fsys := fstest.MapFS{"persona.txt": {Data: []byte("custom")}}
+	if got := LoadPromptFS(fsys, "persona.txt", "default"); got != "custom" {
+		t.Errorf("LoadPromptFS = %q, want %q", got, "custom")
+	}
+}
+
+func TestLoadPromptFSFallback(t *testing.T) {
+	if got := LoadPromptFS(fstest.MapFS{}, "persona.txt", "default"); got != "default" {
+		t.Errorf("LoadPromptFS = %q, want %q", got, "default")
 	}
 }
