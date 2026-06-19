@@ -19,6 +19,9 @@ BASE_USERDATA="/mnt/SDCARD/.userdata"
 BMO_DATA_ROOT="$BASE_USERDATA/$PLATFORM"
 export BMO_PLATFORM="$PLATFORM"
 export BMO_DATA_ROOT="$BMO_DATA_ROOT"
+# Pak root, so the binary can locate bundled assets (wake-word ONNX models and
+# the onnxruntime shared library) at runtime.
+export BMO_PAK_DIR="$PAK_DIR"
 export HOME="$BMO_DATA_ROOT/BMO"
 export PATH="$PAK_DIR:$PATH"
 mkdir -p "$HOME" "$BMO_DATA_ROOT/logs"

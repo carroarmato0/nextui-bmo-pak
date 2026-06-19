@@ -28,6 +28,7 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/mod"
 	"github.com/carroarmato0/nextui-bmo/internal/observability"
 	"github.com/carroarmato0/nextui-bmo/internal/perf"
+	"github.com/carroarmato0/nextui-bmo/internal/power"
 	"github.com/carroarmato0/nextui-bmo/internal/providers"
 	"github.com/carroarmato0/nextui-bmo/internal/qr"
 	"github.com/carroarmato0/nextui-bmo/internal/renderer"
@@ -306,6 +307,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var audioRouter *audio.CaptureRouter
 	var audioPipeline *assistant.VoicePipeline
 	var stopPTT func()
+	var stopWake func()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() && audioSession != nil {
@@ -357,10 +359,23 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				audioPipeline.SetErrorClip(preLib.Load("error"))
 			}
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
+
+			pakDir := strings.TrimSpace(os.Getenv("BMO_PAK_DIR"))
+			wakeCfg := wakeAssets{
+				ORTLib:    filepath.Join(pakDir, "lib", platform, "libonnxruntime.so"),
+				MelModel:  filepath.Join(pakDir, "assets", "wakeword", "melspectrogram.onnx"),
+				EmbModel:  filepath.Join(pakDir, "assets", "wakeword", "embedding_model.onnx"),
+				WakeModel: filepath.Join(pakDir, "assets", "wakeword", "hey_bmo.onnx"),
+			}
+			gov := &power.Governor{Logf: logger.Warnf}
+			stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, wakeCfg, audioCfg.SampleRate, audioCfg.Channels)
 		}
 	}
 	if stopPTT != nil {
 		defer stopPTT()
+	}
+	if stopWake != nil {
+		defer stopWake()
 	}
 
 	screen, err := renderer.NewFullscreen("BMO")
