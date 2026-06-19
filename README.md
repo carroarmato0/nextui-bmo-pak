@@ -165,6 +165,12 @@ each provider its own `base_url` and `api_key`.
 
 ---
 
+## Documentation
+
+- [Self-hosted speech (faster-whisper + Piper)](docs/self-hosted-speech.md)
+
+---
+
 ## Mods
 
 Mods are data-only directories that override BMO's face set, persona, voice
