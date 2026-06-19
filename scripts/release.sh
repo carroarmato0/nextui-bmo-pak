@@ -125,6 +125,9 @@ build_platform() {
         "
 }
 
+echo "==> Fetching wake-word assets (onnxruntime + openWakeWord models)..."
+"$(dirname "$0")/fetch-wakeword-assets.sh"
+
 echo "==> Building tg5040..."
 build_platform tg5040
 
@@ -143,6 +146,13 @@ copy_pak() {
         mkdir -p "$dest/lib/$platform"
         cp "lib/$platform"/libSDL2*.so* "$dest/lib/$platform/" 2>/dev/null || true
     fi
+    # Wake-word: bundle the onnxruntime shared library (aarch64, same for both
+    # platforms) and the openWakeWord models fetched by fetch-wakeword-assets.sh.
+    if [ -f third_party/wakeword/libonnxruntime.so ]; then
+        mkdir -p "$dest/lib/$platform" "$dest/assets/wakeword"
+        cp third_party/wakeword/libonnxruntime.so "$dest/lib/$platform/libonnxruntime.so"
+        cp third_party/wakeword/models/*.onnx "$dest/assets/wakeword/"
+    fi
 }
 
 echo "==> Assembling release directories..."
@@ -152,6 +162,11 @@ cp bin/tg5050/bmo-pak dist/BMO.pak/bin/tg5050/bmo-pak
 if [ -d lib/tg5050 ] && [ "$(ls -A lib/tg5050 2>/dev/null)" ]; then
     mkdir -p dist/BMO.pak/lib/tg5050
     cp lib/tg5050/libSDL2*.so* dist/BMO.pak/lib/tg5050/ 2>/dev/null || true
+fi
+# Wake-word onnxruntime library for the tg5050 binary in the combined pak.
+if [ -f third_party/wakeword/libonnxruntime.so ]; then
+    mkdir -p dist/BMO.pak/lib/tg5050
+    cp third_party/wakeword/libonnxruntime.so dist/BMO.pak/lib/tg5050/libonnxruntime.so
 fi
 copy_pak tg5040 dist/all/Tools/tg5040/BMO.pak
 copy_pak tg5050 dist/all/Tools/tg5050/BMO.pak

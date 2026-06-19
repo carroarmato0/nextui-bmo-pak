@@ -152,6 +152,25 @@ each provider its own `base_url` and `api_key`.
 `ptt_buttons` lists the push-to-talk button(s) by Linux event name
 (`BTN_EAST` is the physical **A** button); the default is `["BTN_EAST"]`.
 
+#### Wake word (hands-free)
+
+Turn on **Settings → WAKE WORD** to trigger BMO by voice instead of holding a
+button. An on-device detector (openWakeWord via onnxruntime) listens only while
+BMO is idle; when it hears the wake phrase it records your utterance and runs
+the same pipeline push-to-talk uses. Detection is suppressed while BMO is
+speaking (plus a short guard) so it never wakes on its own voice.
+
+- **CONTINUED CONVO** (`continued_conversation`: `off`/`short`/`long`) reopens a
+  follow-up window after each reply so you — or another BMO — can keep talking
+  without re-triggering. `long` is tuned for two-BMO conversations.
+- The always-on microphone has a real battery/thermal cost, so the wake word is
+  **off by default**.
+- The shipped model is a stock "hey jarvis" placeholder until a dedicated
+  "Hey BMO" model is trained.
+
+The detector's onnxruntime library and models ship inside the pak
+(`lib/<platform>/libonnxruntime.so`, `assets/wakeword/*.onnx`).
+
 ### Controls
 
 | Button | Action |

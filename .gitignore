@@ -46,3 +46,6 @@ debug-profiles/
 # P2.0 wake-word spike artifacts (large binaries; re-download via findings doc)
 spike-artifacts/
 wakeword-spike-arm64
+
+# Fetched wake-word assets (onnxruntime .so + openWakeWord models)
+third_party/wakeword/
