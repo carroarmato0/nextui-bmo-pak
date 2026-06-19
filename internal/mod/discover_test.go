@@ -153,3 +153,36 @@ func TestDiscoverDirectoryWinsOverZip(t *testing.T) {
 		t.Errorf("evil appears %d times, want 1", count)
 	}
 }
+
+func TestOpenCorruptZipReturnsError(t *testing.T) {
+	root := t.TempDir()
+	zipPath := filepath.Join(root, "broken.zip")
+	if err := os.WriteFile(zipPath, []byte("not a real zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := Mod{ID: "broken", Root: zipPath}
+	if err := m.Open(nil); err == nil {
+		m.Close()
+		t.Fatal("Open(corrupt zip) = nil error, want error")
+	}
+}
+
+func TestDiscoverListsCorruptZipByID(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "default"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "broken.zip"), []byte("garbage"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mods := Discover(root, nil) // manifestFor swallows the open error → zero manifest
+	found := false
+	for _, m := range mods {
+		if m.ID == "broken" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("corrupt zip should still be listed by id")
+	}
+}
