@@ -95,3 +95,66 @@ func TestLoadClipsRejectsWrongRate(t *testing.T) {
 		t.Fatal("expected error on non-16k WAV")
 	}
 }
+
+// evalEnv returns ORT lib + base model paths from the environment, skipping if
+// unset. WAKEWORD_WAKE is the candidate classifier; WAKEWORD_POSITIVE a clip
+// that should fire it.
+func evalEnv(t *testing.T) Options {
+	t.Helper()
+	o := Options{
+		LibraryPath: os.Getenv("ONNXRUNTIME_LIB"),
+		MelModel:    os.Getenv("WAKEWORD_MEL"),
+		EmbModel:    os.Getenv("WAKEWORD_EMB"),
+		Model:       os.Getenv("WAKEWORD_WAKE"),
+		Threshold:   0.5,
+		Threads:     2,
+	}
+	if o.LibraryPath == "" || o.MelModel == "" || o.EmbModel == "" || o.Model == "" {
+		t.Skip("set ONNXRUNTIME_LIB, WAKEWORD_MEL, WAKEWORD_EMB, WAKEWORD_WAKE to run")
+	}
+	return o
+}
+
+func TestRunPositiveAndSilence(t *testing.T) {
+	o := evalEnv(t)
+	posClip := os.Getenv("WAKEWORD_POSITIVE")
+	if posClip == "" {
+		t.Skip("set WAKEWORD_POSITIVE to a clip that fires WAKEWORD_WAKE")
+	}
+	// Build positive/negative folders: the positive clip, and 5 s of silence.
+	posDir := t.TempDir()
+	negDir := t.TempDir()
+	raw, err := os.ReadFile(posClip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(posDir, "pos.wav"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeWAV(t, filepath.Join(negDir, "silence.wav"), 16000, make([]int16, 16000*5))
+
+	o.Positives = posDir
+	o.Negatives = negDir
+	rep, err := Run(o)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rep.PositiveAccepts != 1 {
+		t.Fatalf("expected the positive clip to fire, got %d/%d", rep.PositiveAccepts, rep.Positives)
+	}
+	if rep.FalseAccepts != 0 {
+		t.Fatalf("silence produced %d false accepts", rep.FalseAccepts)
+	}
+	t.Logf("true-accept=%.0f%% false/hr=%.2f suggested=%.3f separable=%v",
+		rep.TrueAcceptRate*100, rep.FalseAcceptsHour, rep.SuggestedThresh, rep.Separable)
+}
+
+func TestRunRejectsWrongShapeModel(t *testing.T) {
+	o := evalEnv(t)
+	o.Model = o.MelModel // wrong I/O shape for a classifier
+	o.Positives = t.TempDir()
+	o.Negatives = t.TempDir()
+	if _, err := Run(o); err == nil {
+		t.Fatal("expected Run to reject a model that violates the contract")
+	}
+}
