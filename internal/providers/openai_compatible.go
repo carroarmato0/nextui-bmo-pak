@@ -170,6 +170,15 @@ func (c *OpenAICompatibleClient) Speak(ctx context.Context, req SpeechRequest) (
 		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
+	// Some OpenAI-compatible servers (e.g. LM Studio) return HTTP 200 with a
+	// JSON error body for endpoints they do not implement. A real audio
+	// response is never JSON/text, so reject those to fail loudly instead of
+	// playing the error string as audio.
+	if ct := strings.ToLower(resp.Header.Get("Content-Type")); strings.Contains(ct, "application/json") || strings.Contains(ct, "text/") {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+	}
+
 	return io.ReadAll(resp.Body)
 }
 

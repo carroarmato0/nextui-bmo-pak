@@ -277,3 +277,35 @@ func TestUsageReported(t *testing.T) {
 		t.Fatal("non-zero usage must count as reported")
 	}
 }
+
+func TestSpeakRejectsJSONErrorBodyOn200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"error":"Unexpected endpoint or method."}`))
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompatibleClient(Config{BaseURL: server.URL}, server.Client())
+	_, err := client.Speak(context.Background(), SpeechRequest{Model: "m", Voice: "alloy", Input: "hi", Format: "wav"})
+	if err == nil {
+		t.Fatalf("Speak() error = nil, want error for JSON body on 200")
+	}
+}
+
+func TestSpeakAcceptsAudioContentType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/wav")
+		_, _ = w.Write([]byte{0x52, 0x49, 0x46, 0x46}) // "RIFF"
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompatibleClient(Config{BaseURL: server.URL}, server.Client())
+	out, err := client.Speak(context.Background(), SpeechRequest{Model: "m", Voice: "alloy", Input: "hi", Format: "wav"})
+	if err != nil {
+		t.Fatalf("Speak() error = %v, want nil", err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("Speak() returned no audio bytes")
+	}
+}
