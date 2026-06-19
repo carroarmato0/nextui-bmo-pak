@@ -12,31 +12,44 @@ type PCMSource interface {
 	WritePCM([]byte) error
 }
 
+// subscriber is one batch consumer. Each gets every batch; a slow consumer
+// drops batches (non-blocking send) rather than stalling capture.
+type subscriber struct {
+	ch chan []byte
+}
+
 type CaptureRouter struct {
 	source PCMSource
 
 	batchLimit int
 
 	mu     sync.RWMutex
-	batches chan []byte
-	levels  chan float64
-	errors  chan error
-	done    chan struct{}
-	closed  bool
+	subs   map[*subscriber]struct{}
+	legacy *subscriber // backs Batches()
+	levels chan float64
+	errors chan error
+	done   chan struct{}
+	closed bool
 }
 
 func NewCaptureRouter(source PCMSource, batchLimit int) *CaptureRouter {
 	if batchLimit <= 0 {
 		batchLimit = BytesPerSecond(DefaultSampleRate, DefaultChannels, BytesPerSampleS16LE) / 2
 	}
-	return &CaptureRouter{
+	r := &CaptureRouter{
 		source:     source,
 		batchLimit: batchLimit,
-		batches:    make(chan []byte, 4),
+		subs:       make(map[*subscriber]struct{}),
 		levels:     make(chan float64, 8),
 		errors:     make(chan error, 4),
 		done:       make(chan struct{}),
 	}
+	// The legacy Batches() subscriber is registered eagerly so batches flushed
+	// before the first Batches() call are still buffered (preserving the
+	// original single-channel semantics).
+	r.legacy = &subscriber{ch: make(chan []byte, 4)}
+	r.subs[r.legacy] = struct{}{}
+	return r
 }
 
 func (r *CaptureRouter) Start() error {
@@ -63,7 +76,15 @@ func (r *CaptureRouter) Start() error {
 
 func (r *CaptureRouter) run() {
 	defer close(r.done)
-	defer close(r.batches)
+	defer func() {
+		r.mu.Lock()
+		r.closed = true
+		for s := range r.subs {
+			close(s.ch)
+		}
+		r.subs = map[*subscriber]struct{}{}
+		r.mu.Unlock()
+	}()
 	defer close(r.levels)
 	defer close(r.errors)
 
@@ -75,10 +96,14 @@ func (r *CaptureRouter) run() {
 		batch := make([]byte, len(buffer))
 		copy(batch, buffer)
 		buffer = buffer[:0]
-		select {
-		case r.batches <- batch:
-		default:
+		r.mu.RLock()
+		for s := range r.subs {
+			select {
+			case s.ch <- batch:
+			default:
+			}
 		}
+		r.mu.RUnlock()
 	}
 
 	for frame := range r.source.Frames() {
@@ -100,11 +125,46 @@ func (r *CaptureRouter) run() {
 	flush()
 }
 
+// Batches returns the legacy single-consumer batch channel. It is one
+// permanent subscriber; new consumers should use Subscribe instead.
 func (r *CaptureRouter) Batches() <-chan []byte {
 	if r == nil {
 		return nil
 	}
-	return r.batches
+	return r.legacy.ch
+}
+
+// Subscribe registers a new batch consumer and returns its channel plus a
+// cancel func that unregisters and closes it. Every subscriber receives every
+// batch; a slow subscriber drops batches rather than stalling capture. After
+// the router has stopped, Subscribe returns an already-closed channel.
+func (r *CaptureRouter) Subscribe() (<-chan []byte, func()) {
+	if r == nil {
+		ch := make(chan []byte)
+		close(ch)
+		return ch, func() {}
+	}
+	s := &subscriber{ch: make(chan []byte, 4)}
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		close(s.ch)
+		return s.ch, func() {}
+	}
+	r.subs[s] = struct{}{}
+	r.mu.Unlock()
+	var once sync.Once
+	cancel := func() {
+		once.Do(func() {
+			r.mu.Lock()
+			if _, ok := r.subs[s]; ok {
+				delete(r.subs, s)
+				close(s.ch)
+			}
+			r.mu.Unlock()
+		})
+	}
+	return s.ch, cancel
 }
 
 func (r *CaptureRouter) Levels() <-chan float64 {

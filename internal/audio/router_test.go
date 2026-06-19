@@ -87,6 +87,72 @@ func TestCaptureRouterEmitsBatchesAndLevels(t *testing.T) {
 	<-router.Done()
 }
 
+func TestRouterFanOutDeliversToAllSubscribers(t *testing.T) {
+	src := newFakeSource(8)
+	r := NewCaptureRouter(src, 4)
+	if err := r.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	subA, cancelA := r.Subscribe()
+	subB, cancelB := r.Subscribe()
+	defer cancelA()
+	defer cancelB()
+
+	src.frames <- []byte{1, 2}
+	src.frames <- []byte{3, 4}
+
+	for i, sub := range []<-chan []byte{subA, subB} {
+		select {
+		case b := <-sub:
+			if len(b) == 0 {
+				t.Fatalf("subscriber %d: empty batch", i)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("subscriber %d did not receive batch", i)
+		}
+	}
+
+	close(src.frames)
+	<-r.Done()
+}
+
+func TestRouterSubscribeAfterCancelStopsDelivery(t *testing.T) {
+	src := newFakeSource(8)
+	r := NewCaptureRouter(src, 4)
+	if err := r.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	sub, cancel := r.Subscribe()
+	cancel()
+	// Second cancel must be a safe no-op.
+	cancel()
+	src.frames <- []byte{1, 2}
+	src.frames <- []byte{3, 4}
+	select {
+	case _, ok := <-sub:
+		if ok {
+			t.Fatalf("expected closed channel after cancel")
+		}
+	case <-time.After(300 * time.Millisecond):
+		// no delivery on a cancelled subscriber is also acceptable
+	}
+}
+
+func TestRouterSubscribeAfterCloseReturnsClosedChannel(t *testing.T) {
+	src := newFakeSource(1)
+	r := NewCaptureRouter(src, 4)
+	if err := r.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	close(src.frames)
+	<-r.Done()
+	sub, cancel := r.Subscribe()
+	defer cancel()
+	if _, ok := <-sub; ok {
+		t.Fatalf("expected closed channel when subscribing after router stopped")
+	}
+}
+
 func TestCaptureRouterStartError(t *testing.T) {
 	src := newFakeSource(1)
 	src.startErr = errors.New("boom")
