@@ -44,10 +44,10 @@
 | `cmd/wakeword-eval/eval.go` (create) | Core evaluation: options/report types, clip loading, scoring, threshold suggestion. No CLI concerns. |
 | `cmd/wakeword-eval/main.go` (create) | Flag parsing, calls `Run`, prints the report, sets exit code. |
 | `cmd/wakeword-eval/eval_test.go` (create) | Pure tests (helpers, WAV loading) + env-gated integration test. |
-| `training/wakeword/config.yaml` (create) | The single editable phrase/training config (openWakeWord training-config schema). |
-| `training/wakeword/requirements.txt` (create) | Pinned Python deps. |
-| `training/wakeword/README.md` (create) | Human guide: Colab + local-GPU steps, the model contract, mod-author recipe. |
-| `training/wakeword/hey-bmo-training.ipynb` (create) | The pinned training notebook. |
+| `training/wakeword/config.yaml` (create) | The phrase **override** values applied to openWakeWord's own config. |
+| `training/wakeword/README.md` (create) | Human guide: points to openWakeWord's official notebook pinned to a commit, the model contract, mod-author recipe. |
+
+> **Revised (commit `bdd8b52`):** Tasks 6–9 originally shipped a hand-rolled `requirements.txt` + `hey-bmo-training.ipynb`. That notebook targeted an openWakeWord API absent from the pinned 0.5.1 (the config-driven `train.py` exists only in newer versions), used a fabricated piper commit, and assumed piper's old layout. Per the user's decision, we now **point to openWakeWord's official `automatic_model_training.ipynb` pinned to commit `368c03716d1e`** and keep `config.yaml` as override values only; the notebook and `requirements.txt` were removed.
 | `assets/wakeword/hey_bmo.onnx` (create, **after training**) | The committed trained classifier. |
 | `scripts/fetch-wakeword-assets.sh` (modify) | Stop downloading the `hey_jarvis` placeholder; fetch only base models + `.so`. |
 | `scripts/release.sh` (verify/modify) | Confirm the committed classifier is bundled into each pak. |
@@ -1238,7 +1238,7 @@ git commit -m "feat(training): pinned hey-bmo training notebook"
 > `hey_bmo.onnx`. An agent executing this plan should **stop here and hand back
 > to the user** with these instructions.
 
-- [ ] **Step 1: Run the notebook** (`training/wakeword/hey-bmo-training.ipynb`) on Colab (GPU) or a local NVIDIA GPU. Audition the phrase (cell 3); adjust `config.yaml` spellings if needed. Let it train and export `hey_bmo.onnx`.
+- [ ] **Step 1: Run openWakeWord's official notebook** pinned to commit `368c03716d1e` on Colab (GPU): <https://colab.research.google.com/github/dscripka/openWakeWord/blob/368c03716d1e/notebooks/automatic_model_training.ipynb>. Run the Environment setup cell, then in the "Modify values in the config" cell apply BMO's overrides from `training/wakeword/config.yaml` (`target_phrase=["hey beemo"]`, `model_name="hey_bmo"`, `n_samples=20000`, `n_samples_val=2000`, `steps=50000`). Audition the synthetic clips; adjust the spelling if needed. Let it train and export `hey_bmo.onnx`. (See `training/wakeword/README.md`.)
 
 - [ ] **Step 2: Collect evaluation clips.** Record/gather a folder of 16 kHz mono WAVs of "Hey BMO" (positives) and a folder of unrelated speech/noise (negatives). Tip to convert: `ffmpeg -i in.wav -ac 1 -ar 16000 out.wav`.
 
