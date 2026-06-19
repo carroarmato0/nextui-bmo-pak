@@ -7,6 +7,7 @@ require (
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/veandco/go-sdl2 v0.4.40
+	github.com/yalue/onnxruntime_go v1.31.0
 	modernc.org/sqlite v1.52.0
 )
 

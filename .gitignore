@@ -42,3 +42,7 @@ Thumbs.db
 .remember/
 .serena/
 debug-profiles/
+
+# P2.0 wake-word spike artifacts (large binaries; re-download via findings doc)
+spike-artifacts/
+wakeword-spike-arm64
