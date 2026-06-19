@@ -15,10 +15,83 @@
     "gloating": "savoring the user's failure"
   },
   "animations": {
-    "neutral":     { "template": "neutral",     "param": "m", "from": 0, "to": 1, "steps": 6, "driver": { "type": "amplitude", "curve": "sqrt" } },
-    "laugh":       { "template": "laugh",       "param": "m", "from": 0, "to": 1, "steps": 6, "driver": { "type": "amplitude", "curve": "sqrt" } },
-    "angry":       { "template": "angry",       "param": "m", "from": 0, "to": 1, "steps": 6, "driver": { "type": "amplitude", "curve": "sqrt" } },
-    "speaking":    { "template": "neutral",     "param": "m", "from": 0, "to": 1, "steps": 6, "driver": { "type": "amplitude", "curve": "sqrt" } },
-    "look_around": { "template": "look_around", "param": "x", "from": -1, "to": 1, "steps": 3, "driver": { "type": "time", "fps": 2, "mode": "pingpong" } }
+    "neutral": {
+      "template": "neutral",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    },
+    "laugh": {
+      "template": "laugh",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    },
+    "angry": {
+      "template": "angry",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    },
+    "speaking": {
+      "template": "neutral",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    },
+    "look_around": {
+      "template": "look_around",
+      "param": "x",
+      "from": -1,
+      "to": 1,
+      "steps": 3,
+      "driver": {
+        "type": "time",
+        "fps": 2,
+        "mode": "pingpong"
+      }
+    },
+    "unamused": {
+      "template": "unamused",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    },
+    "skeptical": {
+      "template": "skeptical",
+      "param": "m",
+      "from": 0,
+      "to": 1,
+      "steps": 6,
+      "driver": {
+        "type": "amplitude",
+        "curve": "sqrt"
+      }
+    }
   }
 }
