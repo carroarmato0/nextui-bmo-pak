@@ -139,7 +139,7 @@ type settingsSlot struct {
 	navigable bool
 }
 
-const settingsSlotCount = 19
+const settingsSlotCount = 21
 
 // slots is the single source of truth for the settings layout: row content,
 // visibility and navigability all derive from here, so Move, shouldSkip and
@@ -177,6 +177,9 @@ func (m *SettingsMenu) slots() []settingsSlot {
 		aiCycle("library_detail", "LIBRARY DETAIL: "+strings.ToUpper(m.cfg.LibraryDetail)),
 		aiCycle("request_timeout", fmt.Sprintf("TIMEOUT: %d%s", m.cfg.RequestTimeout, secondsUnit)),
 		aiCycle("proactive_talk", "PROACTIVE TALK: "+strings.ToUpper(m.cfg.ProactiveTalk)),
+		aiToggle("wake_word", "WAKE WORD: "+onOff(m.cfg.WakeWordEnabled), m.cfg.WakeWordEnabled),
+		// CONTINUED CONVO only applies when the wake word is on; hide it otherwise.
+		{OverlayItem{Code: "continued_convo", Label: "CONTINUED CONVO: " + strings.ToUpper(m.cfg.ContinuedConversation), Selected: true, Hidden: !isAI || !m.cfg.WakeWordEnabled, Indent: true}, isAI && m.cfg.WakeWordEnabled},
 		{OverlayItem{Code: "mod", Label: "MOD: " + m.modLabel(), Selected: true}, true},
 		// Blank separator setting the destructive Restore Defaults apart.
 		{OverlayItem{Code: "spacer", Spacer: true}, false},
@@ -216,14 +219,7 @@ func (m *SettingsMenu) ToggleFocused() error {
 	}
 	switch m.focus {
 	case 0:
-		curr := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel))
-		next := logLevelOrder[0]
-		for i, l := range logLevelOrder {
-			if l == curr {
-				next = logLevelOrder[(i+1)%len(logLevelOrder)]
-				break
-			}
-		}
+		next := nextInOrder(strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)), logLevelOrder)
 		m.cfg.LogLevel = next
 		if m.onLogLevelChange != nil {
 			m.onLogLevelChange(next)
@@ -270,23 +266,19 @@ func (m *SettingsMenu) ToggleFocused() error {
 		}
 		m.cfg.RequestTimeout = next
 	case 14:
-		levels := config.SupportedProactiveTalkLevels()
-		curr := strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk))
-		next := levels[0]
-		for i, l := range levels {
-			if l == curr {
-				next = levels[(i+1)%len(levels)]
-				break
-			}
-		}
-		m.cfg.ProactiveTalk = next
+		m.cfg.ProactiveTalk = nextInOrder(strings.ToLower(strings.TrimSpace(m.cfg.ProactiveTalk)), config.SupportedProactiveTalkLevels())
 	case 15:
-		m.cycleMod()
+		m.toggleWakeWord()
+	case 16:
+		m.cfg.ContinuedConversation = nextInOrder(m.cfg.ContinuedConversation,
+			[]string{config.ContinuedConvoOff, config.ContinuedConvoShort, config.ContinuedConvoLong})
 	case 17:
+		m.cycleMod()
+	case 19:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
-	case 18:
+	case 20:
 		if m.about != nil {
 			m.aboutActive = true
 		}
@@ -294,6 +286,34 @@ func (m *SettingsMenu) ToggleFocused() error {
 		return fmt.Errorf("unsupported focus %d", m.focus)
 	}
 	return nil
+}
+
+// toggleWakeWord flips the wake-word detector on/off and keeps InputTrigger in
+// sync (wake_word when on, ptt when off) so there is a single source of truth.
+func (m *SettingsMenu) toggleWakeWord() {
+	m.cfg.WakeWordEnabled = !m.cfg.WakeWordEnabled
+	if !m.cfg.WakeWordEnabled {
+		m.cfg.InputTrigger = config.InputTriggerPTT
+		return
+	}
+	m.cfg.InputTrigger = config.InputTriggerWakeWord
+	if m.cfg.ContinuedConversation == "" {
+		m.cfg.ContinuedConversation = config.ContinuedConvoOff
+	}
+}
+
+// nextInOrder returns the entry after curr in order, wrapping around. If curr
+// is absent (or order is empty) it returns the first entry.
+func nextInOrder(curr string, order []string) string {
+	for i, v := range order {
+		if v == curr {
+			return order[(i+1)%len(order)]
+		}
+	}
+	if len(order) > 0 {
+		return order[0]
+	}
+	return curr
 }
 
 // Cycle changes the focused setting. For provider rows (stt/chat/tts) it moves
