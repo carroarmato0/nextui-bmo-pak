@@ -1,5 +1,14 @@
 package main
 
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"github.com/carroarmato0/nextui-bmo/internal/audio"
+)
+
 // Options configures an evaluation run.
 type Options struct {
 	LibraryPath string
@@ -70,4 +79,39 @@ func maxSlice(xs []float64) float64 {
 		}
 	}
 	return m
+}
+
+type clip struct {
+	name    string
+	pcm     []byte // S16LE mono 16k
+	seconds float64
+}
+
+// loadClips reads every *.wav in dir as 16 kHz mono S16LE, sorted by name.
+func loadClips(dir string) ([]clip, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var clips []clip
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".wav" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		pcm, rate, ch, ok := audio.DecodeWAV(raw)
+		if !ok {
+			return nil, fmt.Errorf("decode wav %s", path)
+		}
+		if rate != 16000 || ch != 1 {
+			return nil, fmt.Errorf("%s: want 16k mono, got rate=%d ch=%d", path, rate, ch)
+		}
+		clips = append(clips, clip{name: e.Name(), pcm: pcm, seconds: float64(len(pcm)/2) / 16000})
+	}
+	sort.Slice(clips, func(i, j int) bool { return clips[i].name < clips[j].name })
+	return clips, nil
 }
