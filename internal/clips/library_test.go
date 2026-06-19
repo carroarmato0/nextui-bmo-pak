@@ -1,13 +1,12 @@
 package clips
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 func TestLibraryLoadEmbeddedHello(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(nil)
 	data := lib.Load("hello")
 	if len(data) == 0 {
 		t.Fatal("expected embedded hello.pcm, got nil/empty")
@@ -15,23 +14,18 @@ func TestLibraryLoadEmbeddedHello(t *testing.T) {
 }
 
 func TestLibraryLoadUnknownClipReturnsNil(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(nil)
 	if got := lib.Load("does_not_exist"); got != nil {
 		t.Fatalf("expected nil for unknown clip, got %d bytes", len(got))
 	}
 }
 
 func TestLibraryOverridePreferredOverEmbedded(t *testing.T) {
-	dir := t.TempDir()
-	audioDir := filepath.Join(dir, "audio")
-	if err := os.MkdirAll(audioDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	override := []byte{0x01, 0x02, 0x03, 0x04}
-	if err := os.WriteFile(filepath.Join(audioDir, "hello.pcm"), override, 0o600); err != nil {
-		t.Fatal(err)
+	fsys := fstest.MapFS{
+		"hello.pcm": {Data: override},
 	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(fsys)
 	got := lib.Load("hello")
 	if len(got) != len(override) || got[0] != override[0] {
 		t.Fatalf("expected override bytes, got %v", got)
@@ -39,19 +33,32 @@ func TestLibraryOverridePreferredOverEmbedded(t *testing.T) {
 }
 
 func TestLibraryEmptyOverrideFallsBackToEmbedded(t *testing.T) {
-	dir := t.TempDir()
-	audioDir := filepath.Join(dir, "audio")
-	if err := os.MkdirAll(audioDir, 0o755); err != nil {
-		t.Fatal(err)
+	// An empty file in the FS (len 0) must fall back to the embedded asset.
+	fsys := fstest.MapFS{
+		"hello.pcm": {Data: []byte{}},
 	}
-	// Write an empty override file
-	if err := os.WriteFile(filepath.Join(audioDir, "hello.pcm"), []byte{}, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	lib := NewLibrary(dir)
+	lib := NewLibrary(fsys)
 	got := lib.Load("hello")
 	// Should fall back to embedded (non-empty)
 	if len(got) == 0 {
 		t.Fatal("expected embedded fallback for empty override, got empty")
+	}
+}
+
+func TestLibraryLoadsOverrideFromFS(t *testing.T) {
+	fsys := fstest.MapFS{
+		"hello.pcm": {Data: []byte("PCMDATA-1234")},
+	}
+	lib := NewLibrary(fsys)
+	if got := lib.Load("hello"); string(got) != "PCMDATA-1234" {
+		t.Errorf("Load = %q, want override bytes", got)
+	}
+}
+
+func TestLibraryNilFSFallsBackToEmbedded(t *testing.T) {
+	// hello.pcm is present in embedded assets/audio/
+	lib := NewLibrary(nil)
+	if got := lib.Load("hello"); got == nil {
+		t.Error("Load(hello) = nil, want embedded default")
 	}
 }

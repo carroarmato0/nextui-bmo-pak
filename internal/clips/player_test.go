@@ -28,7 +28,7 @@ func (f *fakeWriter) totalBytes() int {
 }
 
 func TestPlayerPlayWritesPCMForHello(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(nil)
 	w := &fakeWriter{}
 	p := NewPlayer(w, 16000, 2, lib)
 	if err := p.Play(context.Background(), "hello"); err != nil {
@@ -40,7 +40,7 @@ func TestPlayerPlayWritesPCMForHello(t *testing.T) {
 }
 
 func TestPlayerPlayCancelledContextReturnsError(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(nil)
 	w := &fakeWriter{}
 	p := NewPlayer(w, 16000, 2, lib)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -59,7 +59,7 @@ func TestNilPlayerPlayIsNoop(t *testing.T) {
 }
 
 func TestPlaySequenceMarksPlayingSynchronouslyAndClosesDone(t *testing.T) {
-	lib := NewLibrary(t.TempDir())
+	lib := NewLibrary(nil)
 	w := &fakeWriter{}
 	p := NewPlayer(w, 16000, 2, lib)
 
@@ -134,7 +134,7 @@ func TestPlaySequenceInterruptsPrevious(t *testing.T) {
 		}
 	}
 	w := &concWriter{}
-	p := NewPlayer(w, 16000, 2, NewLibrary(dir))
+	p := NewPlayer(w, 16000, 2, NewLibrary(os.DirFS(audioDir)))
 
 	done1 := p.PlaySequence(context.Background(), "a")
 	time.Sleep(20 * time.Millisecond) // let "a" actually start writing
@@ -163,7 +163,7 @@ func TestStopInterruptsInFlightClip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(audioDir, "long.pcm"), make([]byte, 64000), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(os.DirFS(audioDir)))
 
 	done := p.PlaySequence(context.Background(), "long")
 	time.Sleep(20 * time.Millisecond) // let it start
@@ -191,7 +191,7 @@ func TestClipDuration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(audioDir, "myclip.pcm"), make([]byte, 64000), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(dir))
+	p := NewPlayer(&fakeWriter{}, 16000, 2, NewLibrary(os.DirFS(audioDir)))
 
 	if got := p.ClipDuration("myclip"); got != time.Second {
 		t.Errorf("ClipDuration(myclip) = %v, want 1s", got)
