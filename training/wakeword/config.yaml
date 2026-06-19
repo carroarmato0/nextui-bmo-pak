@@ -1,48 +1,22 @@
-# Hey BMO wake-word training config (openWakeWord v0.5.1 training-config schema).
+# Hey BMO wake-word — override values for openWakeWord's training config.
 #
-# This is the ONLY file a follower edits to retarget a different wake phrase:
-# change `target_phrase` (and `model_name` / `output_dir`) and re-run the
-# notebook. The notebook reads these values; nothing about the phrase is
-# hard-coded elsewhere.
+# We deliberately do NOT ship a full openWakeWord training config: openWakeWord's
+# automatic trainer owns that schema and it changes between versions. Instead you
+# train with openWakeWord's official notebook (see README.md) and apply these
+# overrides in its "Modify values in the config" cell.
+#
+# Mod authors retargeting a different wake word: change target_phrase and
+# model_name; leave the rest unless you know why.
 
-# --- Phrase ---------------------------------------------------------------
-# Spell the phrase the way Piper should *pronounce* it. "Beemo" reads more
-# reliably than "BMO". Audition the first batch (notebook step 1) and adjust
-# these spellings before the full synthesis run.
+# Spell the phrase the way Piper should *pronounce* it ("Beemo" reads more
+# reliably than "BMO"). Audition a small batch first and adjust if needed.
 target_phrase:
   - "hey beemo"
   - "hey bee-moh"
 model_name: "hey_bmo"
 
-# --- Dataset sizes --------------------------------------------------------
-n_samples: 30000          # synthetic positives
-n_samples_val: 2000       # held-out synthetic positives
-tts_batch_size: 50
-
-# --- Augmentation ---------------------------------------------------------
-augmentation_batch_size: 16
-augmentation_rounds: 1
-# Room impulse responses + background noise (downloaded by the notebook).
-rir_paths:
-  - "./mit_rirs"
-background_paths:
-  - "./audioset_16k"
-  - "./fma"
-
-# --- Negative / false-positive data (downloaded by the notebook) ---------
-false_positive_validation_data_path: "./validation_set_features.npy"
-feature_data_files:
-  ACAV100M_sample: "./openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
-
-# --- Model ----------------------------------------------------------------
-model_type: "dnn"
-layer_size: 32
+# Dataset / training sizes. Raise n_samples for a stronger model; openWakeWord's
+# demo uses ~1000 purely for speed.
+n_samples: 20000
+n_samples_val: 2000
 steps: 50000
-max_negative_weight: 1500
-target_accuracy: 0.7
-target_recall: 0.5
-
-# --- Output ---------------------------------------------------------------
-# openWakeWord writes <model_name>.onnx (and .tflite) into output_dir. We ship
-# the .onnx; copy it to assets/wakeword/hey_bmo.onnx after validating.
-output_dir: "./hey_bmo_out"
