@@ -522,21 +522,9 @@ func Discover(modsRoot string, logf func(format string, args ...any)) []Mod {
 		}
 		roots[id] = filepath.Join(modsRoot, name)
 	}
-
-	// A directory found after its .zip must still win.
-	for _, e := range entries {
-		if e.IsDir() && e.Name() != DefaultID && !strings.HasPrefix(e.Name(), ".") {
-			if !isDir[e.Name()] {
-				continue
-			}
-			if cur := roots[e.Name()]; strings.HasSuffix(cur, ".zip") {
-				roots[e.Name()] = filepath.Join(modsRoot, e.Name())
-				if logf != nil {
-					logf("mod %q: both directory and .zip present; using directory", e.Name())
-				}
-			}
-		}
-	}
+	// Note: os.ReadDir returns entries sorted by name, and "<id>" always sorts
+	// before "<id>.zip", so a directory is always seen before its same-named
+	// archive — the isDir check above is sufficient for dir-wins precedence.
 
 	sort.Strings(ids)
 	for _, id := range ids {
