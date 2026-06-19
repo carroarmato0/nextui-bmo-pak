@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io/fs"
+
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/face"
 	"github.com/carroarmato0/nextui-bmo/internal/mod"
@@ -15,7 +17,11 @@ func modIdleFaces(m mod.Mod) map[assistant.Expression]bool {
 	if !m.SelfContained() {
 		return nil
 	}
-	names := face.FaceNamesInDir(m.FacesDir())
+	facesFS, err := fs.Sub(m.FS, "faces")
+	if err != nil {
+		return nil
+	}
+	names := face.FaceNamesInFS(facesFS)
 	if len(names) == 0 {
 		return nil
 	}

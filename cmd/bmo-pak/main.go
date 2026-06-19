@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"math/rand"
 	"net/http"
@@ -101,8 +102,24 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	if err := os.MkdirAll(filepath.Join(modsRoot, mod.DefaultID), 0o755); err != nil {
 		return fmt.Errorf("create mods directory: %w", err)
 	}
-	mods := mod.Discover(modsRoot)
+	mods := mod.Discover(modsRoot, nil)
 	activeMod := mod.Active(mods, cfg.ActiveMod)
+	// Open the active mod so its FS (directory via os.DirFS or .zip via
+	// archive/zip) is populated before the prompt loads below read from it. On
+	// failure, fall back to the default mod. Closed on exit and on every mod
+	// switch (reloadMod).
+	if err := activeMod.Open(nil); err != nil {
+		activeMod = mod.Active(mods, mod.DefaultID)
+		_ = activeMod.Open(nil)
+	}
+	defer func() { _ = activeMod.Close() }()
+
+	// Sub-FS helpers rooting at the mod's faces/ and audio/ subtrees. fs.Sub
+	// only errors on an invalid path; "faces"/"audio" are constant-valid, so the
+	// ignored error is safe. For a directory mod with no faces/ or audio/, the
+	// sub-FS simply errors on read → embedded fallback (matching prior behavior).
+	modFacesSub := func(m mod.Mod) fs.FS { s, _ := fs.Sub(m.FS, "faces"); return s }
+	modAudioSub := func(m mod.Mod) fs.FS { s, _ := fs.Sub(m.FS, "audio"); return s }
 
 	// Persona, voice, and quotes prompts use the override-or-default model:
 	// the built-in defaults are the source of truth; an override file is used
@@ -111,8 +128,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	personaPath := activeMod.PersonaPath()
 	voicePath := activeMod.VoicePath()
 	quotesPath := activeMod.QuotesPath()
-	personaPrompt := config.LoadPromptFile(personaPath, config.DefaultSystemPrompt)
-	voicePrompt := config.LoadPromptFile(voicePath, config.DefaultTTSInstructions)
+	personaPrompt := config.LoadPromptFS(activeMod.FS, "persona.txt", config.DefaultSystemPrompt)
+	voicePrompt := config.LoadPromptFS(activeMod.FS, "voice.txt", config.DefaultTTSInstructions)
 
 	logPath := filepath.Join(dataRoot, "logs", "BMO.txt")
 	logger, err := observability.NewLogger(logPath, observability.ParseLevel(cfg.LogLevel), stdout)
@@ -255,7 +272,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	}
 	deviceCtx.SetMemory(memory)
 	quotesFn := func() []string {
-		return devctx.ParseQuotes(config.LoadPromptFile(quotesPath, config.DefaultQuotes))
+		return devctx.ParseQuotes(config.LoadPromptFS(activeMod.FS, "quotes.txt", config.DefaultQuotes))
 	}
 	deviceCtx.SetQuotes(quotesFn)
 	proactive := assistant.NewProactiveScheduler(machine, time.Now().UnixNano())
@@ -273,7 +290,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	var clipPlayer *clips.Player
 	if audioSession != nil {
-		clipLib := clips.NewLibrary(activeMod.AudioDir())
+		clipLib := clips.NewLibrary(modAudioSub(activeMod))
 		clipPlayer = clips.NewPlayer(audioSession, audioCfg.SampleRate, audioCfg.PlaybackChannels, clipLib)
 	}
 
@@ -303,11 +320,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			// be tuned without restarting the pak; absent or blank files fall
 			// back to the built-in defaults.
 			audioPipeline.SetTTSInstructionsSource(func() string {
-				return config.LoadPromptFile(voicePath, config.DefaultTTSInstructions)
+				return config.LoadPromptFS(activeMod.FS, "voice.txt", config.DefaultTTSInstructions)
 			})
 			audioPipeline.SetSystemPromptSource(func() string {
 				return systemPromptWithContext(
-					config.LoadPromptFile(personaPath, config.DefaultSystemPrompt),
+					config.LoadPromptFS(activeMod.FS, "persona.txt", config.DefaultSystemPrompt),
 					deviceCtx.Snapshot(),
 					memory.PromptBlock(time.Now().UTC()),
 				)
@@ -322,12 +339,13 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				if !activeMod.SelfContained() {
 					builtin = face.EmotionNames()
 				}
-				disk := face.EmotionFaceNamesInDir(activeMod.FacesDir())
+				disk := face.EmotionFaceNamesInFS(modFacesSub(activeMod))
 				return assistant.BuildEmotionVocabulary(builtin, disk, activeMod.Manifest.Emotions)
 			})
 			if clipPlayer != nil {
-				audioPipeline.SetTimeoutClip(clips.NewLibrary(activeMod.AudioDir()).Load("timeout"))
-				audioPipeline.SetErrorClip(clips.NewLibrary(activeMod.AudioDir()).Load("error"))
+				preLib := clips.NewLibrary(modAudioSub(activeMod))
+				audioPipeline.SetTimeoutClip(preLib.Load("timeout"))
+				audioPipeline.SetErrorClip(preLib.Load("error"))
 			}
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 		}
@@ -343,7 +361,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	defer screen.Close()
 	logger.Infof("renderer ready: %s", screen.DebugInfo())
 
-	faceLib := face.NewLibraryMode(activeMod.FacesDir(), activeMod.SelfContained())
+	faceLib := face.NewLibraryMode(modFacesSub(activeMod), activeMod.SelfContained())
 	faceLib.SetLogf(logger.Warnf)
 	faceCache := face.NewCache(faceLib)
 	screen.SetFaces(faceCache)
@@ -376,12 +394,20 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	reloadMod := func(id string) {
 		active := mod.Active(mods, id)
+		// Close the previous mod's FS before opening the next. On open failure,
+		// keep the default mod (its FS opened so reads don't fault).
+		_ = activeMod.Close()
+		if err := active.Open(logger.Warnf); err != nil {
+			logger.Warnf("open mod %q: %v; keeping default", id, err)
+			active = mod.Active(mods, mod.DefaultID)
+			_ = active.Open(logger.Warnf)
+		}
 		activeMod = active
 		personaPath = active.PersonaPath()
 		voicePath = active.VoicePath()
 		quotesPath = active.QuotesPath()
 
-		newLib := face.NewLibraryMode(active.FacesDir(), active.SelfContained())
+		newLib := face.NewLibraryMode(modFacesSub(active), active.SelfContained())
 		newLib.SetLogf(logger.Warnf)
 		newCache := face.NewCache(newLib)
 		faceCache = newCache
@@ -399,7 +425,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		}
 
 		if audioSession != nil {
-			clipLib := clips.NewLibrary(active.AudioDir())
+			clipLib := clips.NewLibrary(modAudioSub(active))
 			clipPlayer = clips.NewPlayer(audioSession, audioCfg.SampleRate, audioCfg.PlaybackChannels, clipLib)
 			if audioPipeline != nil {
 				audioPipeline.SetTimeoutClip(clipLib.Load("timeout"))
@@ -523,7 +549,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			names = append(names, n)
 		}
 		if activeMod.SelfContained() {
-			for _, n := range face.FaceNamesInDir(activeMod.FacesDir()) {
+			for _, n := range face.FaceNamesInFS(modFacesSub(activeMod)) {
 				add(n)
 			}
 		} else {
@@ -772,7 +798,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			(animEngine.Ready(face.ExprSpeaking) || time.Since(startupFaceShownAt) > 10*time.Second) {
 			startupClipFired = true
 			names := []string{"hello"}
-			if overrideErrs := config.CheckOverrides(activeMod.Root); len(overrideErrs) > 0 {
+			if overrideErrs := config.CheckOverrides(activeMod.FS); len(overrideErrs) > 0 {
 				for _, e := range overrideErrs {
 					logger.Warnf("mod override error: %v", e)
 				}

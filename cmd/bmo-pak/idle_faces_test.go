@@ -26,7 +26,13 @@ func TestModIdleFaces(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	set := modIdleFaces(mod.Mod{ID: "evil", Root: dir}) // SelfContained: !IsDefault && FacesHasSVG
+	// SelfContained: !IsDefault && FacesHasSVG — Open populates FS from Root.
+	m := mod.Mod{ID: "evil", Root: dir}
+	if err := m.Open(nil); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.Close() }()
+	set := modIdleFaces(m)
 
 	for _, e := range []assistant.Expression{
 		assistant.ExpressionNeutral, assistant.ExpressionAngry, assistant.ExpressionLookAround,

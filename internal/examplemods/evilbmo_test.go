@@ -32,7 +32,7 @@ func modRoot(t *testing.T) string {
 // quote character inside an attribute value (cx="{{printf "%.1f" $x}}"). The
 // device rejects such a face as "not valid XML" and falls back to neutral.
 func TestDeviceValidation(t *testing.T) {
-	if errs := config.CheckOverrides(modRoot(t)); len(errs) != 0 {
+	if errs := config.CheckOverrides(os.DirFS(modRoot(t))); len(errs) != 0 {
 		for _, e := range errs {
 			t.Errorf("CheckOverrides (device mod-load validation): %v", e)
 		}
@@ -40,7 +40,7 @@ func TestDeviceValidation(t *testing.T) {
 }
 
 func TestManifest(t *testing.T) {
-	m := modpkg.LoadManifest(modRoot(t))
+	m := modpkg.LoadManifest(os.DirFS(modRoot(t)))
 	if got := m.EffectiveAPIVersion(); got != modpkg.CurrentAPIVersion {
 		t.Errorf("apiVersion = %d, want %d", got, modpkg.CurrentAPIVersion)
 	}
@@ -56,7 +56,7 @@ func TestManifest(t *testing.T) {
 }
 
 func TestEmotions(t *testing.T) {
-	m := modpkg.LoadManifest(modRoot(t))
+	m := modpkg.LoadManifest(os.DirFS(modRoot(t)))
 	for _, key := range []string{"neutral", "laugh", "angry", "skeptical", "unamused", "smug"} {
 		if _, ok := m.Emotions[key]; !ok {
 			t.Errorf("emotions missing key %q", key)
@@ -120,7 +120,12 @@ func TestPrompts(t *testing.T) {
 }
 
 func TestSelfContained(t *testing.T) {
-	m := modpkg.Mod{ID: "evil-bmo", Root: modRoot(t), Manifest: modpkg.LoadManifest(modRoot(t))}
+	root := modRoot(t)
+	m := modpkg.Mod{ID: "evil-bmo", Root: root, Manifest: modpkg.LoadManifest(os.DirFS(root))}
+	if err := m.Open(nil); err != nil {
+		t.Fatalf("open mod: %v", err)
+	}
+	defer func() { _ = m.Close() }()
 	if !m.FacesHasSVG() {
 		t.Fatal("FacesHasSVG() = false, want true (faces/ must hold >=1 .svg)")
 	}
