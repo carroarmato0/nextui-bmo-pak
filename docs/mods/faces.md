@@ -144,11 +144,27 @@ You are free to ignore `talkmouth` and draw your own mouth shapes keyed off
 a shortcut. The arithmetic helpers `add`, `sub`, and `mul` are available inside
 templates (e.g. `{{printf "%.1f" (add 106.0 (mul $m 4.0))}}`).
 
+> **Self-contained mods must also declare the animation.** The `.m` markers in
+> the SVG are necessary but *not sufficient*: a self-contained mod starts with an
+> empty animation set, so a templated face renders **static** (frozen at
+> `m == 0`) until you add a matching `template` entry under `mod.json` →
+> `animations`. Overlay mods (`default`) inherit the built-in amplitude
+> animations, so for them the markers alone are enough. See
+> [animations.md](./animations.md#template-based-animation) for the entry shape.
+
 If your override has **no** `{{` markers it is used as a **static face** during
 speech — BMO will not animate the mouth, but your design will display correctly.
-The dedicated `speaking.svg` face shown during TTS is the one exception in the
-built-in set: it is a six-frame `speaking_0…speaking_5` sequence (see
+Note that an expression the LLM can pick as an emotion is shown for the *entire*
+spoken reply, so a static emotion face leaves BMO's mouth frozen the whole time
+it speaks — template any emotion you expect to be selected often. The dedicated
+`speaking.svg` face shown during TTS is the one exception in the built-in set: it
+is a six-frame `speaking_0…speaking_5` sequence (see
 [animations.md](./animations.md)) rather than an `.m` template.
+
+Once a face is amplitude-animated, BMO bridges the brief silences between
+syllables for you (it holds a thin mouth opening so the rest pose doesn't flash
+mid-sentence), so you only need to design the rest pose (`m == 0`) and trust
+`talkmouth` for the rest — no special handling for pauses required.
 
 > **Idle animations** (`look_around.svg`, `whistle.svg`, `sleeping.svg`) are
 > also templates, but driven by *time* rather than amplitude — their parameter
