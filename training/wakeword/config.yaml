@@ -1,0 +1,22 @@
+# Hey BMO wake-word — override values for openWakeWord's training config.
+#
+# We deliberately do NOT ship a full openWakeWord training config: openWakeWord's
+# automatic trainer owns that schema and it changes between versions. Instead you
+# train with openWakeWord's official notebook (see README.md) and apply these
+# overrides in its "Modify values in the config" cell.
+#
+# Mod authors retargeting a different wake word: change target_phrase and
+# model_name; leave the rest unless you know why.
+
+# Spell the phrase the way Piper should *pronounce* it ("Beemo" reads more
+# reliably than "BMO"). Audition a small batch first and adjust if needed.
+target_phrase:
+  - "hey beemo"
+  - "hey bee-moh"
+model_name: "hey_bmo"
+
+# Dataset / training sizes. Raise n_samples for a stronger model; openWakeWord's
+# demo uses ~1000 purely for speed.
+n_samples: 20000
+n_samples_val: 2000
+steps: 50000

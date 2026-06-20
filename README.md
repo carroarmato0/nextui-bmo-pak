@@ -166,8 +166,10 @@ speaking (plus a short guard) so it never wakes on its own voice.
   conversations.
 - The always-on microphone has a real battery/thermal cost, so the wake word is
   **off by default**.
-- The shipped model is a stock "hey jarvis" placeholder until a dedicated
-  "Hey BMO" model is trained.
+- The shipped model is BMO's own **"Hey BMO"** classifier (say "Beemo"). You can
+  train your own wake phrase with the documented, GPU/Colab pipeline in
+  [`training/wakeword/`](training/wakeword/README.md) — it produces a drop-in
+  model that obeys the same `[1,16,96] → [1,1]` contract.
 
 The detector's onnxruntime library and models ship inside the pak
 (`lib/<platform>/libonnxruntime.so`, `assets/wakeword/*.onnx`).
