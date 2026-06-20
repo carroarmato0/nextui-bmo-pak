@@ -2,6 +2,8 @@
 bin/
 dist/
 lib/
+# ...but keep the tracked shell helpers under scripts/lib/ (not build output).
+!scripts/lib/
 # Command binaries built into the repo root (anchored so the cmd/ source dirs stay tracked)
 /generate-audio
 /bmo-pak
