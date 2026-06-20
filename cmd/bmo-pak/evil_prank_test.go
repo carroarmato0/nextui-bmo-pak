@@ -320,11 +320,11 @@ func TestPrankStripsWakeAddressFromSpokenTaunt(t *testing.T) {
 // at least as long, so Evil BMO is patient enough to both hear and process a
 // reply regardless of the user's continued_conversation setting.
 func TestPrankReplyBudgetsArePatient(t *testing.T) {
-	if prankTranscribeTimeout < wakeMaxCapture+10*time.Second {
-		t.Fatalf("prankTranscribeTimeout (%v) must be >= wakeMaxCapture (%v) + 10s headroom: a reply clip cannot transcribe in less time than its own duration on a slow backend", prankTranscribeTimeout, wakeMaxCapture)
+	if prankTranscribeTimeout < prankReplyMaxCapture+10*time.Second {
+		t.Fatalf("prankTranscribeTimeout (%v) must be >= prankReplyMaxCapture (%v) + 10s headroom: a reply clip cannot transcribe in less time than its own duration on a slow backend", prankTranscribeTimeout, prankReplyMaxCapture)
 	}
-	if prankListenWindow < wakeMaxCapture {
-		t.Fatalf("prankListenWindow (%v) must be >= wakeMaxCapture (%v): the wait for a reply to begin should cover at least one full utterance", prankListenWindow, wakeMaxCapture)
+	if prankListenWindow < prankReplyMaxCapture {
+		t.Fatalf("prankListenWindow (%v) must be >= prankReplyMaxCapture (%v): the wait for a reply to begin should cover at least one full utterance", prankListenWindow, prankReplyMaxCapture)
 	}
 }
 

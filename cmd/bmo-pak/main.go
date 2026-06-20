@@ -398,12 +398,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			// Gated on AI + the Evil BMO mod, re-checked at trigger time so a
 			// runtime mod/AI change enables or disables it immediately.
 			prankBytesPerSec := audio.BytesPerSecond(audioCfg.SampleRate, audioCfg.Channels, audio.BytesPerSampleS16LE)
-			prankEndSilence := wakeEndSilenceFor(cfg.WakeEndSilence)
 			prankRand := rand.New(rand.NewSource(time.Now().UnixNano()))
 			session := &prankSession{
 				voice: pipelineVoice{p: audioPipeline},
 				listen: func(c context.Context) []byte {
-					return listenForReply(c, audioRouter, prankBytesPerSec, prankListenWindow, prankEndSilence, wakeMaxCapture, wakeVADLevel)
+					// Shorter reply capture + snappy end-silence (both independent of the
+					// user's wake settings) keep Evil BMO's between-round turnaround quick,
+					// so the victim's continued-conversation window does not give up before
+					// the next line. See evil_prank.go reply-capture constants.
+					return listenForReply(c, audioRouter, prankBytesPerSec, prankListenWindow, prankReplyEndSilence, prankReplyMaxCapture, wakeVADLevel)
 				},
 				beginListen: func() { machine.Transition(assistant.EventListen) },
 				endListen: func() {

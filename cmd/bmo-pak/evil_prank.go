@@ -48,13 +48,29 @@ const prankListenWindow = 30 * time.Second
 // also gives the other device time to wake and start listening before the taunt.
 const prankWakePause = 1200 * time.Millisecond
 
+// prankReplyMaxCapture caps how much of the victim's reply Evil BMO records
+// before transcribing. It is deliberately shorter than the wake capture: the
+// prank only needs the gist to fire a comeback, and a shorter clip both ends
+// the listen sooner and uploads less audio to STT. That cuts the silent
+// turnaround between rounds — the victim's continued-conversation window gives
+// up after only a few seconds of quiet (it burns its follow-up budget on
+// spurious mic noise), so Evil BMO must speak its next line quickly or the
+// victim returns to idle and never hears it (observed on hardware 2026-06-21).
+const prankReplyMaxCapture = 6 * time.Second
+
+// prankReplyEndSilence ends the reply capture after this much trailing quiet.
+// Snappy and independent of the user's wake_end_silence so Evil BMO turns
+// around fast between rounds; prankReplyMaxCapture bounds the worst case.
+const prankReplyEndSilence = 800 * time.Millisecond
+
 // prankTranscribeTimeout bounds the STT call on a captured reply so a slow or
-// contended backend can't stall the comeback. A reply is up to wakeMaxCapture
-// of audio, and a slow/LAN STT backend needs more than the clip's own duration
-// to transcribe it, so this budget must comfortably exceed wakeMaxCapture or
-// every reply times out and degrades to a generic comeback (observed on
-// hardware 2026-06-20). On timeout the prank still follows up (generic
-// comeback) because it knows a reply was heard. See TestPrankReplyBudgetsArePatient.
+// contended backend can't stall the comeback. A reply is up to
+// prankReplyMaxCapture of audio, and a slow/LAN STT backend needs more than the
+// clip's own duration to transcribe it, so this budget must comfortably exceed
+// prankReplyMaxCapture or every reply times out and degrades to a generic
+// comeback (observed on hardware 2026-06-20). On timeout the prank still
+// follows up (generic comeback) because it knows a reply was heard. See
+// TestPrankReplyBudgetsArePatient.
 const prankTranscribeTimeout = 25 * time.Second
 
 // evilWakePhrases are spoken as a standalone utterance to trip a nearby device's
@@ -215,11 +231,17 @@ func (s *prankSession) listenOnce(ctx context.Context) (heard bool, transcript s
 		tctx, cancel = context.WithTimeout(ctx, s.transcribeTimeout)
 		defer cancel()
 	}
+	start := time.Now()
 	text, err := s.voice.Transcribe(tctx, pcm)
+	elapsed := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		s.logf("evil prank: transcribe failed (%v); using a generic comeback", err)
+		s.logf("evil prank: transcribe failed after %s on %d bytes (%v); using a generic comeback", elapsed, len(pcm), err)
 		return true, ""
 	}
+	// Log the transcribe cost: it dominates Evil BMO's between-round turnaround,
+	// and turnaround that outruns the victim's patience makes the victim give up
+	// before the next line. Keep this visible so the budget stays tuned.
+	s.logf("evil prank: reply transcribed in %s (%d bytes captured)", elapsed, len(pcm))
 	return true, strings.TrimSpace(text)
 }
 
