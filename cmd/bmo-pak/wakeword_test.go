@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -149,5 +150,21 @@ func TestCaptureShouldFinish(t *testing.T) {
 	l.silenceRun = 0
 	if !l.captureShouldFinish(now.Add(wakeMaxCapture)) {
 		t.Error("should finish at wakeMaxCapture cap")
+	}
+}
+
+func TestWakeLoopSuppressed(t *testing.T) {
+	var l wakeLoop
+	if l.suppressed() {
+		t.Fatal("nil prankActive must report not suppressed")
+	}
+	flag := &atomic.Bool{}
+	l.prankActive = flag
+	if l.suppressed() {
+		t.Fatal("flag false must report not suppressed")
+	}
+	flag.Store(true)
+	if !l.suppressed() {
+		t.Fatal("flag true must report suppressed")
 	}
 }

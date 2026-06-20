@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
@@ -135,7 +136,7 @@ func wakeEndSilenceFor(tier string) time.Duration {
 // startWakeWord runs the on-device wake-word detector and, on a detection,
 // drives the same capture -> ProcessBatch path as push-to-talk. It returns a
 // stop func. It is a no-op unless AI mode and the wake-word trigger are active.
-func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Machine, cfg config.Config, router *audio.CaptureRouter, pipeline *assistant.VoicePipeline, gov *power.Governor, assets wakeAssets, sampleRate, channels int) func() {
+func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Machine, cfg config.Config, router *audio.CaptureRouter, pipeline *assistant.VoicePipeline, gov *power.Governor, assets wakeAssets, sampleRate, channels int, prankActive *atomic.Bool) func() {
 	if ctx == nil || logger == nil || machine == nil || router == nil || pipeline == nil {
 		return func() {}
 	}
@@ -176,6 +177,7 @@ func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Mac
 		wc:          wc,
 		bytesPerSec: bytesPerSec,
 		endSilence:  wakeEndSilenceFor(cfg.WakeEndSilence),
+		prankActive: prankActive,
 	}
 	done := make(chan struct{})
 	go func() {
@@ -203,6 +205,11 @@ type wakeLoop struct {
 	wc          *wakeController
 	bytesPerSec int
 	endSilence  time.Duration
+
+	// prankActive, when set and true, makes the loop stand down entirely so the
+	// Evil BMO prank flow owns the mic and the loop never grabs the overheard
+	// reply nor self-triggers. Nil outside the prank build.
+	prankActive *atomic.Bool
 
 	capturing    bool
 	captureStart time.Time
@@ -236,6 +243,10 @@ func (l *wakeLoop) beginCapture(now time.Time) {
 }
 
 func (l *wakeLoop) handleBatch(ctx context.Context, batch []byte) {
+	if l.suppressed() {
+		l.detector.Reset()
+		return
+	}
 	now := time.Now()
 	l.wc.observeState(l.machine.State() == assistant.StateSpeaking, now)
 
@@ -274,6 +285,12 @@ func (l *wakeLoop) continueCapture(ctx context.Context, batch []byte, now time.T
 		return
 	}
 	l.finishCapture(ctx)
+}
+
+// suppressed reports whether an Evil BMO prank currently owns the mic, in which
+// case the wake loop ignores all batches.
+func (l *wakeLoop) suppressed() bool {
+	return l.prankActive != nil && l.prankActive.Load()
 }
 
 // captureShouldFinish reports whether the current capture is over: either a
