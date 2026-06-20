@@ -5,7 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+
+	"github.com/carroarmato0/nextui-bmo/internal/mod"
 )
+
+type testLogger struct{}
+
+func (testLogger) Infof(string, ...any)  {}
+func (testLogger) Warnf(string, ...any)  {}
+func (testLogger) Debugf(string, ...any) {}
 
 func TestResolveWakeModelExtractsCustom(t *testing.T) {
 	want := []byte("fake-onnx-bytes")
@@ -49,5 +57,33 @@ func TestResolveWakeModelNilFS(t *testing.T) {
 	path, custom, err := resolveWakeModel(nil, "x", "/pak/hey_bmo.onnx", t.TempDir())
 	if err != nil || custom || path != "/pak/hey_bmo.onnx" {
 		t.Fatalf("nil FS: got (%q,%v,%v), want default", path, custom, err)
+	}
+}
+
+func TestBuildWakeAssetsNoCustomUsesDefault(t *testing.T) {
+	m := mod.Mod{ID: "plain", FS: fstest.MapFS{"faces/x.svg": &fstest.MapFile{Data: []byte("x")}}}
+	assets, cleanup := buildWakeAssets(m, "/pak", "tg5040", t.TempDir(), testLogger{})
+	defer cleanup()
+	if assets.WakeModel != filepath.Join("/pak", "assets", "wakeword", "hey_bmo.onnx") {
+		t.Fatalf("WakeModel = %q, want pak default", assets.WakeModel)
+	}
+	if assets.MelModel == "" || assets.EmbModel == "" || assets.ORTLib == "" {
+		t.Fatal("base asset paths must be populated from pakDir")
+	}
+}
+
+func TestBuildWakeAssetsInvalidCustomFallsBackAndCleansUp(t *testing.T) {
+	// A custom model is present, but ORT cannot validate it here (no real
+	// runtime / bogus pakDir lib), so buildWakeAssets must fall back to the
+	// default AND remove the extracted temp file.
+	m := mod.Mod{ID: "evil", FS: fstest.MapFS{"wakeword/wake.onnx": &fstest.MapFile{Data: []byte("not-a-real-onnx")}}}
+	tmp := t.TempDir()
+	assets, cleanup := buildWakeAssets(m, "/pak", "tg5040", tmp, testLogger{})
+	defer cleanup()
+	if assets.WakeModel != filepath.Join("/pak", "assets", "wakeword", "hey_bmo.onnx") {
+		t.Fatalf("WakeModel = %q, want pak default after invalid custom", assets.WakeModel)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "wake-evil.onnx")); !os.IsNotExist(err) {
+		t.Fatalf("temp extracted model should have been cleaned up, stat err = %v", err)
 	}
 }
