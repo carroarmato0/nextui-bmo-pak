@@ -98,6 +98,9 @@ func (s *prankSession) run(ctx context.Context) {
 			return
 		}
 		reply := s.listenOnce(ctx)
+		if ctx.Err() != nil { // aborted while listening: don't emit a closing line
+			return
+		}
 		if reply == "" {
 			if round == 1 {
 				_ = s.voice.SpeakRemark(ctx, noReplyNudge)
@@ -144,7 +147,10 @@ func (s *prankSession) logf(format string, args ...any) {
 // if no speech began before the window elapsed, the source ended, or ctx was
 // cancelled before any speech. This mirrors the wake loop's end-of-silence
 // batching (continueCapture) for a one-shot listen.
-func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSec int, onsetWindow, endSilence, maxCapture time.Duration, vad float64) []byte {
+// maxCapture keeps this a fully self-contained capture primitive (all timing
+// knobs are arguments); the lone production caller passing wakeMaxCapture is
+// incidental, so unparam's "always the same" warning is expected here.
+func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSec int, onsetWindow, endSilence, maxCapture time.Duration, vad float64) []byte { //nolint:unparam // see note above
 	sub, cancel := router.Subscribe()
 	defer cancel()
 
@@ -212,10 +218,11 @@ func (v pipelineVoice) Transcribe(ctx context.Context, pcm []byte) (string, erro
 	return v.p.Transcribe(ctx, pcm)
 }
 
-// evilPrank owns the trigger gating and single-flight guard. gate and idle are
-// read on the main goroutine (they touch cfg/activeMod/machine); run executes
-// the sequence on a fresh goroutine under a cancelable context so a B press or
-// shutdown can abort it.
+// evilPrank owns the trigger gating and single-flight guard. trigger and stop
+// must both be called from the main goroutine (they read gate/idle, which touch
+// cfg/activeMod/machine, and they rely on being serialized with each other);
+// run executes the sequence on a fresh goroutine under a cancelable context so a
+// B press or shutdown can abort it.
 type evilPrank struct {
 	gate   func() bool               // UsesAI && active mod is Evil BMO
 	idle   func() bool               // machine is idle

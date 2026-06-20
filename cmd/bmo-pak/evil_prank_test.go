@@ -284,3 +284,54 @@ func TestEvilPrankStopCancelsRun(t *testing.T) {
 		t.Fatal("stop with no active prank should return false")
 	}
 }
+
+func TestListenForReplyReturnsNilWhenOnsetWindowElapses(t *testing.T) {
+	const frame = 100
+	// Only silence frames; with a sub-microsecond onset window the first batch
+	// arrives after the deadline, exercising the onset-timeout return rather than
+	// the channel-closed path the other silent test covers.
+	src := &framesSource{frames: [][]byte{silenceFrame(frame), silenceFrame(frame), silenceFrame(frame)}}
+	router := audio.NewCaptureRouter(src, frame)
+	if err := router.Start(); err != nil {
+		t.Fatalf("router start: %v", err)
+	}
+	defer router.Close()
+
+	pcm := listenForReply(context.Background(), router, 1000, time.Nanosecond, 200*time.Millisecond, 10*time.Second, 0.01)
+	if pcm != nil {
+		t.Fatalf("expected nil when onset window elapses, got %d bytes", len(pcm))
+	}
+}
+
+func TestPrankSkipsRoundWhenContextAlreadyCancelled(t *testing.T) {
+	// A context cancelled before the first round must bail at the top-of-loop
+	// guard: the taunt is spoken, but no listen/transcribe/remark happens.
+	v := &fakeVoice{taunt: "t", transcript: "nope"}
+	s := newTestSession(v, 3, scriptedListen([]byte{1}))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.run(ctx)
+	for _, c := range v.calls {
+		if c == "transcribe" || strings.HasPrefix(c, "remark:") {
+			t.Fatalf("pre-cancelled run must not listen or remark, got calls=%v", v.calls)
+		}
+	}
+}
+
+func TestPrankAbortDuringListenSkipsClosingLine(t *testing.T) {
+	// If the context is cancelled while listening (B press / shutdown), the
+	// post-listen guard must prevent any closing remark even though audio was
+	// captured and transcribed.
+	v := &fakeVoice{taunt: "t", transcript: "heard something"}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := newTestSession(v, 3, func(context.Context) []byte {
+		cancel()         // context is cancelled during the listen step
+		return []byte{1} // ...and we did capture audio
+	})
+	s.run(ctx)
+	for _, c := range v.calls {
+		if strings.HasPrefix(c, "remark:") {
+			t.Fatalf("abort-during-listen must not emit a remark, got calls=%v", v.calls)
+		}
+	}
+}
