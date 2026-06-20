@@ -21,7 +21,7 @@ Mods can override BMO's faces, persona, voice, idle quotes, and emotion vocabula
 
 - **Convention path** declaration (not a manifest key): a mod ships `wakeword/wake.onnx`.
 - **Live swap on mod switch** (not relaunch-only): switching mods rebuilds the detector so the wake word changes immediately, like the face.
-- Baked-in defaults: uniform **extract-to-temp** even for directory mods (one code path for dir + zip); **async** detector rebuild on switch; the example `evil-bmo` mod ships **no** real model (a test-fixture mod exercises the path; the capability is documented).
+- Baked-in defaults: uniform **extract-to-temp** even for directory mods (one code path for dir + zip); **synchronous** detector rebuild on switch (correctness over a small, infrequent hitch — user-confirmed); the example `evil-bmo` mod ships **no** real model (a test-fixture mod exercises the path; the capability is documented).
 
 ## Design
 
@@ -59,8 +59,7 @@ func buildWakeAssets(activeMod mod.Mod, pakDir, platform, tmpDir string, logf fu
 - **Startup** (`main.go:364`): build `wakeCfg` via `buildWakeAssets(activeMod, ...)` instead of hardcoding `hey_bmo.onnx`.
 - **Mod-switch handler** (`main.go` after the face/audio rebuild, ~line 457): when AI mode + the wake feature are active, tear down and rebuild:
   - call the existing `stopWake()` (cancels the loop, `Close()`s the detector, and — newly — removes the old temp model file);
-  - `stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, buildWakeAssets(active, ...), sampleRate, channels)`.
-  - Do the rebuild in a **goroutine** (building the detector loads three ONNX models, a few hundred ms), consistent with the async face-cache warm / anim prewarm already in the switch handler — so the switch doesn't hitch. Guard against overlap: a rebuild in flight must complete/!cancel cleanly before the next (serialize via the same single-threaded switch handler; the goroutine only does the build+start, and `stopWake` is reassigned on the handler's thread).
+  - `stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, buildWakeAssets(active, ...), sampleRate, channels)`, built **synchronously** in the switch handler. The detector build loads three ONNX models (a few hundred ms) — an acceptable, infrequent hitch on mod select, and it sidesteps any rebuild-race entirely (no in-flight build, no dangling subscription).
 - The `WakeEngaged` teardown shipped in the previous fix already clears the listening face when the loop stops (`run`'s `defer l.machine.SetWakeEngaged(false)`), so a mid-conversation mod switch degrades cleanly.
 
 ### Stop func / temp cleanup
@@ -91,6 +90,6 @@ func buildWakeAssets(activeMod mod.Mod, pakDir, platform, tmpDir string, logf fu
 
 ## Risks / notes
 
-- **Rebuild races:** the switch handler is the single serialization point; the async build must not leave a dangling subscription if a second switch arrives mid-build. Keep the build→start atomic from the handler's perspective (assign `stopWake` only on the handler thread; if the design proves racy in review, fall back to a synchronous rebuild — correctness over the small hitch).
+- **Rebuild races:** avoided by building synchronously in the switch handler — there is no in-flight build to collide with a second switch, and `stopWake` is reassigned inline.
 - **Temp file lifetime:** removed by the stop func after `detector.Close()`; a crash leaves a stale `tmpDir/wake-<id>.onnx`, which is harmless and overwritten next run.
 - **Zip mod FS reads** during a switch: the existing one-generation deferred `Close` (the recent zip use-after-close fix) means the previous mod FS stays open long enough; the new model is read from the **new** `active.FS`, which `Open` has already populated.
