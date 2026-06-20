@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
 	"github.com/carroarmato0/nextui-bmo/internal/input"
 )
@@ -190,4 +193,102 @@ func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSe
 			}
 		}
 	}
+}
+
+// pipelineVoice adapts *assistant.VoicePipeline to the prankVoice interface,
+// dropping the onSpoken callbacks the prank does not use.
+type pipelineVoice struct{ p *assistant.VoicePipeline }
+
+func (v pipelineVoice) GenerateRemarkText(ctx context.Context, nudge string) (string, error) {
+	return v.p.GenerateRemarkText(ctx, nudge)
+}
+func (v pipelineVoice) SpeakVerbatim(ctx context.Context, text string) error {
+	return v.p.SpeakVerbatim(ctx, text, nil)
+}
+func (v pipelineVoice) SpeakRemark(ctx context.Context, nudge string) error {
+	return v.p.SpeakRemark(ctx, nudge, nil)
+}
+func (v pipelineVoice) Transcribe(ctx context.Context, pcm []byte) (string, error) {
+	return v.p.Transcribe(ctx, pcm)
+}
+
+// evilPrank owns the trigger gating and single-flight guard. gate and idle are
+// read on the main goroutine (they touch cfg/activeMod/machine); run executes
+// the sequence on a fresh goroutine under a cancelable context so a B press or
+// shutdown can abort it.
+type evilPrank struct {
+	gate   func() bool               // UsesAI && active mod is Evil BMO
+	idle   func() bool               // machine is idle
+	run    func(ctx context.Context) // the bounded sequence (prankSession.run in prod)
+	active *atomic.Bool              // shared with the wake loop for suppression
+	logger pttLogger
+
+	mu     sync.Mutex
+	cancel context.CancelFunc // non-nil while a prank is running
+}
+
+// trigger starts a prank if gating allows and none is already running. Safe to
+// call from the main goroutine on either a D-pad press or an auto tick.
+func (e *evilPrank) trigger(ctx context.Context) {
+	if e == nil || e.gate == nil || !e.gate() {
+		return
+	}
+	if e.idle == nil || !e.idle() {
+		return
+	}
+	if !e.active.CompareAndSwap(false, true) {
+		return // a prank is already running
+	}
+	prankCtx, cancel := context.WithCancel(ctx)
+	e.mu.Lock()
+	e.cancel = cancel
+	e.mu.Unlock()
+	if e.logger != nil {
+		e.logger.Infof("evil prank: triggered")
+	}
+	go func() {
+		defer func() {
+			cancel()
+			e.mu.Lock()
+			e.cancel = nil
+			e.mu.Unlock()
+			e.active.Store(false)
+		}()
+		e.run(prankCtx)
+	}()
+}
+
+// stop cancels a running prank. Returns true if one was active, so callers (the
+// B button, shutdown) can take it as "handled".
+func (e *evilPrank) stop() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.cancel == nil {
+		return false
+	}
+	e.cancel()
+	return true
+}
+
+// startEvilPrankScheduler fires a tick on a heavily jittered interval until ctx
+// is cancelled. A pending tick is never queued more than one deep; the main
+// loop decides (with full UI state) whether to actually start a prank.
+func startEvilPrankScheduler(ctx context.Context, tick chan<- struct{}, rng *rand.Rand, minInterval, span time.Duration) {
+	go func() {
+		for {
+			d := minInterval + time.Duration(rng.Int63n(int64(span)))
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(d):
+			}
+			select {
+			case tick <- struct{}{}:
+			default:
+			}
+		}
+	}()
 }

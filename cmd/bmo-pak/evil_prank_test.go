@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -206,5 +207,80 @@ func TestListenForReplyReturnsNilWhenSilent(t *testing.T) {
 	pcm := listenForReply(context.Background(), router, 1000, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
 	if pcm != nil {
 		t.Fatalf("expected nil on all-silence input, got %d bytes", len(pcm))
+	}
+}
+
+func TestEvilPrankTriggerGate(t *testing.T) {
+	ran := 0
+	e := &evilPrank{
+		gate:   func() bool { return false },
+		idle:   func() bool { return true },
+		run:    func(context.Context) { ran++ },
+		active: &atomic.Bool{},
+	}
+	e.trigger(context.Background())
+	if ran != 0 {
+		t.Fatal("gate false must not run the prank")
+	}
+	e.gate = func() bool { return true }
+	e.idle = func() bool { return false }
+	e.trigger(context.Background())
+	if ran != 0 {
+		t.Fatal("non-idle must not run the prank")
+	}
+}
+
+func TestEvilPrankTriggerSingleFlight(t *testing.T) {
+	start := make(chan struct{})
+	release := make(chan struct{})
+	var ran atomic.Int32
+	e := &evilPrank{
+		gate:   func() bool { return true },
+		idle:   func() bool { return true },
+		active: &atomic.Bool{},
+		run: func(context.Context) {
+			ran.Add(1)
+			close(start)
+			<-release
+		},
+	}
+	e.trigger(context.Background())
+	<-start                         // first prank is now running
+	e.trigger(context.Background()) // must be ignored (single-flight)
+	close(release)
+	// Give the goroutine a moment to clear the flag.
+	for i := 0; i < 100 && e.active.Load(); i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if got := ran.Load(); got != 1 {
+		t.Fatalf("run called %d times, want 1 (single-flight)", got)
+	}
+	if e.active.Load() {
+		t.Fatal("active flag should be cleared after run returns")
+	}
+}
+
+func TestEvilPrankStopCancelsRun(t *testing.T) {
+	done := make(chan struct{})
+	e := &evilPrank{
+		gate:   func() bool { return true },
+		idle:   func() bool { return true },
+		active: &atomic.Bool{},
+		run:    func(ctx context.Context) { <-ctx.Done(); close(done) },
+	}
+	e.trigger(context.Background())
+	for i := 0; i < 100 && !e.active.Load(); i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if !e.stop() {
+		t.Fatal("stop should report an active prank")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("run was not cancelled by stop")
+	}
+	if e.stop() {
+		t.Fatal("stop with no active prank should return false")
 	}
 }
