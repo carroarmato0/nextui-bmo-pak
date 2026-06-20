@@ -387,9 +387,6 @@ func (r *Renderer) Draw(frame FrameState) error {
 		r.drawPlainFace(layout)
 	}
 
-	if canonical == face.ExprSleeping {
-		r.drawSleepMarks(layout, phase)
-	}
 	r.drawCornerClock(layout, frame)
 	return r.presentDirty()
 }
@@ -606,23 +603,6 @@ func (r *Renderer) drawCornerClock(layout Layout, frame FrameState) {
 func (r *Renderer) drawSleepCap(cx, topY int32) {
 	r.drawLine(cx-6, topY, cx+6, topY, rgba{214, 235, 227, 255})
 	r.drawLine(cx-4, topY-4, cx+4, topY-4, rgba{214, 235, 227, 190})
-}
-
-func (r *Renderer) drawSleepMarks(layout Layout, phase float64) {
-	baseX := layout.W/2 + layout.MouthW/2
-	baseY := layout.MouthY - layout.MouthOpenH/2 - layout.ScreenInset
-	for i := 0; i < 3; i++ {
-		ox := int32(float64(i*22) + math.Sin(phase+float64(i))*4)
-		oy := int32(float64(-i*18) + math.Cos(phase*0.8+float64(i))*3)
-		sz := int32(8 + i*4)
-		r.drawZ(baseX+ox, baseY+oy, sz, rgba{214, 235, 227, 170 - uint8(i*25)})
-	}
-}
-
-func (r *Renderer) drawZ(x, y, size int32, c rgba) {
-	r.drawLine(x, y, x+size, y, c)
-	r.drawLine(x+size, y, x, y+size, c)
-	r.drawLine(x, y+size, x+size, y+size, c)
 }
 
 var glyphs = map[rune][7]uint8{

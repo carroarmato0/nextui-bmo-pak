@@ -196,7 +196,7 @@ func TestAnimations(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("ParseAnimations errors: %v", errs)
 	}
-	for _, key := range []string{"neutral", "laugh", "angry", "speaking", "look_around"} {
+	for _, key := range []string{"neutral", "laugh", "angry", "speaking", "look_around", "sleeping"} {
 		def, ok := defs[key]
 		if !ok {
 			t.Errorf("animation %q missing", key)
@@ -209,6 +209,15 @@ func TestAnimations(t *testing.T) {
 		facePath := filepath.Join(root, "faces", def.Template.File+".svg")
 		if _, err := os.Stat(facePath); err != nil {
 			t.Errorf("animation %q references missing face %s.svg", key, def.Template.File)
+		}
+	}
+	// The idle faces self-animate, so they must be declared as time-driven —
+	// otherwise the engine has no def for them and renders a single static frame
+	// (regression: sleeping's templated SVG shipped without a manifest entry, so
+	// it never animated under the self-contained mod).
+	for _, key := range []string{"look_around", "sleeping"} {
+		if def, ok := defs[key]; ok && def.Driver.Kind != face.DriverTime {
+			t.Errorf("animation %q must be time-driven, got driver %q", key, def.Driver.Kind)
 		}
 	}
 }

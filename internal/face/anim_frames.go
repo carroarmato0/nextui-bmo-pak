@@ -3,15 +3,20 @@ package face
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"text/template"
 )
 
 // animFuncs provides minimal float arithmetic for templated SVG mouths, since
-// Go's text/template has no built-in add/sub/mul.
+// Go's text/template has no built-in add/sub/mul. sin/mod enable oscillating
+// motion (e.g. the sleeping z's left-right sway and their half-cycle stagger),
+// which a monotonic 0→1 sweep alone cannot express.
 var animFuncs = template.FuncMap{
 	"add": func(a, b float64) float64 { return a + b },
 	"sub": func(a, b float64) float64 { return a - b },
 	"mul": func(a, b float64) float64 { return a * b },
+	"sin": func(a float64) float64 { return math.Sin(a) },
+	"mod": func(a, b float64) float64 { return math.Mod(a, b) },
 }
 
 // talkMouthPartial is the shared open-mouth ladder every talking expression

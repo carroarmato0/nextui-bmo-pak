@@ -1,11 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$t := or .t 0.0}}{{$dx := mul $t 18.0}}{{$dy := mul $t 26.0}}{{$op := sub 1.0 $t}}{{$op2 := mul $op 0.85}}{{$op3 := mul $op 0.7}}{{$z1x := sub 146.0 $dx}}{{$z1y := sub 92.0 $dy}}{{$z2x := sub 126.0 $dx}}{{$z2y := sub 68.0 $dy}}{{$z3x := sub 100.0 $dx}}{{$z3y := sub 42.0 $dy}}
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$t := or .t 0.0}}{{$pa := $t}}{{$pb := mod (add $t 0.5) 1.0}}{{$sa := add 6.0 (mul $pa 18.0)}}{{$hsa := mul $sa 0.5}}{{$cxa := add 140.0 (mul 13.0 (sin (mul $pa 6.28319)))}}{{$ax0 := sub $cxa $hsa}}{{$ax1 := add $ax0 $sa}}{{$ay0 := sub 106.0 (mul $pa 82.0)}}{{$ay1 := add $ay0 $sa}}{{$swa := add 2.2 (mul $pa 2.8)}}{{$opa := 1.0}}{{if lt $pa 0.1}}{{$opa = mul $pa 10.0}}{{else if gt $pa 0.82}}{{$opa = mul (sub 1.0 $pa) 5.55}}{{end}}{{$sb := add 6.0 (mul $pb 18.0)}}{{$hsb := mul $sb 0.5}}{{$cxb := add 140.0 (mul 13.0 (sin (mul $pb 6.28319)))}}{{$bx0 := sub $cxb $hsb}}{{$bx1 := add $bx0 $sb}}{{$by0 := sub 106.0 (mul $pb 82.0)}}{{$by1 := add $by0 $sb}}{{$swb := add 2.2 (mul $pb 2.8)}}{{$opb := 1.0}}{{if lt $pb 0.1}}{{$opb = mul $pb 10.0}}{{else if gt $pb 0.82}}{{$opb = mul (sub 1.0 $pb) 5.55}}{{end}}
   <rect x="0" y="0" width="280" height="210" fill="#4ECBA8"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#4ECBA8"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#90e5c8"/>
-  <line x1="65"  y1="78" x2="95"  y2="78" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round"/>
+  <!-- closed (flat) sleeping eyes -->
+  <line x1="65" y1="78" x2="95" y2="78" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round"/>
   <line x1="184" y1="78" x2="214" y2="78" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round"/>
+  <!-- relaxed smile -->
   <path d="M 116 111 Q 140 125 160 111" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
-  <path d="M {{printf "%.1f" $z1x}} {{printf "%.1f" $z1y}} L {{printf "%.1f" (add $z1x 10.0)}} {{printf "%.1f" $z1y}} L {{printf "%.1f" $z1x}} {{printf "%.1f" (add $z1y 10.0)}} L {{printf "%.1f" (add $z1x 10.0)}} {{printf "%.1f" (add $z1y 10.0)}}" stroke="#1a1a1a" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op}}"/>
-  <path d="M {{printf "%.1f" $z2x}} {{printf "%.1f" $z2y}} L {{printf "%.1f" (add $z2x 14.0)}} {{printf "%.1f" $z2y}} L {{printf "%.1f" $z2x}} {{printf "%.1f" (add $z2y 14.0)}} L {{printf "%.1f" (add $z2x 14.0)}} {{printf "%.1f" (add $z2y 14.0)}}" stroke="#1a1a1a" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op2}}"/>
-  <path d="M {{printf "%.1f" $z3x}} {{printf "%.1f" $z3y}} L {{printf "%.1f" (add $z3x 18.0)}} {{printf "%.1f" $z3y}} L {{printf "%.1f" $z3x}} {{printf "%.1f" (add $z3y 18.0)}} L {{printf "%.1f" (add $z3x 18.0)}} {{printf "%.1f" (add $z3y 18.0)}}" stroke="#1a1a1a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{printf "%.2f" $op3}}"/>
+  <!-- two staggered "z"s rising out of the mouth with a left-right sway, growing
+       small→large and fading near the top before respawning (snore). Geometry is
+       driven entirely from the looping param t; see anim_defaults ExprSleeping. -->
+  <path d="M {{$ax0}} {{$ay0}} L {{$ax1}} {{$ay0}} L {{$ax0}} {{$ay1}} L {{$ax1}} {{$ay1}}" stroke="#1a1a1a" stroke-width="{{$swa}}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{$opa}}"/>
+  <path d="M {{$bx0}} {{$by0}} L {{$bx1}} {{$by0}} L {{$bx0}} {{$by1}} L {{$bx1}} {{$by1}}" stroke="#1a1a1a" stroke-width="{{$swb}}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{$opb}}"/>
 </svg>

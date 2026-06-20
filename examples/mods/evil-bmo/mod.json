@@ -71,6 +71,18 @@
         "mode": "pingpong"
       }
     },
+    "sleeping": {
+      "template": "sleeping",
+      "param": "t",
+      "from": 0,
+      "to": 1,
+      "steps": 8,
+      "driver": {
+        "type": "time",
+        "fps": 5,
+        "mode": "loop"
+      }
+    },
     "unamused": {
       "template": "unamused",
       "param": "m",

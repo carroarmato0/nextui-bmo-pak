@@ -1,10 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 210">{{$t := or .t 0.0}}{{$pa := $t}}{{$pb := mod (add $t 0.5) 1.0}}{{$sa := add 6.0 (mul $pa 18.0)}}{{$hsa := mul $sa 0.5}}{{$cxa := add 140.0 (mul 13.0 (sin (mul $pa 6.28319)))}}{{$ax0 := sub $cxa $hsa}}{{$ax1 := add $ax0 $sa}}{{$ay0 := sub 106.0 (mul $pa 82.0)}}{{$ay1 := add $ay0 $sa}}{{$swa := add 2.2 (mul $pa 2.8)}}{{$opa := 1.0}}{{if lt $pa 0.1}}{{$opa = mul $pa 10.0}}{{else if gt $pa 0.82}}{{$opa = mul (sub 1.0 $pa) 5.55}}{{end}}{{$sb := add 6.0 (mul $pb 18.0)}}{{$hsb := mul $sb 0.5}}{{$cxb := add 140.0 (mul 13.0 (sin (mul $pb 6.28319)))}}{{$bx0 := sub $cxb $hsb}}{{$bx1 := add $bx0 $sb}}{{$by0 := sub 106.0 (mul $pb 82.0)}}{{$by1 := add $by0 $sb}}{{$swb := add 2.2 (mul $pb 2.8)}}{{$opb := 1.0}}{{if lt $pb 0.1}}{{$opb = mul $pb 10.0}}{{else if gt $pb 0.82}}{{$opb = mul (sub 1.0 $pb) 5.55}}{{end}}
   <rect x="0" y="0" width="280" height="210" fill="#D62828"/>
   <rect x="6" y="5" width="268" height="200" rx="26" ry="26" fill="#D62828"/>
   <rect x="12" y="10" width="256" height="188" rx="12" ry="12" fill="#F25C5C"/>
-  <!-- closed, peacefully-asleep eyes (the renderer adds the floating zzZ marks) -->
+  <!-- closed, peacefully-asleep eyes -->
   <path d="M 66 80 Q 80 90 94 80" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
   <path d="M 185 80 Q 199 90 213 80" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
   <!-- small relaxed mouth -->
   <path d="M 126 118 Q 140 126 154 118" stroke="#1a1a1a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- two staggered "z"s rising out of the mouth with a left-right sway, growing
+       small→large and fading near the top before respawning (snore). Same geometry
+       as the default face, themed dark to match the eyes/mouth on the red screen. -->
+  <path d="M {{$ax0}} {{$ay0}} L {{$ax1}} {{$ay0}} L {{$ax0}} {{$ay1}} L {{$ax1}} {{$ay1}}" stroke="#1a1a1a" stroke-width="{{$swa}}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{$opa}}"/>
+  <path d="M {{$bx0}} {{$by0}} L {{$bx1}} {{$by0}} L {{$bx0}} {{$by1}} L {{$bx1}} {{$by1}}" stroke="#1a1a1a" stroke-width="{{$swb}}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="{{$opb}}"/>
 </svg>
