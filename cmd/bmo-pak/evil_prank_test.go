@@ -83,6 +83,17 @@ func firstRemark(calls []string) string {
 	return ""
 }
 
+// isWakePhrase reports whether s is one of the spoken wake phrases, so tests do
+// not pin the exact (phonetic) wording.
+func isWakePhrase(s string) bool {
+	for _, w := range evilWakePhrases {
+		if s == w {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPrankNoReplyOnFirstListen(t *testing.T) {
 	v := &fakeVoice{taunt: "ha, nice try"}
 	s := newTestSession(v, 3, scriptedListen(nil))
@@ -92,7 +103,7 @@ func TestPrankNoReplyOnFirstListen(t *testing.T) {
 		t.Fatalf("first call = %q, want generate", v.calls[0])
 	}
 	// Wake call and taunt are spoken as two separate utterances (controlled pause).
-	if v.calls[1] != "verbatim:Hey BMO" && v.calls[1] != "verbatim:Hey BEEMO" {
+	if w, ok := strings.CutPrefix(v.calls[1], "verbatim:"); !ok || !isWakePhrase(w) {
 		t.Fatalf("second call = %q, want a standalone wake phrase", v.calls[1])
 	}
 	if v.calls[2] != "verbatim:ha, nice try" {
@@ -122,7 +133,7 @@ func TestPrankSplitsWakeAndTaunt(t *testing.T) {
 	if len(verbatims) != 2 {
 		t.Fatalf("want exactly 2 verbatim utterances (wake, taunt), got %v", verbatims)
 	}
-	if verbatims[0] != "Hey BMO" && verbatims[0] != "Hey BEEMO" {
+	if !isWakePhrase(verbatims[0]) {
 		t.Fatalf("first utterance = %q, want a bare wake phrase (no taunt fused in)", verbatims[0])
 	}
 	if verbatims[1] != "you call that a backlog?" {
@@ -248,6 +259,54 @@ func TestPrankRoundsAlwaysTwoOrThree(t *testing.T) {
 		if n := roundsFn(); n != 2 && n != 3 {
 			t.Fatalf("rounds = %d, want 2 or 3", n)
 		}
+	}
+}
+
+func TestStripLeadingWakeAddress(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Hey, BMO, how does it feel to be second best?", "How does it feel to be second best?"},
+		{"Hey BMO... Why are you always on standby?", "Why are you always on standby?"},
+		{"Hi Beemo! Enjoying your sad little library?", "Enjoying your sad little library?"},
+		{"Hello, B.M.O. - still buffering?", "Still buffering?"},
+		// No wake address at the front: left untouched.
+		{"Do you ever wish you were a toaster?", "Do you ever wish you were a toaster?"},
+		// A greeting WITHOUT the name does not re-trigger the wake word: keep it.
+		{"Hey, slow much?", "Hey, slow much?"},
+		// Degenerate: stripping would empty it, so the original is kept.
+		{"Hey BMO", "Hey BMO"},
+	}
+	for _, c := range cases {
+		if got := stripLeadingWakeAddress(c.in); got != c.want {
+			t.Errorf("stripLeadingWakeAddress(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestPrankStripsWakeAddressFromSpokenTaunt is the regression for the acoustic
+// double-"Hey BMO" conflict seen on hardware (2026-06-21): the taunt LLM opened
+// the barb with its own "Hey, BMO,", which spoken aloud was a second wake
+// utterance landing in the victim's open listen window. run must speak a taunt
+// that no longer re-addresses the wake word.
+func TestPrankStripsWakeAddressFromSpokenTaunt(t *testing.T) {
+	v := &fakeVoice{taunt: "Hey, BMO, how does it feel to be the second best version of yourself?"}
+	s := newTestSession(v, 2, scriptedListen(nil))
+	s.run(context.Background())
+
+	var taunt string
+	for _, c := range v.calls {
+		if after, ok := strings.CutPrefix(c, "verbatim:"); ok && !isWakePhrase(after) {
+			taunt = after
+		}
+	}
+	if taunt == "" {
+		t.Fatal("no taunt utterance recorded")
+	}
+	low := strings.ToLower(taunt)
+	if strings.HasPrefix(low, "hey") || strings.Contains(low, "bmo") {
+		t.Fatalf("spoken taunt still re-addresses the wake word: %q", taunt)
+	}
+	if taunt != "How does it feel to be the second best version of yourself?" {
+		t.Fatalf("spoken taunt = %q, want the barb with the leading address stripped", taunt)
 	}
 }
 

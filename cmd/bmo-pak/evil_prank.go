@@ -12,10 +12,12 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/carroarmato0/nextui-bmo/internal/assistant"
 	"github.com/carroarmato0/nextui-bmo/internal/audio"
@@ -56,15 +58,19 @@ const prankWakePause = 1200 * time.Millisecond
 const prankTranscribeTimeout = 25 * time.Second
 
 // evilWakePhrases are spoken as a standalone utterance to trip a nearby device's
-// wake detector, immediately before the (separately spoken) taunt.
-var evilWakePhrases = []string{"Hey BMO", "Hey BEEMO"}
+// wake detector, immediately before the (separately spoken) taunt. They are
+// spelled phonetically on purpose: tts-1 renders the literal "Hey BMO" as a
+// clipped ~0.46s "bmoh" that the victim's "hey bee-mo" wake model often misses,
+// whereas "Beemo" with a comma enunciates the two syllables clearly. These are
+// only ever spoken (never string-matched), so phonetic spelling is safe.
+var evilWakePhrases = []string{"Hey, Beemo.", "Hey, Bee-Moh."}
 
 // closerNudgeMarker is a stable substring of closerNudgeFmt, used so the
 // sequence can be asserted in tests without pinning the full wording.
 const closerNudgeMarker = "End this exchange"
 
 const (
-	tauntNudge = "You are about to prank a nearby BMO unit. In one short sentence, ask it a trick question or make a cutting, in-character remark designed to provoke it. Reply with only that single line — no preamble, no quotation marks."
+	tauntNudge = "You are about to prank a nearby BMO unit. In one short sentence, ask it a trick question or make a cutting, in-character remark designed to provoke it. Do NOT greet it, do NOT begin with \"Hey\", and do NOT say its name (\"BMO\" or \"Beemo\") — go straight into the barb. Reply with only that single line — no preamble, no quotation marks."
 
 	noReplyNudge = "You taunted a nearby BMO but no one answered. Make one short, smug, in-character remark about being ignored or there being no one worth talking to. Reply with only that line."
 
@@ -78,6 +84,31 @@ const (
 
 	genericCloserNudge = "End this exchange. A nearby BMO mumbled a reply you could not make out. Reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
 )
+
+// wakeAddressPrefix matches a leading greeting that re-addresses BMO by name
+// (e.g. "Hey BMO,", "Hey, BMO!", "Hi Beemo -"). The taunt LLM sometimes opens
+// the barb this way despite the nudge; spoken aloud that is a SECOND wake
+// utterance landing while the victim is already listening from the real wake
+// call, colliding with its capture.
+var wakeAddressPrefix = regexp.MustCompile(`(?i)^\s*(hey|hi|hello|greetings)[\s,!.:-]*(bmo|bee-?moh?|beemo|b\.?\s*m\.?\s*o\.?)[\s,!.:;-]+`)
+
+// stripLeadingWakeAddress removes a leading "Hey BMO"-style address from a
+// generated taunt so the taunt does not re-speak the wake word. If stripping
+// would empty the line, the original (trimmed) text is kept.
+func stripLeadingWakeAddress(taunt string) string {
+	trimmed := strings.TrimSpace(taunt)
+	stripped := strings.TrimSpace(wakeAddressPrefix.ReplaceAllString(trimmed, ""))
+	if stripped == "" || stripped == trimmed {
+		// Nothing was removed (or removing it would empty the line): leave the
+		// text exactly as generated.
+		return trimmed
+	}
+	// A leading address was removed; re-capitalize the first letter so the
+	// remaining barb reads cleanly.
+	r := []rune(stripped)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
 
 // prankVoice is the slice of VoicePipeline the prank uses, narrowed to an
 // interface so the sequence can be unit-tested with a fake.
@@ -109,6 +140,10 @@ func (s *prankSession) run(ctx context.Context) {
 		s.logf("evil prank: taunt generation failed or empty (%v); aborting", err)
 		return
 	}
+	// Defensively strip any leading "Hey BMO" the LLM prepended despite the
+	// nudge, so the taunt never re-speaks the wake word into the victim's
+	// already-open listen window.
+	taunt = stripLeadingWakeAddress(taunt)
 	// Wake call and taunt are two separate utterances with a deliberate pause
 	// between them, so the gap is ours to control regardless of the TTS model.
 	wake := evilWakePhrases[s.rng.Intn(len(evilWakePhrases))]
