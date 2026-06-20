@@ -91,9 +91,11 @@ For example, on a TrimUI Smart Pro:
 ```
 
 BMO ships in **idle mode** (no AI). To enable the assistant you edit
-`config.json` directly — the AI provider, model, endpoint, and API key are
-**not** configurable from the on-device UI. After editing, set `"mode": "ai"`
-(or flip the toggle in the on-device **Settings** menu, opened with **Start**).
+`config.json` directly — provider endpoints, models, and API keys are entered
+in the file, not typed on-device. (Once they're listed, you *can* switch the
+active provider from the **Settings** menu — see below.) After editing, set
+`"mode": "ai"` (or flip the toggle in the on-device **Settings** menu, opened
+with **Start**).
 
 ### AI providers
 
@@ -102,11 +104,19 @@ BMO talks to three providers — **STT** (speech-to-text), **chat**, and **TTS**
 backend that implements `/audio/transcriptions`, `/chat/completions`, and
 `/audio/speech` works (OpenAI itself, a local server, or any compatible host).
 
-Each provider block accepts these fields:
+Each of `stt`, `chat`, and `tts` is a **provider set** — not a single
+provider. A set has two keys:
+
+| Field | Description |
+| --- | --- |
+| `active` | `name` of the provider to use right now. If empty or unmatched, the first entry in `providers` is used. |
+| `providers` | An **array** of interchangeable backends. List as many as you like; switch between them on-device from **Settings → STT / CHAT / TTS** (cycle left/right) without editing the file. |
+
+Each entry in the `providers` array accepts these fields:
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `name` | yes | Display label for the provider (e.g. `openai-compatible`, `local`). |
+| `name` | yes | Display label for the provider (e.g. `openai-compatible`, `local`). Must be unique within the set; this is what `active` matches against. |
 | `model` | yes | Model id to request (e.g. `whisper-1`, `gpt-4o-mini`). |
 | `base_url` | **yes** | API endpoint, including the `/v1` suffix. There is **no** built-in default — requests fail if it is empty. |
 | `api_key` | for hosted APIs | Bearer token. Leave empty (`""`) for most local servers. |
@@ -117,9 +127,40 @@ Each provider block accepts these fields:
 ```json
 {
   "mode": "ai",
-  "stt":  { "name": "openai-compatible", "model": "whisper-1",        "base_url": "https://api.openai.com/v1", "api_key": "sk-..." },
-  "chat": { "name": "openai-compatible", "model": "gpt-4o-mini",      "base_url": "https://api.openai.com/v1", "api_key": "sk-..." },
-  "tts":  { "name": "openai-compatible", "model": "gpt-4o-mini-tts",  "base_url": "https://api.openai.com/v1", "api_key": "sk-...", "voice": "nova" },
+  "stt": {
+    "active": "openai-compatible",
+    "providers": [
+      {
+        "name": "openai-compatible",
+        "model": "whisper-1",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-..."
+      }
+    ]
+  },
+  "chat": {
+    "active": "openai-compatible",
+    "providers": [
+      {
+        "name": "openai-compatible",
+        "model": "gpt-4o-mini",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-..."
+      }
+    ]
+  },
+  "tts": {
+    "active": "openai-compatible",
+    "providers": [
+      {
+        "name": "openai-compatible",
+        "model": "gpt-4o-mini-tts",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-...",
+        "voice": "nova"
+      }
+    ]
+  },
   "ptt_buttons": ["BTN_EAST"],
   "active_mod": "",
   "reduced_motion": false
@@ -134,12 +175,53 @@ network. Use the LAN IP of the host machine (not `localhost`, which on the
 device refers to the device itself). Most local servers ignore the key, so
 `api_key` can be left empty.
 
+The `chat` set below lists **two** models. BMO starts on `local-fast` (the
+`active` one) and you can flip to `local-smart` from **Settings → CHAT** without
+touching the file:
+
 ```json
 {
   "mode": "ai",
-  "stt":  { "name": "local", "model": "whisper-1",   "base_url": "http://192.168.1.50:8080/v1", "api_key": "" },
-  "chat": { "name": "local", "model": "llama3.1",    "base_url": "http://192.168.1.50:11434/v1", "api_key": "" },
-  "tts":  { "name": "local", "model": "tts-1",       "base_url": "http://192.168.1.50:8080/v1", "api_key": "", "voice": "alloy" },
+  "stt": {
+    "active": "local",
+    "providers": [
+      {
+        "name": "local",
+        "model": "whisper-1",
+        "base_url": "http://192.168.1.50:8080/v1",
+        "api_key": ""
+      }
+    ]
+  },
+  "chat": {
+    "active": "local-fast",
+    "providers": [
+      {
+        "name": "local-fast",
+        "model": "llama3.1",
+        "base_url": "http://192.168.1.50:11434/v1",
+        "api_key": ""
+      },
+      {
+        "name": "local-smart",
+        "model": "llama3.1:70b",
+        "base_url": "http://192.168.1.50:11434/v1",
+        "api_key": ""
+      }
+    ]
+  },
+  "tts": {
+    "active": "local",
+    "providers": [
+      {
+        "name": "local",
+        "model": "tts-1",
+        "base_url": "http://192.168.1.50:8080/v1",
+        "api_key": "",
+        "voice": "alloy"
+      }
+    ]
+  },
   "ptt_buttons": ["BTN_EAST"],
   "active_mod": "",
   "reduced_motion": false
@@ -208,6 +290,70 @@ Drop a mod folder into `<dataRoot>/BMO/mods/` and select it in
 **Settings → MOD**.
 
 See the [Modding guide](docs/MODDING.md).
+
+---
+
+## FAQ
+
+**I launched BMO but it just sits there — why won't it talk to me?**
+BMO ships in **idle mode** with no AI configured. It's a silent animated
+companion until you fill in providers and set `"mode": "ai"` in `config.json`
+(or flip the toggle in **Settings**, opened with **Start**). See
+[Configuration](#configuration).
+
+**BMO won't start / a log mentions `stt has no providers`.**
+Each of `stt`, `chat`, and `tts` must be a **provider set**, not a bare
+provider — wrap your provider in `{ "active": "...", "providers": [ ... ] }`.
+A common slip when hand-writing the file is dropping the `providers` array and
+putting the fields directly under `stt`. Copy the [examples above](#example-openai)
+as your starting point.
+
+**Do I need an OpenAI account, or can I run everything offline?**
+Anything OpenAI-compatible works. Point `base_url` at a local server
+(Ollama, LM Studio, llama.cpp, vLLM, faster-whisper, Piper, …) and BMO never
+leaves your network. See
+[Self-hosted speech](docs/self-hosted-speech.md). Use the host's **LAN IP**,
+not `localhost` (on the device that means the device itself).
+
+**How much does it cost to run?**
+BMO itself is free. If you point it at a hosted API (e.g. OpenAI) you pay that
+provider's usual per-request rates for STT/chat/TTS. A fully local setup costs
+nothing beyond your own hardware and electricity.
+
+**Can I switch models without re-editing the file every time?**
+Yes. List several backends in a set's `providers` array and cycle the active
+one from **Settings → STT / CHAT / TTS** (left/right). The local example above
+shows a fast and a smart chat model side by side.
+
+**Does the wake word drain my battery?**
+Yes — an always-on microphone has a real battery and thermal cost, which is why
+the wake word is **off by default**. Turn it on under **Settings → WAKE WORD**
+when you want hands-free triggering.
+
+**The wake word doesn't trigger (or triggers on its own).**
+Say "**Beemo**" — the shipped model is BMO's own "Hey BMO" classifier.
+Detection is suppressed while BMO is speaking (plus a short guard) so it never
+wakes on its own voice. You can train your own phrase via
+[`training/wakeword/`](training/wakeword/README.md), or a mod can ship one as
+`wakeword/wake.onnx`.
+
+**Which button is push-to-talk?**
+**A** (`BTN_EAST`). Hold it to talk; **B** cancels or exits. Change it with
+`ptt_buttons` in `config.json`. See [Controls](#controls).
+
+**Can I change BMO's face, voice, or personality?**
+Yes — drop a **mod** into `<dataRoot>/BMO/mods/` and select it in
+**Settings → MOD**. Mods override the face set, persona, voice style, idle
+quotes, and emotion vocabulary with no code. See the
+[Modding guide](docs/MODDING.md).
+
+**Which devices are supported?**
+TrimUI Brick and Smart Pro (`tg5040`), and Smart Pro S (`tg5050`). The correct
+binary is picked automatically at launch.
+
+**Is this an official Adventure Time / Cartoon Network app?**
+No. BMO is an unofficial fan project, not affiliated with or endorsed by
+Cartoon Network or Warner Bros.
 
 ---
 
