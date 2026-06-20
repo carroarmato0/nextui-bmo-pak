@@ -383,7 +383,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				}
 				var assets wakeAssets
 				assets, wakeCleanup = buildWakeAssets(m, pakDir, platform, tmpDir, logger)
-				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels)
+				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels, nil)
 				currentWakeID = wakeModelIdentity(m.FS, m.ID)
 			}
 			restartWake(activeMod)
