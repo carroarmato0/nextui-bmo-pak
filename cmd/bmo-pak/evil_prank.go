@@ -34,9 +34,11 @@ const (
 )
 
 // prankListenWindow is how long Evil BMO waits for the other device to start
-// replying after a taunt — the "long" continued-conversation window, applied
-// here regardless of the user's continued_conversation setting.
-const prankListenWindow = 20 * time.Second
+// replying after a taunt. The victim must run its whole wake->STT->chat->TTS
+// pipeline before it can answer, so this is deliberately generous — longer than
+// the "long" continued-conversation window and applied regardless of the user's
+// continued_conversation setting, so a slower victim still gets heard.
+const prankListenWindow = 30 * time.Second
 
 // prankWakePause is the deliberate, model-independent gap between the wake call
 // ("Hey BMO") and the taunt. They are spoken as two separate utterances so the
@@ -45,9 +47,13 @@ const prankListenWindow = 20 * time.Second
 const prankWakePause = 1200 * time.Millisecond
 
 // prankTranscribeTimeout bounds the STT call on a captured reply so a slow or
-// contended backend can't stall the comeback. On timeout the prank still
-// follows up (with a generic comeback) because it knows a reply was heard.
-const prankTranscribeTimeout = 10 * time.Second
+// contended backend can't stall the comeback. A reply is up to wakeMaxCapture
+// of audio, and a slow/LAN STT backend needs more than the clip's own duration
+// to transcribe it, so this budget must comfortably exceed wakeMaxCapture or
+// every reply times out and degrades to a generic comeback (observed on
+// hardware 2026-06-20). On timeout the prank still follows up (generic
+// comeback) because it knows a reply was heard. See TestPrankReplyBudgetsArePatient.
+const prankTranscribeTimeout = 25 * time.Second
 
 // evilWakePhrases are spoken as a standalone utterance to trip a nearby device's
 // wake detector, immediately before the (separately spoken) taunt.

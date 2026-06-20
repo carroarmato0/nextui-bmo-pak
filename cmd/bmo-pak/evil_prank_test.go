@@ -251,6 +251,24 @@ func TestPrankRoundsAlwaysTwoOrThree(t *testing.T) {
 	}
 }
 
+// TestPrankReplyBudgetsArePatient guards the latency budget for a captured
+// reply. Observed on hardware (2026-06-20): the victim's reply was heard well
+// within the onset window, but Evil BMO's STT call timed out at 10s on every
+// reply ("context deadline exceeded") because a captured reply is up to
+// wakeMaxCapture of audio and a slow/LAN STT backend needs more than the
+// clip's own duration to transcribe it. The transcribe budget must therefore
+// comfortably exceed the maximum reply length, and the onset window must stay
+// at least as long, so Evil BMO is patient enough to both hear and process a
+// reply regardless of the user's continued_conversation setting.
+func TestPrankReplyBudgetsArePatient(t *testing.T) {
+	if prankTranscribeTimeout < wakeMaxCapture+10*time.Second {
+		t.Fatalf("prankTranscribeTimeout (%v) must be >= wakeMaxCapture (%v) + 10s headroom: a reply clip cannot transcribe in less time than its own duration on a slow backend", prankTranscribeTimeout, wakeMaxCapture)
+	}
+	if prankListenWindow < wakeMaxCapture {
+		t.Fatalf("prankListenWindow (%v) must be >= wakeMaxCapture (%v): the wait for a reply to begin should cover at least one full utterance", prankListenWindow, wakeMaxCapture)
+	}
+}
+
 // framesSource is a scripted audio.PCMSource that emits the given frames then
 // closes, so listenForReply can be driven deterministically.
 type framesSource struct{ frames [][]byte }
