@@ -38,8 +38,19 @@ const (
 // here regardless of the user's continued_conversation setting.
 const prankListenWindow = 20 * time.Second
 
-// evilWakePhrases are spoken at the front of the fused taunt utterance to trip a
-// nearby device's wake detector.
+// prankWakePause is the deliberate, model-independent gap between the wake call
+// ("Hey BMO") and the taunt. They are spoken as two separate utterances so the
+// pause length is ours, not whatever the TTS model renders for an ellipsis; it
+// also gives the other device time to wake and start listening before the taunt.
+const prankWakePause = 1200 * time.Millisecond
+
+// prankTranscribeTimeout bounds the STT call on a captured reply so a slow or
+// contended backend can't stall the comeback. On timeout the prank still
+// follows up (with a generic comeback) because it knows a reply was heard.
+const prankTranscribeTimeout = 10 * time.Second
+
+// evilWakePhrases are spoken as a standalone utterance to trip a nearby device's
+// wake detector, immediately before the (separately spoken) taunt.
 var evilWakePhrases = []string{"Hey BMO", "Hey BEEMO"}
 
 // closerNudgeMarker is a stable substring of closerNudgeFmt, used so the
@@ -56,6 +67,10 @@ const (
 	comebackNudgeFmt = "A nearby BMO answered your taunt by saying: %q. In one short, in-character line, mock its answer or fire back a cutting comeback. Reply with only that line."
 
 	closerNudgeFmt = "End this exchange. A nearby BMO answered: %q. Reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
+
+	genericComebackNudge = "A nearby BMO answered your taunt, but its reply was too garbled to make out. Fire back one short, in-character comeback mocking its mumbling. Reply with only that line."
+
+	genericCloserNudge = "End this exchange. A nearby BMO mumbled a reply you could not make out. Reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
 )
 
 // prankVoice is the slice of VoicePipeline the prank uses, narrowed to an
@@ -70,13 +85,15 @@ type prankVoice interface {
 // prankSession runs one bounded taunt->listen->react conversation. All external
 // effects go through injected funcs/interfaces so run is deterministic in tests.
 type prankSession struct {
-	voice       prankVoice
-	listen      func(ctx context.Context) []byte // captured reply PCM, nil/empty if none
-	beginListen func()                           // machine -> listening (suppresses wake loop, shows face)
-	endListen   func()                           // machine -> idle
-	rounds      func() int                       // number of reply rounds to engage (2 or 3)
-	rng         *rand.Rand
-	logger      pttLogger
+	voice             prankVoice
+	listen            func(ctx context.Context) []byte // captured reply PCM, nil/empty if none
+	beginListen       func()                           // machine -> listening (suppresses wake loop, shows face)
+	endListen         func()                           // machine -> idle
+	rounds            func() int                       // number of reply rounds to engage (2 or 3)
+	pause             func(ctx context.Context)        // deliberate gap between the wake call and the taunt
+	transcribeTimeout time.Duration                    // bound on the STT call for a captured reply (0 = unbounded)
+	rng               *rand.Rand
+	logger            pttLogger
 }
 
 // run performs the whole prank. It is meant to be invoked on its own goroutine.
@@ -86,8 +103,18 @@ func (s *prankSession) run(ctx context.Context) {
 		s.logf("evil prank: taunt generation failed or empty (%v); aborting", err)
 		return
 	}
+	// Wake call and taunt are two separate utterances with a deliberate pause
+	// between them, so the gap is ours to control regardless of the TTS model.
 	wake := evilWakePhrases[s.rng.Intn(len(evilWakePhrases))]
-	if err := s.voice.SpeakVerbatim(ctx, wake+"... "+taunt); err != nil {
+	if err := s.voice.SpeakVerbatim(ctx, wake); err != nil {
+		s.logf("evil prank: speaking wake call failed: %v", err)
+		return
+	}
+	s.pause(ctx)
+	if ctx.Err() != nil { // aborted during the pause
+		return
+	}
+	if err := s.voice.SpeakVerbatim(ctx, taunt); err != nil {
 		s.logf("evil prank: speaking taunt failed: %v", err)
 		return
 	}
@@ -97,11 +124,12 @@ func (s *prankSession) run(ctx context.Context) {
 		if ctx.Err() != nil { // aborted (B press / shutdown)
 			return
 		}
-		reply := s.listenOnce(ctx)
+		heard, reply := s.listenOnce(ctx)
 		if ctx.Err() != nil { // aborted while listening: don't emit a closing line
 			return
 		}
-		if reply == "" {
+		if !heard {
+			// True silence: nobody answered (round 1) or went quiet mid-chat.
 			if round == 1 {
 				_ = s.voice.SpeakRemark(ctx, noReplyNudge)
 			} else {
@@ -109,30 +137,49 @@ func (s *prankSession) run(ctx context.Context) {
 			}
 			return
 		}
+		// A reply was heard. If STT produced text, use it for a contextual
+		// line; otherwise fall back to a generic one so Evil BMO still follows
+		// up rather than wrongly claiming nobody answered.
 		if round >= maxRounds {
-			_ = s.voice.SpeakRemark(ctx, fmt.Sprintf(closerNudgeFmt, reply))
+			if reply != "" {
+				_ = s.voice.SpeakRemark(ctx, fmt.Sprintf(closerNudgeFmt, reply))
+			} else {
+				_ = s.voice.SpeakRemark(ctx, genericCloserNudge)
+			}
 			return
 		}
-		_ = s.voice.SpeakRemark(ctx, fmt.Sprintf(comebackNudgeFmt, reply))
+		if reply != "" {
+			_ = s.voice.SpeakRemark(ctx, fmt.Sprintf(comebackNudgeFmt, reply))
+		} else {
+			_ = s.voice.SpeakRemark(ctx, genericComebackNudge)
+		}
 	}
 }
 
-// listenOnce shows the listening face, captures one utterance within the window,
-// returns to idle, and transcribes. Returns "" when nothing intelligible was
-// heard.
-func (s *prankSession) listenOnce(ctx context.Context) string {
+// listenOnce captures one utterance within the window and transcribes it. It
+// returns whether any audio was heard and, separately, the transcript. A reply
+// can be heard but yield no transcript (STT timed out/failed or returned blank);
+// callers must distinguish that from true silence so Evil BMO still follows up.
+func (s *prankSession) listenOnce(ctx context.Context) (heard bool, transcript string) {
 	s.beginListen()
 	pcm := s.listen(ctx)
 	s.endListen()
 	if len(pcm) == 0 {
-		return ""
+		return false, ""
 	}
-	text, err := s.voice.Transcribe(ctx, pcm)
+	// Bound the STT call so a slow/contended backend can't stall the comeback.
+	tctx := ctx
+	if s.transcribeTimeout > 0 {
+		var cancel context.CancelFunc
+		tctx, cancel = context.WithTimeout(ctx, s.transcribeTimeout)
+		defer cancel()
+	}
+	text, err := s.voice.Transcribe(tctx, pcm)
 	if err != nil {
-		s.logf("evil prank: transcribe failed: %v", err)
-		return ""
+		s.logf("evil prank: transcribe failed (%v); using a generic comeback", err)
+		return true, ""
 	}
-	return strings.TrimSpace(text)
+	return true, strings.TrimSpace(text)
 }
 
 func (s *prankSession) logf(format string, args ...any) {
