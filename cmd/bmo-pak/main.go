@@ -308,6 +308,8 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var audioPipeline *assistant.VoicePipeline
 	var stopPTT func()
 	var stopWake func()
+	var restartWake func(mod.Mod)
+	var wakeCleanup func()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() && audioSession != nil {
@@ -361,14 +363,25 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			stopPTT = startPushToTalk(ctx, logger, machine, cfg, hardwareProfile, audioRouter, audioPipeline, audioCfg.SampleRate, audioCfg.Channels, func() bool { return activeMenu != nil })
 
 			pakDir := strings.TrimSpace(os.Getenv("BMO_PAK_DIR"))
-			wakeCfg := wakeAssets{
-				ORTLib:    filepath.Join(pakDir, "lib", platform, "libonnxruntime.so"),
-				MelModel:  filepath.Join(pakDir, "assets", "wakeword", "melspectrogram.onnx"),
-				EmbModel:  filepath.Join(pakDir, "assets", "wakeword", "embedding_model.onnx"),
-				WakeModel: filepath.Join(pakDir, "assets", "wakeword", "hey_bmo.onnx"),
-			}
+			tmpDir := filepath.Join(os.TempDir(), "BMO")
+			_ = os.MkdirAll(tmpDir, 0o755)
 			gov := &power.Governor{Logf: logger.Warnf}
-			stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, wakeCfg, audioCfg.SampleRate, audioCfg.Channels)
+			// restartWake (re)builds the wake detector for a mod, resolving its
+			// optional custom wake model. Called at startup and on every mod
+			// switch (synchronously, on the main goroutine) so the wake word
+			// changes with the mod, like the face does.
+			restartWake = func(m mod.Mod) {
+				if stopWake != nil {
+					stopWake() // cancels the loop and Close()s the old detector
+				}
+				if wakeCleanup != nil {
+					wakeCleanup() // remove the previous mod's extracted temp model
+				}
+				var assets wakeAssets
+				assets, wakeCleanup = buildWakeAssets(m, pakDir, platform, tmpDir, logger)
+				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels)
+			}
+			restartWake(activeMod)
 		}
 	}
 	if stopPTT != nil {
@@ -461,6 +474,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				audioPipeline.SetTimeoutClip(clipLib.Load("timeout"))
 				audioPipeline.SetErrorClip(clipLib.Load("error"))
 			}
+		}
+		// Rebuild the wake detector for the new mod (picks up its custom wake
+		// model, or falls back to stock). Synchronous, on the main goroutine;
+		// nil unless AI + audio were initialized at startup.
+		if restartWake != nil {
+			restartWake(active)
 		}
 		if scheduler != nil {
 			scheduler.SetAvailable(modIdleFaces(active))
