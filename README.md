@@ -175,6 +175,8 @@ speaking (plus a short guard) so it never wakes on its own voice.
   train your own wake phrase with the documented, GPU/Colab pipeline in
   [`training/wakeword/`](training/wakeword/README.md) — it produces a drop-in
   model that obeys the same `[1,16,96] → [1,1]` contract.
+- A **mod** can ship its own wake phrase as `wakeword/wake.onnx`; it replaces
+  "Hey BMO" while that mod is active (see the [Modding guide](docs/MODDING.md)).
 
 The detector's onnxruntime library and models ship inside the pak
 (`lib/<platform>/libonnxruntime.so`, `assets/wakeword/*.onnx`).

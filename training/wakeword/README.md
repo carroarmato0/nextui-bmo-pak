@@ -35,6 +35,11 @@ The repo tool `cmd/wakeword-eval` asserts this contract and is the gate before
 shipping any model. (This is what openWakeWord's automatic trainer produces by
 default, so following the steps below yields a compatible model.)
 
+The trained model is a drop-in for either the pak
+(`assets/wakeword/hey_bmo.onnx`) or a **mod** — drop it at `<mod>/wakeword/wake.onnx`
+and it replaces "Hey BMO" whenever that mod is selected (see
+[the Modding guide](../../docs/MODDING.md#custom-wake-word)).
+
 ## Prerequisites
 
 - A GPU. Colab's free tier is enough. A local NVIDIA GPU works too.

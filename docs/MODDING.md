@@ -44,6 +44,7 @@ character.
   quotes.txt      (optional) idle quotes, one per line
   faces/          (optional) <expression>.svg overrides
   audio/          (optional) clip overrides (e.g. timeout.pcm)
+  wakeword/       (optional) wake.onnx — custom "Hey BMO" replacement
 ```
 
 Every file is optional. A directory with nothing in it is a valid (no-op) mod.
@@ -93,6 +94,35 @@ BMO folds every unreadable field to its default.
 | `quotes.txt` | Idle quotes shown between interactions | [Quotes](mods/quotes.md) |
 | `emotions` in `mod.json` | Emotion vocabulary sent to the LLM | [Emotions](mods/emotions.md) |
 | `animations` in `mod.json` | SVG animation sequences | [Animations](mods/animations.md) |
+| `wakeword/wake.onnx` | Hands-free wake phrase | [Custom wake word](#custom-wake-word) |
+
+---
+
+## Custom wake word
+
+A mod can replace BMO's hands-free **"Hey BMO"** trigger with its own phrase by
+shipping a trained classifier at:
+
+```
+<mod>/wakeword/wake.onnx
+```
+
+When that mod is selected (and the wake word is enabled in **Settings → WAKE
+WORD**), the custom model takes over immediately — no relaunch. Switch back to a
+mod without one and the stock "Hey BMO" model returns.
+
+Requirements:
+
+- The model must satisfy BMO's classifier contract: a single float32 input
+  shaped `[1, 16, 96]` and a single float32 output `[1, 1]` — an openWakeWord
+  classifier. Only the classifier is overridable; BMO always supplies the shared
+  melspectrogram and embedding base models.
+- If `wake.onnx` is missing or fails the contract, BMO logs a warning and falls
+  back to "Hey BMO" — a bad model never breaks the pak.
+
+Train your own phrase with the pipeline in
+[`training/wakeword/`](../training/wakeword/README.md); its output drops straight
+into `wakeword/wake.onnx`.
 
 ---
 
