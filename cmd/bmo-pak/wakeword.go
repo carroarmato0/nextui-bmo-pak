@@ -15,7 +15,6 @@ import (
 const (
 	wakeGuardTail   = 600 * time.Millisecond // suppress detection this long after TTS ends
 	wakeMaxCapture  = 10 * time.Second       // hard cap on a single utterance
-	wakeEndSilence  = 800 * time.Millisecond // trailing silence that ends an utterance
 	wakeMaxFollowUp = 6                      // continued-conversation follow-up cap
 	wakeVADLevel    = 0.01                   // matches voice.go silence rejection
 )
@@ -120,6 +119,19 @@ func continuedWindowFor(mode string) time.Duration {
 	}
 }
 
+// wakeEndSilenceFor maps a config end-of-turn silence tier to the trailing-
+// silence duration that ends a capture. Unknown values map to balanced.
+func wakeEndSilenceFor(tier string) time.Duration {
+	switch tier {
+	case config.WakeEndSilenceSnappy:
+		return 1000 * time.Millisecond
+	case config.WakeEndSilencePatient:
+		return 1600 * time.Millisecond
+	default: // balanced / empty / unknown
+		return 1300 * time.Millisecond
+	}
+}
+
 // startWakeWord runs the on-device wake-word detector and, on a detection,
 // drives the same capture -> ProcessBatch path as push-to-talk. It returns a
 // stop func. It is a no-op unless AI mode and the wake-word trigger are active.
@@ -163,6 +175,7 @@ func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Mac
 		buffer:      buffer,
 		wc:          wc,
 		bytesPerSec: bytesPerSec,
+		endSilence:  wakeEndSilenceFor(cfg.WakeEndSilence),
 	}
 	go loop.run(ctx, sub)
 
@@ -184,6 +197,7 @@ type wakeLoop struct {
 	buffer      *input.Buffer
 	wc          *wakeController
 	bytesPerSec int
+	endSilence  time.Duration
 
 	capturing    bool
 	captureStart time.Time
@@ -251,10 +265,17 @@ func (l *wakeLoop) continueCapture(ctx context.Context, batch []byte, now time.T
 	} else {
 		l.silenceRun += time.Duration(float64(len(batch)) / float64(l.bytesPerSec) * float64(time.Second))
 	}
-	if l.silenceRun < wakeEndSilence && now.Sub(l.captureStart) < wakeMaxCapture {
+	if !l.captureShouldFinish(now) {
 		return
 	}
 	l.finishCapture(ctx)
+}
+
+// captureShouldFinish reports whether the current capture is over: either a
+// trailing silence of at least the configured end-of-turn duration, or the hard
+// max-capture cap.
+func (l *wakeLoop) captureShouldFinish(now time.Time) bool {
+	return l.silenceRun >= l.endSilence || now.Sub(l.captureStart) >= wakeMaxCapture
 }
 
 // finishCapture processes the captured utterance and either opens a follow-up

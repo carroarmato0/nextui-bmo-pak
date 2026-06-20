@@ -115,3 +115,39 @@ func TestWakeSessionEngagedLifecycle(t *testing.T) {
 		t.Fatal("resetFollowUps must disengage")
 	}
 }
+
+func TestWakeEndSilenceForMapsTiers(t *testing.T) {
+	cases := map[string]time.Duration{
+		config.WakeEndSilenceSnappy:   1000 * time.Millisecond,
+		config.WakeEndSilenceBalanced: 1300 * time.Millisecond,
+		config.WakeEndSilencePatient:  1600 * time.Millisecond,
+		"":                            1300 * time.Millisecond, // unknown -> balanced
+	}
+	for in, want := range cases {
+		if got := wakeEndSilenceFor(in); got != want {
+			t.Errorf("wakeEndSilenceFor(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestCaptureShouldFinish(t *testing.T) {
+	l := &wakeLoop{endSilence: 1300 * time.Millisecond}
+	now := time.Unix(100, 0)
+	l.captureStart = now
+
+	// Silence below the configured threshold: keep capturing.
+	l.silenceRun = 1200 * time.Millisecond
+	if l.captureShouldFinish(now) {
+		t.Error("should keep capturing below endSilence threshold")
+	}
+	// Silence at/above the threshold: finish.
+	l.silenceRun = 1300 * time.Millisecond
+	if !l.captureShouldFinish(now) {
+		t.Error("should finish at endSilence threshold")
+	}
+	// Max-capture cap also finishes regardless of silence.
+	l.silenceRun = 0
+	if !l.captureShouldFinish(now.Add(wakeMaxCapture)) {
+		t.Error("should finish at wakeMaxCapture cap")
+	}
+}
