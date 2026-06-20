@@ -72,7 +72,7 @@ func resolveWakeModel(modFS fs.FS, modID, defaultPath, tmpDir string) (path stri
 	if readErr != nil {
 		return defaultPath, false, nil // absent/unreadable -> default
 	}
-	out := filepath.Join(tmpDir, "wake-"+modID+".onnx")
+	out := filepath.Join(tmpDir, "wake-"+filepath.Base(modID)+".onnx")
 	if writeErr := os.WriteFile(out, data, 0o644); writeErr != nil {
 		return defaultPath, false, fmt.Errorf("extract wake model for mod %q: %w", modID, writeErr)
 	}

@@ -177,10 +177,15 @@ func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Mac
 		bytesPerSec: bytesPerSec,
 		endSilence:  wakeEndSilenceFor(cfg.WakeEndSilence),
 	}
-	go loop.run(ctx, sub)
+	done := make(chan struct{})
+	go func() {
+		loop.run(ctx, sub)
+		close(done)
+	}()
 
 	return func() {
 		cancel()
+		<-done
 		_ = detector.Close()
 	}
 }

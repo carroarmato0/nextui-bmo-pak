@@ -39,6 +39,21 @@ func TestResolveWakeModelExtractsCustom(t *testing.T) {
 	}
 }
 
+func TestResolveWakeModelSanitizesModID(t *testing.T) {
+	modFS := fstest.MapFS{"wakeword/wake.onnx": &fstest.MapFile{Data: []byte("x")}}
+	tmp := t.TempDir()
+	path, custom, err := resolveWakeModel(modFS, "../evil", "/pak/hey_bmo.onnx", tmp)
+	if err != nil || !custom {
+		t.Fatalf("got (%q,%v,%v)", path, custom, err)
+	}
+	if filepath.Dir(path) != tmp {
+		t.Fatalf("extracted outside tmpDir: %q (tmp=%q)", path, tmp)
+	}
+	if filepath.Base(path) != "wake-evil.onnx" {
+		t.Fatalf("base = %q, want wake-evil.onnx", filepath.Base(path))
+	}
+}
+
 func TestResolveWakeModelFallsBackWhenAbsent(t *testing.T) {
 	modFS := fstest.MapFS{"faces/neutral.svg": &fstest.MapFile{Data: []byte("x")}}
 	path, custom, err := resolveWakeModel(modFS, "plain", "/pak/hey_bmo.onnx", t.TempDir())

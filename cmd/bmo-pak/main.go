@@ -387,9 +387,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	if stopPTT != nil {
 		defer stopPTT()
 	}
-	if stopWake != nil {
-		defer stopWake()
-	}
+	defer func() {
+		if stopWake != nil {
+			stopWake()
+		}
+	}()
 
 	screen, err := renderer.NewFullscreen("BMO")
 	if err != nil {
