@@ -394,6 +394,23 @@ func TestListenForReplyReturnsNilWhenSilent(t *testing.T) {
 	}
 }
 
+func TestEvilPrankRunningReflectsActiveFlag(t *testing.T) {
+	// nil-safe: the main loop calls prank.running() even when the gate was
+	// never built (prank == nil).
+	var nilPrank *evilPrank
+	if nilPrank.running() {
+		t.Fatal("nil prank must not report running")
+	}
+	e := &evilPrank{active: &atomic.Bool{}}
+	if e.running() {
+		t.Fatal("idle prank must not report running")
+	}
+	e.active.Store(true)
+	if !e.running() {
+		t.Fatal("active prank must report running so proactive remarks stand down")
+	}
+}
+
 func TestEvilPrankTriggerGate(t *testing.T) {
 	ran := 0
 	e := &evilPrank{

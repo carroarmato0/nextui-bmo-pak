@@ -1002,7 +1002,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				nextIdleUpdate = now.Add(step.HoldFor)
 			}
 			expr = string(currentIdleExpression)
-			if !galleryActive && !shuttingDown && audioPipeline != nil && proactive.Due(now) {
+			if !galleryActive && !shuttingDown && !prank.running() && audioPipeline != nil && proactive.Due(now) {
 				proactive.Reschedule(now)
 				remarkPipeline := audioPipeline
 				// ProactiveNudge refreshes device context (sqlite play-log,

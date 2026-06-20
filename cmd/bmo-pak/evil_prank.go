@@ -368,6 +368,15 @@ func (e *evilPrank) stop() bool {
 	return true
 }
 
+// running reports whether a prank is currently in progress. nil-safe so the
+// main loop can gate proactive remarks on it: a prank owns the speaker and mic
+// for its whole duration, so the proactive scheduler must stand down (just like
+// the wake loop does on the shared active flag) — otherwise a scheduled remark
+// can fire in an idle gap between rounds and Evil BMO talks over its own prank.
+func (e *evilPrank) running() bool {
+	return e != nil && e.active.Load()
+}
+
 // startEvilPrankScheduler fires a tick on a heavily jittered interval until ctx
 // is cancelled. A pending tick is never queued more than one deep; the main
 // loop decides (with full UI state) whether to actually start a prank.
