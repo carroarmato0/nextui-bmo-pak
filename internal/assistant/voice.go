@@ -597,6 +597,61 @@ func (p *VoicePipeline) SpeakVerbatim(ctx context.Context, text string, onSpoken
 	return p.speak(ctx, speech)
 }
 
+// GenerateRemarkText runs the chat model with nudge (a stage direction sent as
+// the user message) under the active system prompt and returns the spoken text
+// with any leading emotion directive stripped. Unlike SpeakRemark it neither
+// touches the state machine nor synthesizes audio, so a caller can prepare a
+// line before deciding when (or whether) to speak it. Returns "" when AI is
+// disabled or the model yields no speakable text.
+func (p *VoicePipeline) GenerateRemarkText(ctx context.Context, nudge string) (string, error) {
+	if p == nil || !p.aiModeEnabled() {
+		return "", nil
+	}
+	reqCtx, cancel := p.requestCtx(ctx)
+	defer cancel()
+	chat, err := p.chat.Reply(reqCtx, providers.ChatRequest{
+		Model:        p.chatModel,
+		Messages:     []providers.Message{{Role: "user", Content: nudge}},
+		SystemPrompt: p.currentSystemPrompt(),
+	})
+	if err != nil {
+		return "", err
+	}
+	reply := strings.TrimSpace(chat.Text)
+	if reply == "" {
+		return "", nil
+	}
+	spoken, _ := ParseEmotion(reply, emotionNameSet(p.currentEmotionVocab()))
+	return strings.TrimSpace(spoken), nil
+}
+
+// Transcribe runs speech-to-text on a captured PCM buffer and returns the
+// trimmed transcript. It is the bare STT step ProcessBatch performs internally,
+// exposed for callers that need the text without the chat/TTS round-trip or any
+// state-machine transitions. Returns "" for empty, signal-less, or
+// AI-disabled input.
+func (p *VoicePipeline) Transcribe(ctx context.Context, pcm []byte) (string, error) {
+	if p == nil || !p.aiModeEnabled() {
+		return "", nil
+	}
+	if len(pcm) == 0 || !audio.PCMHasSignal(pcm, 0.01) {
+		return "", nil
+	}
+	reqCtx, cancel := p.requestCtx(ctx)
+	defer cancel()
+	res, err := p.stt.Transcribe(reqCtx, providers.TranscriptionRequest{
+		Model:      p.sttModel,
+		Audio:      pcm,
+		SampleRate: p.sampleRate,
+		Channels:   p.captureChannels,
+		Format:     "wav",
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(res.Text), nil
+}
+
 // speak plays the synthesized speech and owns the post-speech state
 // transitions. It registers an interrupt handle so InterruptSpeech can cut
 // the playback short; the handle's waiters are released only after the

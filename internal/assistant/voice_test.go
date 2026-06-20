@@ -1117,6 +1117,73 @@ func TestDecodeAndResampleTTS(t *testing.T) {
 	})
 }
 
+func TestGenerateRemarkTextStripsEmotionAndDoesNotSpeak(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	writer := &fakeWriter{}
+	stt := &fakeProvider{}
+	chat := &fakeProvider{reply: "[laugh] you call that a high score?"}
+	tts := &fakeProvider{}
+	pipe := NewVoicePipeline(m, writer, stt, chat, tts, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "be evil bmo", 16000, 1, 2)
+	// Register a vocabulary so the [laugh] directive is recognized and stripped.
+	pipe.SetEmotionVocabularySource(func() []EmotionEntry { return []EmotionEntry{{Name: "laugh"}} })
+
+	got, err := pipe.GenerateRemarkText(context.Background(), "taunt a nearby bmo")
+	if err != nil {
+		t.Fatalf("GenerateRemarkText: %v", err)
+	}
+	if got != "you call that a high score?" {
+		t.Fatalf("text = %q, want emotion stripped", got)
+	}
+	if writer.writeCount() != 0 {
+		t.Fatalf("expected no audio written, got %d writes", writer.writeCount())
+	}
+	if m.State() != StateIdle {
+		t.Fatalf("state = %q, want idle (no transition)", m.State())
+	}
+	if chat.lastChat.Messages[0].Content != "taunt a nearby bmo" {
+		t.Fatalf("nudge not sent as user message: %+v", chat.lastChat.Messages)
+	}
+}
+
+func TestTranscribeReturnsTextWithoutTransition(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "  I scored nine thousand  "}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
+
+	// 200ms of constant-amplitude mono PCM so PCMHasSignal passes.
+	pcm := make([]byte, 16000*2*200/1000)
+	for i := 0; i+1 < len(pcm); i += 2 {
+		binary.LittleEndian.PutUint16(pcm[i:i+2], uint16(int16(8192)))
+	}
+
+	got, err := pipe.Transcribe(context.Background(), pcm)
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if got != "I scored nine thousand" {
+		t.Fatalf("transcript = %q, want trimmed text", got)
+	}
+	if m.State() != StateIdle {
+		t.Fatalf("state = %q, want idle (no transition)", m.State())
+	}
+}
+
+func TestTranscribeSkipsSilentAudio(t *testing.T) {
+	m := NewMachine()
+	m.SetMode("ai")
+	stt := &fakeProvider{transcript: "should not be used"}
+	pipe := NewVoicePipeline(m, &fakeWriter{}, stt, &fakeProvider{}, &fakeProvider{}, "whisper-1", "gpt-4o-mini", "tts-1", "alloy", "", 16000, 1, 2)
+	got, err := pipe.Transcribe(context.Background(), make([]byte, 640)) // all-zero = silent
+	if err != nil || got != "" {
+		t.Fatalf("Transcribe(silence) = %q, %v; want \"\", nil", got, err)
+	}
+	if stt.lastTranscribe != nil {
+		t.Fatalf("STT provider should not be called for silent audio")
+	}
+}
+
 // buildTestWAV mirrors internal/audio's canonical S16LE WAV header so the
 // assistant test can build TTS-response fixtures without importing test code.
 func buildTestWAV(pcm []byte, rate, channels int) []byte {
