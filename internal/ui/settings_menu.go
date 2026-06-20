@@ -139,7 +139,7 @@ type settingsSlot struct {
 	navigable bool
 }
 
-const settingsSlotCount = 21
+const settingsSlotCount = 22
 
 // slots is the single source of truth for the settings layout: row content,
 // visibility and navigability all derive from here, so Move, shouldSkip and
@@ -180,6 +180,8 @@ func (m *SettingsMenu) slots() []settingsSlot {
 		aiToggle("wake_word", "WAKE WORD: "+onOff(m.cfg.WakeWordEnabled), m.cfg.WakeWordEnabled),
 		// CONTINUED CONVO only applies when the wake word is on; hide it otherwise.
 		{OverlayItem{Code: "continued_convo", Label: "CONTINUED CONVO: " + strings.ToUpper(m.cfg.ContinuedConversation), Selected: true, Hidden: !isAI || !m.cfg.WakeWordEnabled, Indent: true}, isAI && m.cfg.WakeWordEnabled},
+		// LISTEN PATIENCE (end-of-turn silence) only applies with the wake word on.
+		{OverlayItem{Code: "wake_end_silence", Label: "LISTEN PATIENCE: " + strings.ToUpper(m.cfg.WakeEndSilence), Selected: true, Hidden: !isAI || !m.cfg.WakeWordEnabled, Indent: true}, isAI && m.cfg.WakeWordEnabled},
 		{OverlayItem{Code: "mod", Label: "MOD: " + m.modLabel(), Selected: true}, true},
 		// Blank separator setting the destructive Restore Defaults apart.
 		{OverlayItem{Code: "spacer", Spacer: true}, false},
@@ -273,12 +275,14 @@ func (m *SettingsMenu) ToggleFocused() error {
 		m.cfg.ContinuedConversation = nextInOrder(m.cfg.ContinuedConversation,
 			[]string{config.ContinuedConvoOff, config.ContinuedConvoShort, config.ContinuedConvoLong})
 	case 17:
+		m.cfg.WakeEndSilence = nextInOrder(m.cfg.WakeEndSilence, config.WakeEndSilenceLevels())
+	case 18:
 		m.cycleMod()
-	case 19:
+	case 20:
 		if m.onRestore != nil {
 			return m.onRestore()
 		}
-	case 20:
+	case 21:
 		if m.about != nil {
 			m.aboutActive = true
 		}

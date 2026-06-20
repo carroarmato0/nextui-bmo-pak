@@ -426,6 +426,27 @@ func TestContinuedConversationNormalizeKeepsValid(t *testing.T) {
 	}
 }
 
+func TestWakeEndSilenceDefaultAndNormalize(t *testing.T) {
+	if got := Default().WakeEndSilence; got != WakeEndSilenceBalanced {
+		t.Fatalf("default WakeEndSilence = %q, want %q", got, WakeEndSilenceBalanced)
+	}
+	cases := map[string]string{
+		"":         WakeEndSilenceBalanced, // empty -> default
+		"nonsense": WakeEndSilenceBalanced, // unknown -> default
+		WakeEndSilenceSnappy:   WakeEndSilenceSnappy,
+		WakeEndSilenceBalanced: WakeEndSilenceBalanced,
+		WakeEndSilencePatient:  WakeEndSilencePatient,
+	}
+	for in, want := range cases {
+		c := Default()
+		c.WakeEndSilence = in
+		c.Normalize()
+		if c.WakeEndSilence != want {
+			t.Errorf("Normalize(%q) = %q, want %q", in, c.WakeEndSilence, want)
+		}
+	}
+}
+
 func TestWakeWordValidatesTrigger(t *testing.T) {
 	c := Default()
 	c.Mode = ModeAI

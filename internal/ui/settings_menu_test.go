@@ -9,10 +9,10 @@ import (
 
 // ── Structure ──────────────────────────────────────────────────────────────
 
-func TestSettingsMenuHas21Items(t *testing.T) {
+func TestSettingsMenuHas22Items(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
-	if got := len(m.Overlay().Items); got != 21 {
-		t.Fatalf("expected 21 overlay items, got %d", got)
+	if got := len(m.Overlay().Items); got != 22 {
+		t.Fatalf("expected 22 overlay items, got %d", got)
 	}
 }
 
@@ -25,7 +25,7 @@ func TestSettingsMenuItemCodes(t *testing.T) {
 		"aware_library", "aware_saves", "aware_playlog",
 		"aware_system", "aware_achievements",
 		"library_detail", "request_timeout", "proactive_talk",
-		"wake_word", "continued_convo", "mod",
+		"wake_word", "continued_convo", "wake_end_silence", "mod",
 		"spacer", "restore_defaults", "about",
 	}
 	for i, code := range want {
@@ -61,12 +61,12 @@ func TestSettingsMenuMoveSkipsHiddenAIRowsInIdle(t *testing.T) {
 	if got := m.Overlay().Items[2].Focused; !got {
 		t.Fatal("expected mode item (idx 2) to be focused after Move(1) from log_level in non-debug mode")
 	}
-	// From MODE (2), down skips every hidden AI row (3-14) and lands on MOD (15).
+	// From MODE (2), down skips every hidden AI row and lands on MOD (18).
 	m.Move(1)
-	if got := m.Overlay().Items[17].Focused; !got {
-		t.Fatal("expected mod (idx 17) to be focused after Move(1) from mode in idle mode")
+	if got := m.Overlay().Items[18].Focused; !got {
+		t.Fatal("expected mod (idx 18) to be focused after Move(1) from mode in idle mode")
 	}
-	// From MOD (15), up returns to MODE (2).
+	// From MOD (18), up returns to MODE (2).
 	m.Move(-1)
 	if got := m.Overlay().Items[2].Focused; !got {
 		t.Fatal("expected mode (idx 2) to be focused after Move(-1) from mod")
@@ -240,7 +240,7 @@ func TestSettingsMenuRestoreDefaults(t *testing.T) {
 		t.Fatal("restore_defaults item missing from overlay")
 	}
 
-	menu.focusForTest(19) // restore_defaults
+	menu.focusForTest(20) // restore_defaults
 	if err := menu.ToggleFocused(); err != nil {
 		t.Fatalf("ToggleFocused() error = %v", err)
 	}
@@ -258,7 +258,7 @@ func TestSettingsMenuRestoreDefaultsActivates(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.focusForTest(19) // restore_defaults
+	m.focusForTest(20) // restore_defaults
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("restore defaults: %v", err)
 	}
@@ -272,14 +272,14 @@ func TestSettingsMenuAboutShowsAndDismisses(t *testing.T) {
 	m.SetAbout(AboutState{Name: "BMO", Version: "v1.2.3"})
 
 	// ABOUT is the last slot, reachable below RESTORE DEFAULTS.
-	if got := m.Overlay().Items[20].Code; got != "about" {
-		t.Fatalf("expected about at idx 20, got %q", got)
+	if got := m.Overlay().Items[21].Code; got != "about" {
+		t.Fatalf("expected about at idx 21, got %q", got)
 	}
 	if m.AboutActive() {
 		t.Fatal("about should not be active before activation")
 	}
 
-	m.focusForTest(20)
+	m.focusForTest(21)
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("activate about: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestSettingsMenuAboutShowsAndDismisses(t *testing.T) {
 func TestSettingsMenuAboutIgnoresArrowsActivatesOnConfirm(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	m.SetAbout(AboutState{Name: "BMO"})
-	m.focusForTest(20) // about
+	m.focusForTest(21) // about
 
 	// Arrows (Cycle) must not open the About screen.
 	if err := m.Cycle(1); err != nil {
@@ -332,7 +332,7 @@ func TestSettingsMenuRestoreIgnoresArrows(t *testing.T) {
 	m := NewSettingsMenu(config.Default())
 	called := false
 	m.SetRestoreDefaultsCallback(func() error { called = true; return nil })
-	m.focusForTest(19) // restore_defaults
+	m.focusForTest(20) // restore_defaults
 	if err := m.Cycle(1); err != nil {
 		t.Fatalf("Cycle on restore: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestSettingsMenuConfirmAdvancesProvider(t *testing.T) {
 
 func TestSettingsMenuAboutInertWithoutContent(t *testing.T) {
 	m := NewSettingsMenu(config.Default()) // no SetAbout call
-	m.focusForTest(20)
+	m.focusForTest(21)
 	if err := m.ToggleFocused(); err != nil {
 		t.Fatalf("toggle about without content: %v", err)
 	}
@@ -397,14 +397,14 @@ func TestSettingsMenuAIRowsIndented(t *testing.T) {
 	cfg.Mode = config.ModeAI
 	m := NewSettingsMenu(cfg)
 	items := m.Overlay().Items
-	// Every AI sub-setting (3-16) is indented to nest under MODE.
-	for _, idx := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16} {
+	// Every AI sub-setting (3-17) is indented to nest under MODE.
+	for _, idx := range []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17} {
 		if !items[idx].Indent {
 			t.Errorf("items[%d] (%s) should be indented under AI mode", idx, items[idx].Code)
 		}
 	}
 	// Top-level rows stay flush left.
-	for _, idx := range []int{0, 2, 17, 19} {
+	for _, idx := range []int{0, 2, 18, 20} {
 		if items[idx].Indent {
 			t.Errorf("items[%d] (%s) should not be indented", idx, items[idx].Code)
 		}
@@ -502,8 +502,8 @@ func TestSettingsMenuOverlayShowsAwarenessItems(t *testing.T) {
 	cfg.Mode = config.ModeAI // awareness rows are AI-only
 	m := NewSettingsMenu(cfg)
 	overlay := m.Overlay()
-	if len(overlay.Items) != 21 {
-		t.Fatalf("expected 21 overlay items, got %d", len(overlay.Items))
+	if len(overlay.Items) != 22 {
+		t.Fatalf("expected 22 overlay items, got %d", len(overlay.Items))
 	}
 	labels := map[string]string{}
 	for _, item := range overlay.Items {
@@ -574,8 +574,8 @@ func TestSettingsMenuCyclesMod(t *testing.T) {
 	m.SetModChangeCallback(func(id string) { changed = id })
 
 	m.Move(15) // mod selector
-	if got := m.Overlay().Items[17].Code; got != "mod" {
-		t.Fatalf("expected mod item at idx 17, got %q", got)
+	if got := m.Overlay().Items[18].Code; got != "mod" {
+		t.Fatalf("expected mod item at idx 18, got %q", got)
 	}
 	if err := m.ToggleFocused(); err != nil { // default -> evil
 		t.Fatalf("ToggleFocused: %v", err)
@@ -586,7 +586,7 @@ func TestSettingsMenuCyclesMod(t *testing.T) {
 	if changed != "evil" {
 		t.Fatalf("callback got %q, want evil", changed)
 	}
-	if got := m.Overlay().Items[17].Label; got != "MOD: EVIL BMO" {
+	if got := m.Overlay().Items[18].Label; got != "MOD: EVIL BMO" {
 		t.Fatalf("mod item label = %q, want %q", got, "MOD: EVIL BMO")
 	}
 	if err := m.ToggleFocused(); err != nil { // evil -> default (wraps)
@@ -612,7 +612,7 @@ func TestSettingsMenuModDefaultsToFirstChoiceWhenUnset(t *testing.T) {
 		{ID: "evil", Label: "EVIL BMO"},
 	})
 
-	if got := m.Overlay().Items[17].Label; got != "MOD: BMO (DEFAULT)" {
+	if got := m.Overlay().Items[18].Label; got != "MOD: BMO (DEFAULT)" {
 		t.Fatalf("unset ActiveMod label = %q, want %q", got, "MOD: BMO (DEFAULT)")
 	}
 
@@ -779,6 +779,30 @@ func TestSettingsContinuedConvoCycles(t *testing.T) {
 		}
 		if got := m.Config().ContinuedConversation; got != v {
 			t.Fatalf("continued conversation = %q, want %q", got, v)
+		}
+	}
+}
+
+func TestSettingsMenuWakeEndSilenceCycles(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mode = config.ModeAI
+	cfg.WakeWordEnabled = true
+	m := NewSettingsMenu(cfg)
+	m.focusForTest(17)
+	if got := m.Overlay().Items[17].Code; got != "wake_end_silence" {
+		t.Fatalf("expected wake_end_silence at idx 17, got %q", got)
+	}
+	start := m.Config().WakeEndSilence
+	seen := map[string]bool{start: true}
+	for i := 0; i < 3; i++ {
+		if err := m.ToggleFocused(); err != nil {
+			t.Fatalf("ToggleFocused: %v", err)
+		}
+		seen[m.Config().WakeEndSilence] = true
+	}
+	for _, tier := range config.WakeEndSilenceLevels() {
+		if !seen[tier] {
+			t.Errorf("cycling never visited %q", tier)
 		}
 	}
 }

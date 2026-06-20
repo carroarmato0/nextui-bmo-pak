@@ -30,6 +30,7 @@ type Snapshot struct {
 	SleepReason     SleepReason
 	Quota           QuotaStatus
 	IdleSeed        int64
+	WakeEngaged     bool
 }
 
 const (
@@ -113,6 +114,7 @@ type Machine struct {
 	sleepReason     SleepReason
 	quota           QuotaStatus
 	idleSeed        int64
+	wakeEngaged     bool
 }
 
 func NewMachine() *Machine {
@@ -137,6 +139,16 @@ func (m *Machine) SetIdleSeed(seed int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.idleSeed = seed
+}
+
+// SetWakeEngaged marks whether a hands-free wake-word interaction is in progress.
+// While engaged, the render loop holds the listening face and suppresses the idle
+// scheduler/proactive remarks so the session matches push-to-talk. It is set by
+// the wake loop and read via Snapshot by the render loop.
+func (m *Machine) SetWakeEngaged(engaged bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.wakeEngaged = engaged
 }
 
 func (m *Machine) SetQuotaRemaining(remaining int) {
@@ -193,6 +205,7 @@ func (m *Machine) Snapshot() Snapshot {
 		SleepReason:     m.sleepReason,
 		Quota:           m.quota,
 		IdleSeed:        m.idleSeed,
+		WakeEngaged:     m.wakeEngaged,
 	}
 }
 

@@ -164,6 +164,11 @@ speaking (plus a short guard) so it never wakes on its own voice.
   `short`) reopens a follow-up window after each reply so you — or another BMO —
   can keep talking without re-triggering. `long` is tuned for two-BMO
   conversations.
+- **LISTEN PATIENCE** (`wake_end_silence`: `snappy`/`balanced`/`patient`, default
+  `balanced`) sets how long a pause must last before BMO treats your sentence as
+  finished. `patient` avoids cutting off slow or thoughtful speech; `snappy`
+  responds sooner. It is independent of **CONTINUED CONVO** (which controls the
+  follow-up window after a reply).
 - The always-on microphone has a real battery/thermal cost, so the wake word is
   **off by default**.
 - The shipped model is BMO's own **"Hey BMO"** classifier (say "Beemo"). You can

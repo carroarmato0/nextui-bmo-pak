@@ -15,7 +15,6 @@ import (
 const (
 	wakeGuardTail   = 600 * time.Millisecond // suppress detection this long after TTS ends
 	wakeMaxCapture  = 10 * time.Second       // hard cap on a single utterance
-	wakeEndSilence  = 800 * time.Millisecond // trailing silence that ends an utterance
 	wakeMaxFollowUp = 6                      // continued-conversation follow-up cap
 	wakeVADLevel    = 0.01                   // matches voice.go silence rejection
 )
@@ -39,6 +38,7 @@ type wakeController struct {
 	windowUntil     time.Time
 	maxFollowUps    int
 	followUps       int
+	engaged         bool
 }
 
 // observeState tracks whether BMO is currently speaking, recording the moment
@@ -89,8 +89,24 @@ func (c *wakeController) startFollowUp() {
 	c.windowUntil = time.Time{}
 }
 
+// startSession marks the beginning of a wake interaction. Idempotent: it is
+// called on the first capture and on every follow-up capture, so the session
+// stays engaged for the whole conversation.
+func (c *wakeController) startSession() {
+	c.engaged = true
+}
+
+// Engaged reports whether a wake interaction is in progress (from the first
+// capture until the conversation returns to idle).
+func (c *wakeController) Engaged() bool {
+	return c.engaged
+}
+
 // resetFollowUps is called when the conversation returns fully to idle.
-func (c *wakeController) resetFollowUps() { c.followUps = 0 }
+func (c *wakeController) resetFollowUps() {
+	c.followUps = 0
+	c.engaged = false
+}
 
 func continuedWindowFor(mode string) time.Duration {
 	switch mode {
@@ -100,6 +116,19 @@ func continuedWindowFor(mode string) time.Duration {
 		return 20 * time.Second
 	default:
 		return 0
+	}
+}
+
+// wakeEndSilenceFor maps a config end-of-turn silence tier to the trailing-
+// silence duration that ends a capture. Unknown values map to balanced.
+func wakeEndSilenceFor(tier string) time.Duration {
+	switch tier {
+	case config.WakeEndSilenceSnappy:
+		return 1000 * time.Millisecond
+	case config.WakeEndSilencePatient:
+		return 1600 * time.Millisecond
+	default: // balanced / empty / unknown
+		return 1300 * time.Millisecond
 	}
 }
 
@@ -146,6 +175,7 @@ func startWakeWord(ctx context.Context, logger pttLogger, machine *assistant.Mac
 		buffer:      buffer,
 		wc:          wc,
 		bytesPerSec: bytesPerSec,
+		endSilence:  wakeEndSilenceFor(cfg.WakeEndSilence),
 	}
 	go loop.run(ctx, sub)
 
@@ -167,6 +197,7 @@ type wakeLoop struct {
 	buffer      *input.Buffer
 	wc          *wakeController
 	bytesPerSec int
+	endSilence  time.Duration
 
 	capturing    bool
 	captureStart time.Time
@@ -174,6 +205,7 @@ type wakeLoop struct {
 }
 
 func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
+	defer l.machine.SetWakeEngaged(false)
 	for {
 		select {
 		case <-ctx.Done():
@@ -188,6 +220,8 @@ func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
 }
 
 func (l *wakeLoop) beginCapture(now time.Time) {
+	l.wc.startSession()
+	l.machine.SetWakeEngaged(l.wc.Engaged())
 	l.machine.Transition(assistant.EventListen)
 	l.buffer.Begin()
 	l.capturing = true
@@ -231,10 +265,17 @@ func (l *wakeLoop) continueCapture(ctx context.Context, batch []byte, now time.T
 	} else {
 		l.silenceRun += time.Duration(float64(len(batch)) / float64(l.bytesPerSec) * float64(time.Second))
 	}
-	if l.silenceRun < wakeEndSilence && now.Sub(l.captureStart) < wakeMaxCapture {
+	if !l.captureShouldFinish(now) {
 		return
 	}
 	l.finishCapture(ctx)
+}
+
+// captureShouldFinish reports whether the current capture is over: either a
+// trailing silence of at least the configured end-of-turn duration, or the hard
+// max-capture cap.
+func (l *wakeLoop) captureShouldFinish(now time.Time) bool {
+	return l.silenceRun >= l.endSilence || now.Sub(l.captureStart) >= wakeMaxCapture
 }
 
 // finishCapture processes the captured utterance and either opens a follow-up
@@ -255,6 +296,7 @@ func (l *wakeLoop) finishCapture(ctx context.Context) {
 		return
 	}
 	l.wc.resetFollowUps()
+	l.machine.SetWakeEngaged(l.wc.Engaged())
 }
 
 // processWakeUtterance runs the voice pipeline for a captured utterance with the

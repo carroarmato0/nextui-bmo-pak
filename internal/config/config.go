@@ -24,6 +24,12 @@ const (
 	ContinuedConvoShort = "short" // ~8s window
 	ContinuedConvoLong  = "long"  // ~20s window (two-BMO conversations)
 
+	// Wake end-of-turn silence tiers: how long a pause must last before BMO
+	// treats your sentence as finished. Mapped to durations in cmd/bmo-pak.
+	WakeEndSilenceSnappy   = "snappy"   // ~1.0s
+	WakeEndSilenceBalanced = "balanced" // ~1.3s (default)
+	WakeEndSilencePatient  = "patient"  // ~1.6s
+
 	// Proactive talk levels: how often BMO may make a spontaneous idle
 	// remark. Off is the default — it is the only feature that spends API
 	// money unprompted.
@@ -176,6 +182,7 @@ type Config struct {
 	// reply (off/short/long); see the ContinuedConvo* constants.
 	WakeWordEnabled       bool          `json:"wake_word_enabled,omitempty"`
 	ContinuedConversation string        `json:"continued_conversation,omitempty"`
+	WakeEndSilence        string        `json:"wake_end_silence,omitempty"`
 	STT                   ProviderSet   `json:"stt"`
 	Chat                  ProviderSet   `json:"chat"`
 	TTS                   ProviderSet   `json:"tts"`
@@ -203,6 +210,7 @@ func Default() Config {
 		DeviceContext:         DefaultDeviceContext(),
 		ProactiveTalk:         ProactiveOff,
 		ContinuedConversation: ContinuedConvoShort,
+		WakeEndSilence:        WakeEndSilenceBalanced,
 	}
 }
 
@@ -268,6 +276,12 @@ func (c *Config) Normalize() {
 	default:
 		// Empty or unknown: default to short (a brief follow-up window).
 		c.ContinuedConversation = ContinuedConvoShort
+	}
+	switch c.WakeEndSilence {
+	case WakeEndSilenceSnappy, WakeEndSilenceBalanced, WakeEndSilencePatient:
+	default:
+		// Empty or unknown: default to balanced.
+		c.WakeEndSilence = WakeEndSilenceBalanced
 	}
 	if len(c.PTTButtons) == 0 {
 		c.PTTButtons = DefaultPTTButtons()
@@ -475,6 +489,11 @@ func SupportedRequestTimeouts() []int {
 // menu.
 func SupportedProactiveTalkLevels() []string {
 	return []string{ProactiveOff, ProactiveChatty, ProactiveRegular, ProactiveOccasional, ProactiveRare}
+}
+
+// WakeEndSilenceLevels returns the end-of-turn silence tiers in cycle order.
+func WakeEndSilenceLevels() []string {
+	return []string{WakeEndSilenceSnappy, WakeEndSilenceBalanced, WakeEndSilencePatient}
 }
 
 // ProactiveInterval returns the base interval between proactive remarks for

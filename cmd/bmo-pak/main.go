@@ -879,6 +879,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		switch snap.Current {
 		case assistant.StateIdle:
 			errorSince = time.Time{}
+			if snap.WakeEngaged {
+				// A hands-free wake interaction is in progress: hold the listening
+				// face for the whole session, exactly like push-to-talk — no idle
+				// scheduler, no proactive remarks mid-conversation. They resume on
+				// the next true return to idle.
+				expr = string(assistant.ExpressionListening)
+				break
+			}
 			if galleryActive && galleryIdx >= 0 && galleryIdx < len(galleryFaces) {
 				// Gallery preview: hold the user-selected face and freeze the idle
 				// scheduler until they step again or interact.
