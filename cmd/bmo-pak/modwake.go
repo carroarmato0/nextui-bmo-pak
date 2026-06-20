@@ -14,6 +14,10 @@ import (
 // wake-word classifier that replaces the stock "Hey BMO" model.
 const modWakeModelName = "wakeword/wake.onnx"
 
+// wakeIDDefault is the identity reported by wakeModelIdentity for any mod that
+// does not ship a custom wake model (they all share the stock classifier).
+const wakeIDDefault = "default"
+
 // buildWakeAssets locates the ONNX runtime library and base models in the pak,
 // and resolves the wake classifier from the active mod (validated against the
 // detector contract). On any problem — extraction failure, ORT init failure, or
@@ -57,6 +61,25 @@ func buildWakeAssets(activeMod mod.Mod, pakDir, platform, tmpDir string, logger 
 	logger.Infof("wake model: model=mod(%s)", activeMod.ID)
 	assets.WakeModel = path
 	return assets, cleanup
+}
+
+// wakeModelIdentity returns a cheap, stable key for the wake classifier a mod
+// resolves to, WITHOUT extracting or loading it: "mod:<id>" when the mod ships a
+// custom wakeword/wake.onnx, otherwise "default". reloadMod compares this against
+// the live detector's identity to skip an expensive onnxruntime rebuild when the
+// model is unchanged across a mod switch (e.g. switching between mods that both
+// fall back to the stock "Hey BMO" model). Opening (not reading) the file keeps
+// the check to a stat-like cost.
+func wakeModelIdentity(modFS fs.FS, modID string) string {
+	if modFS == nil {
+		return wakeIDDefault
+	}
+	f, err := modFS.Open(modWakeModelName)
+	if err != nil {
+		return wakeIDDefault
+	}
+	_ = f.Close()
+	return "mod:" + modID
 }
 
 // resolveWakeModel returns a filesystem path to the wake classifier to use: the

@@ -310,6 +310,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	var stopWake func()
 	var restartWake func(mod.Mod)
 	var wakeCleanup func()
+	// currentWakeID identifies the wake classifier the live detector was built
+	// for, so reloadMod can skip an onnxruntime rebuild when a mod switch does not
+	// actually change the model. Maintained by restartWake.
+	var currentWakeID string
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() && audioSession != nil {
@@ -380,6 +384,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				var assets wakeAssets
 				assets, wakeCleanup = buildWakeAssets(m, pakDir, platform, tmpDir, logger)
 				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels)
+				currentWakeID = wakeModelIdentity(m.FS, m.ID)
 			}
 			restartWake(activeMod)
 		}
@@ -480,8 +485,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		// Rebuild the wake detector for the new mod (picks up its custom wake
 		// model, or falls back to stock). Synchronous, on the main goroutine;
 		// nil unless AI + audio were initialized at startup.
+		// Rebuilding the wake detector recreates onnxruntime sessions, which is
+		// slow enough to stall the render loop. Skip it when the new mod resolves
+		// to the same wake model the live detector already runs (the common case:
+		// most mods ship no custom wake word and fall back to the stock model).
 		if restartWake != nil {
-			restartWake(active)
+			if id := wakeModelIdentity(active.FS, active.ID); id == currentWakeID {
+				logger.Infof("wake model unchanged (%s); keeping detector across mod switch", id)
+			} else {
+				restartWake(active)
+			}
 		}
 		if scheduler != nil {
 			scheduler.SetAvailable(modIdleFaces(active))

@@ -15,6 +15,26 @@ func (testLogger) Infof(string, ...any)  {}
 func (testLogger) Warnf(string, ...any)  {}
 func (testLogger) Debugf(string, ...any) {}
 
+func TestWakeModelIdentity(t *testing.T) {
+	custom := fstest.MapFS{"wakeword/wake.onnx": &fstest.MapFile{Data: []byte("x")}}
+	bare := fstest.MapFS{"faces/neutral.svg": &fstest.MapFile{Data: []byte("x")}}
+
+	if got := wakeModelIdentity(custom, "evil-bmo"); got != "mod:evil-bmo" {
+		t.Errorf("custom wake model: got %q, want %q", got, "mod:evil-bmo")
+	}
+	if got := wakeModelIdentity(bare, "evil-bmo"); got != "default" {
+		t.Errorf("no custom wake model: got %q, want %q", got, "default")
+	}
+	if got := wakeModelIdentity(nil, "whatever"); got != "default" {
+		t.Errorf("nil FS: got %q, want %q", got, "default")
+	}
+	// Two mods that both lack a custom model share an identity, so a switch
+	// between them is a no-op rebuild.
+	if wakeModelIdentity(bare, "a") != wakeModelIdentity(fstest.MapFS{}, "b") {
+		t.Error("mods without custom wake models must share the \"default\" identity")
+	}
+}
+
 func TestResolveWakeModelExtractsCustom(t *testing.T) {
 	want := []byte("fake-onnx-bytes")
 	modFS := fstest.MapFS{"wakeword/wake.onnx": &fstest.MapFile{Data: want}}
