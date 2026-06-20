@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"math/rand"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/carroarmato0/nextui-bmo/internal/audio"
 )
 
 // fakeVoice records the ordered sequence of pipeline calls the prank makes and
@@ -136,5 +140,71 @@ func TestPrankRoundsAlwaysTwoOrThree(t *testing.T) {
 		if n := roundsFn(); n != 2 && n != 3 {
 			t.Fatalf("rounds = %d, want 2 or 3", n)
 		}
+	}
+}
+
+// framesSource is a scripted audio.PCMSource that emits the given frames then
+// closes, so listenForReply can be driven deterministically.
+type framesSource struct{ frames [][]byte }
+
+func (s *framesSource) Start() error          { return nil }
+func (s *framesSource) Close() error          { return nil }
+func (s *framesSource) WritePCM([]byte) error { return nil }
+func (s *framesSource) Frames() <-chan []byte {
+	ch := make(chan []byte, len(s.frames))
+	for _, f := range s.frames {
+		ch <- f
+	}
+	close(ch)
+	return ch
+}
+
+func signalFrame(n int) []byte { //nolint:unparam // helper parameterized for clarity; tests pass a constant frame size
+	b := make([]byte, n)
+	for i := 0; i+1 < n; i += 2 {
+		binary.LittleEndian.PutUint16(b[i:i+2], uint16(int16(8192)))
+	}
+	return b
+}
+func silenceFrame(n int) []byte { return make([]byte, n) } //nolint:unparam // helper parameterized for clarity; tests pass a constant frame size
+
+func TestListenForReplyCapturesThenEndsOnSilence(t *testing.T) {
+	const frame = 100 // bytes per frame
+	const bps = 1000  // bytes/sec -> each frame = 0.1s
+	src := &framesSource{frames: [][]byte{
+		silenceFrame(frame), // pre-onset quiet (ignored)
+		signalFrame(frame),  // onset
+		signalFrame(frame),  // speech
+		silenceFrame(frame), // trailing silence (0.1s)
+		silenceFrame(frame), // trailing silence (0.2s) -> finishes
+	}}
+	router := audio.NewCaptureRouter(src, frame)
+	if err := router.Start(); err != nil {
+		t.Fatalf("router start: %v", err)
+	}
+	defer router.Close()
+
+	pcm := listenForReply(context.Background(), router, bps, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	if len(pcm) == 0 {
+		t.Fatal("expected captured PCM, got none")
+	}
+	// Capture starts at the onset signal frame and includes everything after.
+	if len(pcm) != 4*frame {
+		t.Fatalf("captured %d bytes, want %d (onset + 3 following frames)", len(pcm), 4*frame)
+	}
+}
+
+func TestListenForReplyReturnsNilWhenSilent(t *testing.T) {
+	const frame = 100
+	src := &framesSource{frames: [][]byte{silenceFrame(frame), silenceFrame(frame)}}
+	router := audio.NewCaptureRouter(src, frame)
+	if err := router.Start(); err != nil {
+		t.Fatalf("router start: %v", err)
+	}
+	defer router.Close()
+
+	pcm := listenForReply(context.Background(), router, 1000, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	if pcm != nil {
+		t.Fatalf("expected nil on all-silence input, got %d bytes", len(pcm))
 	}
 }

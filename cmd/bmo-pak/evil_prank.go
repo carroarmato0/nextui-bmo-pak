@@ -14,6 +14,9 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/carroarmato0/nextui-bmo/internal/audio"
+	"github.com/carroarmato0/nextui-bmo/internal/input"
 )
 
 // evilModID is the active-mod ID that unlocks the prank. It equals the example
@@ -129,5 +132,62 @@ func (s *prankSession) listenOnce(ctx context.Context) string {
 func (s *prankSession) logf(format string, args ...any) {
 	if s.logger != nil {
 		s.logger.Infof(format, args...)
+	}
+}
+
+// listenForReply subscribes to the capture router and waits up to onsetWindow
+// for speech to begin. Once it does, it captures the utterance until endSilence
+// of trailing quiet or maxCapture is reached, then returns the PCM. Returns nil
+// if no speech began before the window elapsed, the source ended, or ctx was
+// cancelled before any speech. This mirrors the wake loop's end-of-silence
+// batching (continueCapture) for a one-shot listen.
+func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSec int, onsetWindow, endSilence, maxCapture time.Duration, vad float64) []byte {
+	sub, cancel := router.Subscribe()
+	defer cancel()
+
+	buf := input.NewBuffer(bytesPerSec*int(maxCapture/time.Second) + bytesPerSec)
+	onsetDeadline := time.Now().Add(onsetWindow)
+	capturing := false
+	var captureStart time.Time
+	var silenceRun time.Duration
+
+	for {
+		select {
+		case <-ctx.Done():
+			if capturing {
+				return buf.End()
+			}
+			return nil
+		case batch, ok := <-sub:
+			if !ok {
+				if capturing {
+					return buf.End()
+				}
+				return nil
+			}
+			now := time.Now()
+			signal := audio.PCMHasSignal(batch, vad)
+			if !capturing {
+				if signal {
+					buf.Begin()
+					buf.Append(batch)
+					capturing = true
+					captureStart = now
+					silenceRun = 0
+				} else if now.After(onsetDeadline) {
+					return nil
+				}
+				continue
+			}
+			buf.Append(batch)
+			if signal {
+				silenceRun = 0
+			} else {
+				silenceRun += time.Duration(float64(len(batch)) / float64(bytesPerSec) * float64(time.Second))
+			}
+			if silenceRun >= endSilence || now.Sub(captureStart) >= maxCapture {
+				return buf.End()
+			}
+		}
 	}
 }
