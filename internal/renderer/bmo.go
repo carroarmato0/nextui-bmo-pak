@@ -544,6 +544,18 @@ func (r *Renderer) blitFace(expr string, frame FrameState, phase, epoch float64)
 			copy(r.pixels, buf)
 			return true
 		}
+		// While speaking, a freshly chosen emotion's lip-sync frames may not be
+		// built yet — rasterizing its six frames can lag the start of audio.
+		// Holding the static closed-mouth pose until the build lands reads as the
+		// mouth lagging the voice, so fall back to the pinned, always-resident
+		// speaking face: the mouth moves from the first frame, and the emotion's
+		// own lip-sync takes over the instant its build completes.
+		if frame.Speaking && expr != face.ExprSpeaking {
+			if buf, ok := r.anims.AnimFrame(face.ExprSpeaking, int(r.W), int(r.H), phase, epoch, frame.SpeakAmplitude); ok && len(buf) == len(r.pixels) {
+				copy(r.pixels, buf)
+				return true
+			}
+		}
 	}
 	if r.faces == nil {
 		return false

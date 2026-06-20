@@ -2,7 +2,59 @@ package renderer
 
 import (
 	"testing"
+
+	"github.com/carroarmato0/nextui-bmo/internal/face"
 )
+
+// framesStub serves built frames per expression; expressions absent from the
+// map report "not ready" (nil,false), like an animation still building.
+type framesStub struct {
+	frames map[string][]uint32
+}
+
+func (framesStub) IsTimeDriven(string) bool { return false }
+func (framesStub) FrameStep(string, int, int, float64, float64, float32) (int, bool) {
+	return 0, false
+}
+func (s framesStub) AnimFrame(expr string, w, h int, clock, epoch float64, signal float32) ([]uint32, bool) {
+	f, ok := s.frames[expr]
+	return f, ok
+}
+
+func TestBlitFaceSpeakingFallsBackToSpeakingFaceWhenEmotionNotReady(t *testing.T) {
+	speakingFrame := []uint32{11, 22, 33}
+	r := &Renderer{W: 1, H: 3, pixels: make([]uint32, 3)}
+	// "concerned" is absent (still building); only the pinned speaking face is ready.
+	r.anims = framesStub{frames: map[string][]uint32{face.ExprSpeaking: speakingFrame}}
+
+	if !r.blitFace("concerned", FrameState{Speaking: true}, 0, 0) {
+		t.Fatal("blitFace should succeed via the speaking-face fallback")
+	}
+	for i, want := range speakingFrame {
+		if r.pixels[i] != want {
+			t.Fatalf("pixels = %v, want the moving speaking frame %v", r.pixels, speakingFrame)
+		}
+	}
+}
+
+func TestBlitFaceSpeakingPrefersEmotionWhenReady(t *testing.T) {
+	concernedFrame := []uint32{7, 8, 9}
+	speakingFrame := []uint32{1, 2, 3}
+	r := &Renderer{W: 1, H: 3, pixels: make([]uint32, 3)}
+	r.anims = framesStub{frames: map[string][]uint32{
+		"concerned":       concernedFrame,
+		face.ExprSpeaking: speakingFrame,
+	}}
+
+	if !r.blitFace("concerned", FrameState{Speaking: true}, 0, 0) {
+		t.Fatal("blitFace should succeed with the emotion's own frames")
+	}
+	for i, want := range concernedFrame {
+		if r.pixels[i] != want {
+			t.Fatalf("pixels = %v, want the emotion frame %v (not the fallback)", r.pixels, concernedFrame)
+		}
+	}
+}
 
 func TestLayoutForScalesAcrossScreens(t *testing.T) {
 	compact := LayoutFor(640, 480)
