@@ -40,10 +40,10 @@ if [ ! -f "$DEST/libonnxruntime.so" ]; then
     echo "have libonnxruntime.so"
 fi
 
-# openWakeWord shared pipeline + a stock wake classifier (hey_jarvis) used as
-# the "Hey BMO" placeholder until a dedicated model is trained.
+# openWakeWord shared base pipeline only. The "Hey BMO" classifier is NOT
+# downloaded — it is the trained model committed at assets/wakeword/hey_bmo.onnx
+# and bundled by scripts/release.sh.
 fetch "$OWW_BASE/melspectrogram.onnx" "$MODELS/melspectrogram.onnx"
 fetch "$OWW_BASE/embedding_model.onnx" "$MODELS/embedding_model.onnx"
-fetch "$OWW_BASE/hey_jarvis_v0.1.onnx" "$MODELS/hey_bmo.onnx"
 
 echo "wake-word assets ready in $DEST"
