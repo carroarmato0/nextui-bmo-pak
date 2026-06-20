@@ -256,6 +256,21 @@ func TestMachineEmotionClearedOnFail(t *testing.T) {
 	}
 }
 
+func TestSetWakeEngagedRoundTripsThroughSnapshot(t *testing.T) {
+	m := NewMachine()
+	if m.Snapshot().WakeEngaged {
+		t.Fatal("new machine should not be wake-engaged")
+	}
+	m.SetWakeEngaged(true)
+	if !m.Snapshot().WakeEngaged {
+		t.Fatal("WakeEngaged should be true after SetWakeEngaged(true)")
+	}
+	m.SetWakeEngaged(false)
+	if m.Snapshot().WakeEngaged {
+		t.Fatal("WakeEngaged should be false after SetWakeEngaged(false)")
+	}
+}
+
 func TestRemarkFromIdleForProactiveRemarks(t *testing.T) {
 	if got := Transition(StateIdle, EventRemark); got != StateThinking {
 		t.Fatalf("Transition(idle, remark) = %q, want thinking", got)
