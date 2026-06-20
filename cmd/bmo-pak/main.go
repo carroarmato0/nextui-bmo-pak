@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -314,6 +315,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	// for, so reloadMod can skip an onnxruntime rebuild when a mod switch does not
 	// actually change the model. Maintained by restartWake.
 	var currentWakeID string
+	// Evil BMO prank easter egg (hidden, non-mod). prank is built in the AI
+	// block below; prankTick carries auto-trigger ticks to the main goroutine.
+	var prank *evilPrank
+	prankTick := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if cfg.UsesAI() && audioSession != nil {
@@ -370,6 +375,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			tmpDir := filepath.Join(os.TempDir(), "BMO")
 			_ = os.MkdirAll(tmpDir, 0o755)
 			gov := &power.Governor{Logf: logger.Warnf}
+			prankActive := &atomic.Bool{}
 			// restartWake (re)builds the wake detector for a mod, resolving its
 			// optional custom wake model. Called at startup and on every mod
 			// switch (synchronously, on the main goroutine) so the wake word
@@ -383,10 +389,40 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				}
 				var assets wakeAssets
 				assets, wakeCleanup = buildWakeAssets(m, pakDir, platform, tmpDir, logger)
-				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels, nil)
+				stopWake = startWakeWord(ctx, logger, machine, cfg, audioRouter, audioPipeline, gov, assets, audioCfg.SampleRate, audioCfg.Channels, prankActive)
 				currentWakeID = wakeModelIdentity(m.FS, m.ID)
 			}
 			restartWake(activeMod)
+
+			// Evil BMO prank easter egg (hidden, non-mod; see evil_prank.go).
+			// Gated on AI + the Evil BMO mod, re-checked at trigger time so a
+			// runtime mod/AI change enables or disables it immediately.
+			prankBytesPerSec := audio.BytesPerSecond(audioCfg.SampleRate, audioCfg.Channels, audio.BytesPerSampleS16LE)
+			prankEndSilence := wakeEndSilenceFor(cfg.WakeEndSilence)
+			prankRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+			session := &prankSession{
+				voice: pipelineVoice{p: audioPipeline},
+				listen: func(c context.Context) []byte {
+					return listenForReply(c, audioRouter, prankBytesPerSec, prankListenWindow, prankEndSilence, wakeMaxCapture, wakeVADLevel)
+				},
+				beginListen: func() { machine.Transition(assistant.EventListen) },
+				endListen: func() {
+					if machine.State() == assistant.StateListening {
+						machine.Transition(assistant.EventRest)
+					}
+				},
+				rounds: func() int { return 2 + prankRand.Intn(2) },
+				rng:    prankRand,
+				logger: logger,
+			}
+			prank = &evilPrank{
+				gate:   func() bool { return cfg.UsesAI() && activeMod.ID == evilModID },
+				idle:   func() bool { return machine.Snapshot().Current == assistant.StateIdle },
+				run:    session.run,
+				active: prankActive,
+				logger: logger,
+			}
+			startEvilPrankScheduler(ctx, prankTick, rand.New(rand.NewSource(time.Now().UnixNano()^0x5eed)), prankAutoMin, prankAutoSpan)
 		}
 	}
 	if stopPTT != nil {
@@ -576,6 +612,9 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		shuttingDownAt = time.Now()
 		// Cut any in-flight remark so the farewell clip plays alone instead of
 		// mixing with a quote/proactive line on the separate speech path.
+		if prank != nil {
+			prank.stop()
+		}
 		if audioPipeline != nil {
 			audioPipeline.InterruptSpeech()
 		}
@@ -670,6 +709,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			switch {
 			case activeMenu != nil:
 				setActiveMenu(nil)
+			case prank != nil && prank.stop():
+				if audioPipeline != nil {
+					audioPipeline.InterruptSpeech()
+				}
+				logger.Infof("evil prank aborted by B press")
 			case clipPlayer != nil && clipPlayer.Playing():
 				// Stop the clip's audio and its speaking animation; the machine
 				// is already idle during clip playback, so this returns to idle.
@@ -746,6 +790,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			galleryActive = true
 			galleryIdx = (galleryIdx + 1) % len(galleryFaces)
 			logger.Debugf("gallery: %s (%d/%d)", galleryFaces[galleryIdx], galleryIdx+1, len(galleryFaces))
+			return
+		}
+
+		// D-pad Down with no menu open is the hidden Evil BMO prank trigger
+		// (AI on + Evil BMO mod). No-op otherwise. With a menu open, Down still
+		// navigates via the switch below.
+		if action == input.NavDown && activeMenu == nil {
+			if prank != nil && !shuttingDown {
+				prank.trigger(ctx)
+			}
 			return
 		}
 
@@ -837,6 +891,16 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			default:
 				break drainNav
 			}
+		}
+
+		// Deliver any pending auto prank tick on the main goroutine, where the
+		// UI state it gates on (menu, shutdown) is safe to read.
+		select {
+		case <-prankTick:
+			if prank != nil && activeMenu == nil && !shuttingDown {
+				prank.trigger(ctx)
+			}
+		default:
 		}
 
 		// Pump SDL's event queue so the window stays responsive and display
