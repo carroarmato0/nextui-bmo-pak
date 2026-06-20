@@ -191,6 +191,7 @@ type wakeLoop struct {
 }
 
 func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
+	defer l.machine.SetWakeEngaged(false)
 	for {
 		select {
 		case <-ctx.Done():
@@ -205,6 +206,8 @@ func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
 }
 
 func (l *wakeLoop) beginCapture(now time.Time) {
+	l.wc.startSession()
+	l.machine.SetWakeEngaged(l.wc.Engaged())
 	l.machine.Transition(assistant.EventListen)
 	l.buffer.Begin()
 	l.capturing = true
@@ -272,6 +275,7 @@ func (l *wakeLoop) finishCapture(ctx context.Context) {
 		return
 	}
 	l.wc.resetFollowUps()
+	l.machine.SetWakeEngaged(l.wc.Engaged())
 }
 
 // processWakeUtterance runs the voice pipeline for a captured utterance with the
