@@ -39,6 +39,7 @@ type wakeController struct {
 	windowUntil     time.Time
 	maxFollowUps    int
 	followUps       int
+	engaged         bool
 }
 
 // observeState tracks whether BMO is currently speaking, recording the moment
@@ -89,8 +90,24 @@ func (c *wakeController) startFollowUp() {
 	c.windowUntil = time.Time{}
 }
 
+// startSession marks the beginning of a wake interaction. Idempotent: it is
+// called on the first capture and on every follow-up capture, so the session
+// stays engaged for the whole conversation.
+func (c *wakeController) startSession() {
+	c.engaged = true
+}
+
+// Engaged reports whether a wake interaction is in progress (from the first
+// capture until the conversation returns to idle).
+func (c *wakeController) Engaged() bool {
+	return c.engaged
+}
+
 // resetFollowUps is called when the conversation returns fully to idle.
-func (c *wakeController) resetFollowUps() { c.followUps = 0 }
+func (c *wakeController) resetFollowUps() {
+	c.followUps = 0
+	c.engaged = false
+}
 
 func continuedWindowFor(mode string) time.Duration {
 	switch mode {

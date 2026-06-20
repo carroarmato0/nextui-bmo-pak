@@ -94,3 +94,24 @@ func TestContinuedWindowForMapsModes(t *testing.T) {
 		t.Fatal("off window should be zero")
 	}
 }
+
+func TestWakeSessionEngagedLifecycle(t *testing.T) {
+	c := newTestController()
+	if c.Engaged() {
+		t.Fatal("fresh controller must not be engaged")
+	}
+	c.startSession()
+	if !c.Engaged() {
+		t.Fatal("startSession must engage")
+	}
+	// A follow-up capture keeps the session engaged.
+	c.startFollowUp()
+	if !c.Engaged() {
+		t.Fatal("follow-up must remain engaged")
+	}
+	// Conversation over.
+	c.resetFollowUps()
+	if c.Engaged() {
+		t.Fatal("resetFollowUps must disengage")
+	}
+}
