@@ -119,6 +119,23 @@ Mirror the existing `ContinuedConversation` enum pattern exactly.
   - Cycle handler (mirroring `settings_menu.go:273-274`) advances
     `WakeEndSilence` through `[snappy, balanced, patient]` via `nextInOrder`, and
     persists like the other settings.
+  - **Note:** `LISTEN PATIENCE` is a *separate* setting from `CONTINUED CONVO` —
+    they control different axes (end-of-turn silence vs. follow-up window) and
+    must remain distinct menu rows.
+
+### Documentation (README)
+
+`README.md` already documents the wake-word settings under
+**Configuration → Wake word (hands-free)** (the `CONTINUED CONVO` bullet at the
+list around line 163). Add a sibling bullet documenting the new setting, e.g.:
+
+> **LISTEN PATIENCE** (`wake_end_silence`: `snappy`/`balanced`/`patient`, default
+> `balanced`) sets how long a pause must last before BMO treats your sentence as
+> finished. `patient` avoids cutting off slow or thoughtful speech; `snappy`
+> responds sooner.
+
+Keep it parallel in tone/format to the existing `CONTINUED CONVO` bullet so the
+two related settings read as a pair.
 
 ## Testing
 
