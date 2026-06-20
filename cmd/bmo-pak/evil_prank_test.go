@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"math/rand"
 	"strings"
 	"sync/atomic"
@@ -15,10 +16,11 @@ import (
 // fakeVoice records the ordered sequence of pipeline calls the prank makes and
 // returns scripted values.
 type fakeVoice struct {
-	taunt      string
-	tauntErr   error
-	transcript string
-	calls      []string
+	taunt         string
+	tauntErr      error
+	transcript    string
+	transcribeErr error
+	calls         []string
 }
 
 func (f *fakeVoice) GenerateRemarkText(ctx context.Context, nudge string) (string, error) {
@@ -35,7 +37,7 @@ func (f *fakeVoice) SpeakRemark(ctx context.Context, nudge string) error {
 }
 func (f *fakeVoice) Transcribe(ctx context.Context, pcm []byte) (string, error) {
 	f.calls = append(f.calls, "transcribe")
-	return f.transcript, nil
+	return f.transcript, f.transcribeErr
 }
 
 // scriptedListen returns the next scripted capture result per call.
@@ -58,6 +60,7 @@ func newTestSession(v prankVoice, rounds int, listen func(context.Context) []byt
 		beginListen: func() {},
 		endListen:   func() {},
 		rounds:      func() int { return rounds },
+		pause:       func(context.Context) {},
 		rng:         rand.New(rand.NewSource(1)),
 	}
 }
@@ -71,6 +74,15 @@ func lastRemark(calls []string) string {
 	return ""
 }
 
+func firstRemark(calls []string) string {
+	for _, c := range calls {
+		if strings.HasPrefix(c, "remark:") {
+			return c
+		}
+	}
+	return ""
+}
+
 func TestPrankNoReplyOnFirstListen(t *testing.T) {
 	v := &fakeVoice{taunt: "ha, nice try"}
 	s := newTestSession(v, 3, scriptedListen(nil))
@@ -79,8 +91,12 @@ func TestPrankNoReplyOnFirstListen(t *testing.T) {
 	if v.calls[0] != "generate" {
 		t.Fatalf("first call = %q, want generate", v.calls[0])
 	}
-	if !strings.HasPrefix(v.calls[1], "verbatim:Hey B") || !strings.Contains(v.calls[1], "ha, nice try") {
-		t.Fatalf("second call = %q, want fused wake+taunt", v.calls[1])
+	// Wake call and taunt are spoken as two separate utterances (controlled pause).
+	if v.calls[1] != "verbatim:Hey BMO" && v.calls[1] != "verbatim:Hey BEEMO" {
+		t.Fatalf("second call = %q, want a standalone wake phrase", v.calls[1])
+	}
+	if v.calls[2] != "verbatim:ha, nice try" {
+		t.Fatalf("third call = %q, want the taunt as its own utterance", v.calls[2])
 	}
 	if !strings.Contains(lastRemark(v.calls), noReplyNudge) {
 		t.Fatalf("expected no-reply remark, got %q", lastRemark(v.calls))
@@ -89,6 +105,97 @@ func TestPrankNoReplyOnFirstListen(t *testing.T) {
 		if c == "transcribe" {
 			t.Fatal("must not transcribe when nobody replied")
 		}
+	}
+}
+
+func TestPrankSplitsWakeAndTaunt(t *testing.T) {
+	v := &fakeVoice{taunt: "you call that a backlog?"}
+	s := newTestSession(v, 2, scriptedListen(nil))
+	s.run(context.Background())
+
+	var verbatims []string
+	for _, c := range v.calls {
+		if after, ok := strings.CutPrefix(c, "verbatim:"); ok {
+			verbatims = append(verbatims, after)
+		}
+	}
+	if len(verbatims) != 2 {
+		t.Fatalf("want exactly 2 verbatim utterances (wake, taunt), got %v", verbatims)
+	}
+	if verbatims[0] != "Hey BMO" && verbatims[0] != "Hey BEEMO" {
+		t.Fatalf("first utterance = %q, want a bare wake phrase (no taunt fused in)", verbatims[0])
+	}
+	if verbatims[1] != "you call that a backlog?" {
+		t.Fatalf("second utterance = %q, want the taunt alone", verbatims[1])
+	}
+}
+
+func TestPrankPauseRunsBetweenWakeAndTaunt(t *testing.T) {
+	v := &fakeVoice{taunt: "t"}
+	s := newTestSession(v, 2, scriptedListen(nil))
+	order := []string{}
+	s.pause = func(context.Context) { order = append(order, "pause") }
+	// Wrap voice to record verbatim ordering relative to the pause.
+	s.voice = &orderingVoice{fakeVoice: v, order: &order}
+	s.run(context.Background())
+
+	// Expect: wake utterance, then pause, then taunt utterance.
+	want := []string{"wake", "pause", "taunt"}
+	if len(order) < 3 || order[0] != want[0] || order[1] != want[1] || order[2] != want[2] {
+		t.Fatalf("ordering = %v, want wake -> pause -> taunt", order)
+	}
+}
+
+// orderingVoice records the order of the two verbatim calls relative to pause.
+type orderingVoice struct {
+	*fakeVoice
+	order *[]string
+	spoke bool
+}
+
+func (o *orderingVoice) SpeakVerbatim(ctx context.Context, text string) error {
+	if !o.spoke {
+		*o.order = append(*o.order, "wake")
+		o.spoke = true
+	} else {
+		*o.order = append(*o.order, "taunt")
+	}
+	return o.fakeVoice.SpeakVerbatim(ctx, text)
+}
+
+func TestPrankGenericComebackWhenTranscribeFails(t *testing.T) {
+	// Heard a reply but STT failed: Evil must still follow up (generic comeback),
+	// not claim nobody answered.
+	v := &fakeVoice{taunt: "t", transcribeErr: errors.New("context deadline exceeded")}
+	s := newTestSession(v, 3, scriptedListen([]byte{1}, nil))
+	s.run(context.Background())
+
+	first := firstRemark(v.calls)
+	if !strings.Contains(first, genericComebackNudge) {
+		t.Fatalf("expected generic comeback after transcribe failure, got %q", first)
+	}
+	if strings.Contains(first, noReplyNudge) {
+		t.Fatal("must NOT use the no-reply line when a reply was heard")
+	}
+}
+
+func TestPrankGenericComebackWhenTranscriptEmpty(t *testing.T) {
+	// Heard audio but the transcript came back blank: still a generic comeback.
+	v := &fakeVoice{taunt: "t", transcript: "   "}
+	s := newTestSession(v, 3, scriptedListen([]byte{1}, nil))
+	s.run(context.Background())
+	if !strings.Contains(firstRemark(v.calls), genericComebackNudge) {
+		t.Fatalf("expected generic comeback for blank transcript, got %q", firstRemark(v.calls))
+	}
+}
+
+func TestPrankGenericCloserOnFinalRoundWhenTranscribeFails(t *testing.T) {
+	v := &fakeVoice{taunt: "t", transcribeErr: errors.New("boom")}
+	s := newTestSession(v, 1, scriptedListen([]byte{1}))
+	s.run(context.Background())
+	last := lastRemark(v.calls)
+	if !strings.Contains(last, genericCloserNudge) || !strings.Contains(last, closerNudgeMarker) {
+		t.Fatalf("expected generic closer on final round, got %q", last)
 	}
 }
 

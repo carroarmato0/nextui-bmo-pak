@@ -412,8 +412,15 @@ func run(stdout io.Writer, stderr io.Writer) error {
 					}
 				},
 				rounds: func() int { return 2 + prankRand.Intn(2) },
-				rng:    prankRand,
-				logger: logger,
+				pause: func(c context.Context) {
+					select {
+					case <-time.After(prankWakePause):
+					case <-c.Done():
+					}
+				},
+				transcribeTimeout: prankTranscribeTimeout,
+				rng:               prankRand,
+				logger:            logger,
 			}
 			prank = &evilPrank{
 				gate:   func() bool { return cfg.UsesAI() && activeMod.ID == evilModID },
