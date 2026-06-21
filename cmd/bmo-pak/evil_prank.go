@@ -48,20 +48,32 @@ const prankListenWindow = 30 * time.Second
 // also gives the other device time to wake and start listening before the taunt.
 const prankWakePause = 1200 * time.Millisecond
 
+// prankReplySettle is how long Evil BMO discards capture before it starts
+// listening for the victim's reply. Both devices share a single hw:0,0
+// mic/speaker, so the tail of Evil BMO's own taunt (playback bleed + room echo)
+// is still arriving on the capture stream the instant the taunt "ends". Without
+// this drain that self-echo trips a false onset, and because the victim needs
+// ~7s (wake->STT->chat->TTS) before it answers, the false capture closes on the
+// gap's silence and Evil BMO fires its next line straight over the victim
+// (observed on hardware 2026-06-21). Draining the echo lets prankListenWindow
+// wait for the victim's real reply onset. See TestListenForReplyDrainsSelfEchoBeforeOnset.
+const prankReplySettle = 1500 * time.Millisecond
+
 // prankReplyMaxCapture caps how much of the victim's reply Evil BMO records
-// before transcribing. It is deliberately shorter than the wake capture: the
-// prank only needs the gist to fire a comeback, and a shorter clip both ends
-// the listen sooner and uploads less audio to STT. That cuts the silent
-// turnaround between rounds — the victim's continued-conversation window gives
-// up after only a few seconds of quiet (it burns its follow-up budget on
-// spurious mic noise), so Evil BMO must speak its next line quickly or the
-// victim returns to idle and never hears it (observed on hardware 2026-06-21).
-const prankReplyMaxCapture = 6 * time.Second
+// before transcribing. It must comfortably exceed a full victim utterance
+// (~12s observed on hardware): capping shorter cuts the recording mid-reply, so
+// Evil BMO transcribes a fragment and starts its comeback while the victim is
+// still talking — the same overlap the settle drain fixes, at the tail instead
+// of the head. The capture normally ends on prankReplyEndSilence when the victim
+// stops; this is only the worst-case bound (hardware 2026-06-21).
+const prankReplyMaxCapture = 16 * time.Second
 
 // prankReplyEndSilence ends the reply capture after this much trailing quiet.
-// Snappy and independent of the user's wake_end_silence so Evil BMO turns
-// around fast between rounds; prankReplyMaxCapture bounds the worst case.
-const prankReplyEndSilence = 800 * time.Millisecond
+// It must tolerate the brief pauses inside a multi-sentence reply without
+// closing early (a premature close means Evil BMO talks over the rest), yet be
+// short enough that Evil BMO answers promptly once the victim truly stops, while
+// the victim's continued-conversation window is still open to hear it.
+const prankReplyEndSilence = 1500 * time.Millisecond
 
 // prankTranscribeTimeout bounds the STT call on a captured reply so a slow or
 // contended backend can't stall the comeback. A reply is up to
@@ -71,7 +83,7 @@ const prankReplyEndSilence = 800 * time.Millisecond
 // comeback (observed on hardware 2026-06-20). On timeout the prank still
 // follows up (generic comeback) because it knows a reply was heard. See
 // TestPrankReplyBudgetsArePatient.
-const prankTranscribeTimeout = 25 * time.Second
+const prankTranscribeTimeout = 30 * time.Second
 
 // evilWakePhrases are spoken as a standalone utterance to trip a nearby device's
 // wake detector, immediately before the (separately spoken) taunt. They are
@@ -260,52 +272,116 @@ func (s *prankSession) logf(format string, args ...any) {
 // maxCapture keeps this a fully self-contained capture primitive (all timing
 // knobs are arguments); the lone production caller passing wakeMaxCapture is
 // incidental, so unparam's "always the same" warning is expected here.
-func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSec int, onsetWindow, endSilence, maxCapture time.Duration, vad float64) []byte { //nolint:unparam // see note above
+// pcmDuration converts a PCM byte count into its playback duration at the given
+// rate, used to measure settle/silence windows in audio-time rather than
+// wall-clock so they track captured samples deterministically.
+func pcmDuration(n, bytesPerSec int) time.Duration {
+	return time.Duration(float64(n) / float64(bytesPerSec) * float64(time.Second))
+}
+
+// drainSelfEcho discards `settle` worth of audio from sub before reply onset
+// detection begins. On the shared hw:0,0 mic/speaker the tail of Evil BMO's own
+// taunt is still arriving when it starts listening; draining it stops that echo
+// from tripping a false onset. Returns false if ctx was cancelled or the stream
+// ended during the drain (caller has nothing to capture).
+func drainSelfEcho(ctx context.Context, sub <-chan []byte, settle time.Duration, bytesPerSec int) bool {
+	var settled time.Duration
+	for settled < settle {
+		select {
+		case <-ctx.Done():
+			return false
+		case batch, ok := <-sub:
+			if !ok {
+				return false
+			}
+			settled += pcmDuration(len(batch), bytesPerSec)
+		}
+	}
+	return true
+}
+
+// replyCapture is the onset-then-silence state machine for one reply capture.
+// It waits for speech onset until onsetDeadline, then records until endSilence of
+// trailing quiet or maxCapture is reached. Kept as a type so listenForReply's
+// receive loop stays a thin shell over feed.
+type replyCapture struct {
+	buf           *input.Buffer
+	bytesPerSec   int
+	endSilence    time.Duration
+	maxCapture    time.Duration
+	vad           float64
+	onsetDeadline time.Time
+
+	capturing    bool
+	captureStart time.Time
+	silenceRun   time.Duration
+}
+
+// feed processes one batch at time now. done is true once the capture is
+// complete (or the onset window elapsed with no speech); result holds the
+// captured PCM, nil when nothing was captured.
+func (rc *replyCapture) feed(batch []byte, now time.Time) (done bool, result []byte) {
+	signal := audio.PCMHasSignal(batch, rc.vad)
+	if !rc.capturing {
+		if signal {
+			rc.buf.Begin()
+			rc.buf.Append(batch)
+			rc.capturing = true
+			rc.captureStart = now
+			rc.silenceRun = 0
+		} else if now.After(rc.onsetDeadline) {
+			return true, nil
+		}
+		return false, nil
+	}
+	rc.buf.Append(batch)
+	if signal {
+		rc.silenceRun = 0
+	} else {
+		rc.silenceRun += pcmDuration(len(batch), rc.bytesPerSec)
+	}
+	if rc.silenceRun >= rc.endSilence || now.Sub(rc.captureStart) >= rc.maxCapture {
+		return true, rc.buf.End()
+	}
+	return false, nil
+}
+
+// flush returns whatever was captured when the stream ends or the context is
+// cancelled mid-capture.
+func (rc *replyCapture) flush() []byte {
+	if rc.capturing {
+		return rc.buf.End()
+	}
+	return nil
+}
+
+func listenForReply(ctx context.Context, router *audio.CaptureRouter, bytesPerSec int, settle, onsetWindow, endSilence, maxCapture time.Duration, vad float64) []byte { //nolint:unparam // see note above
 	sub, cancel := router.Subscribe()
 	defer cancel()
 
-	buf := input.NewBuffer(bytesPerSec*int(maxCapture/time.Second) + bytesPerSec)
-	onsetDeadline := time.Now().Add(onsetWindow)
-	capturing := false
-	var captureStart time.Time
-	var silenceRun time.Duration
+	if settle > 0 && !drainSelfEcho(ctx, sub, settle, bytesPerSec) {
+		return nil
+	}
+
+	rc := &replyCapture{
+		buf:           input.NewBuffer(bytesPerSec*int(maxCapture/time.Second) + bytesPerSec),
+		bytesPerSec:   bytesPerSec,
+		endSilence:    endSilence,
+		maxCapture:    maxCapture,
+		vad:           vad,
+		onsetDeadline: time.Now().Add(onsetWindow),
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			if capturing {
-				return buf.End()
-			}
-			return nil
+			return rc.flush()
 		case batch, ok := <-sub:
 			if !ok {
-				if capturing {
-					return buf.End()
-				}
-				return nil
+				return rc.flush()
 			}
-			now := time.Now()
-			signal := audio.PCMHasSignal(batch, vad)
-			if !capturing {
-				if signal {
-					buf.Begin()
-					buf.Append(batch)
-					capturing = true
-					captureStart = now
-					silenceRun = 0
-				} else if now.After(onsetDeadline) {
-					return nil
-				}
-				continue
-			}
-			buf.Append(batch)
-			if signal {
-				silenceRun = 0
-			} else {
-				silenceRun += time.Duration(float64(len(batch)) / float64(bytesPerSec) * float64(time.Second))
-			}
-			if silenceRun >= endSilence || now.Sub(captureStart) >= maxCapture {
-				return buf.End()
+			if done, result := rc.feed(batch, time.Now()); done {
+				return result
 			}
 		}
 	}

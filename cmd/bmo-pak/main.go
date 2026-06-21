@@ -402,11 +402,12 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			session := &prankSession{
 				voice: pipelineVoice{p: audioPipeline},
 				listen: func(c context.Context) []byte {
-					// Shorter reply capture + snappy end-silence (both independent of the
-					// user's wake settings) keep Evil BMO's between-round turnaround quick,
-					// so the victim's continued-conversation window does not give up before
-					// the next line. See evil_prank.go reply-capture constants.
-					return listenForReply(c, audioRouter, prankBytesPerSec, prankListenWindow, prankReplyEndSilence, prankReplyMaxCapture, wakeVADLevel)
+					// Drain Evil BMO's own taunt echo (prankReplySettle), then wait
+					// patiently for the victim to run its full wake->STT->chat->TTS
+					// pipeline and reply, capturing the whole utterance so the comeback
+					// fires only after the victim stops — not over it. All independent
+					// of the user's wake settings. See evil_prank.go reply-capture constants.
+					return listenForReply(c, audioRouter, prankBytesPerSec, prankReplySettle, prankListenWindow, prankReplyEndSilence, prankReplyMaxCapture, wakeVADLevel)
 				},
 				beginListen: func() { machine.Transition(assistant.EventListen) },
 				endListen: func() {

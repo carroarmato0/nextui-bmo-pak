@@ -344,6 +344,33 @@ func (s *framesSource) Frames() <-chan []byte {
 	return ch
 }
 
+// pacedFramesSource delivers frames one at a time over an unbuffered channel
+// with a small gap between them, modelling a real-time capture device. The
+// plain framesSource pre-buffers every frame and lets the router burst them at
+// the 4-deep subscriber channel, which silently drops the overflow (flush uses a
+// non-blocking send) — fine for the short fixtures, but a longer scenario that
+// pauses the consumer (e.g. a settle drain) loses frames. Pacing keeps the
+// consumer in step so the fixture is deterministic.
+type pacedFramesSource struct {
+	frames [][]byte
+	pace   time.Duration
+}
+
+func (s *pacedFramesSource) Start() error          { return nil }
+func (s *pacedFramesSource) Close() error          { return nil }
+func (s *pacedFramesSource) WritePCM([]byte) error { return nil }
+func (s *pacedFramesSource) Frames() <-chan []byte {
+	ch := make(chan []byte)
+	go func() {
+		defer close(ch)
+		for _, f := range s.frames {
+			ch <- f
+			time.Sleep(s.pace)
+		}
+	}()
+	return ch
+}
+
 func signalFrame(n int) []byte { //nolint:unparam // helper parameterized for clarity; tests pass a constant frame size
 	b := make([]byte, n)
 	for i := 0; i+1 < n; i += 2 {
@@ -369,13 +396,67 @@ func TestListenForReplyCapturesThenEndsOnSilence(t *testing.T) {
 	}
 	defer router.Close()
 
-	pcm := listenForReply(context.Background(), router, bps, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	pcm := listenForReply(context.Background(), router, bps, 0, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
 	if len(pcm) == 0 {
 		t.Fatal("expected captured PCM, got none")
 	}
 	// Capture starts at the onset signal frame and includes everything after.
 	if len(pcm) != 4*frame {
 		t.Fatalf("captured %d bytes, want %d (onset + 3 following frames)", len(pcm), 4*frame)
+	}
+}
+
+// TestListenForReplyDrainsSelfEchoBeforeOnset reproduces the cross-device overlap
+// bug (hardware 2026-06-21): Evil BMO shares one hw:0,0 mic/speaker, so the tail
+// of its own taunt bleeds into capture the instant it starts listening. That
+// false onset (followed by the gap before the victim's ~7s-latency reply) made
+// listenForReply return a sliver of echo+silence, and Evil BMO fired its next
+// line straight over the victim. The settle window must discard that self-echo so
+// onset detection waits for the victim's real reply.
+func TestListenForReplyDrainsSelfEchoBeforeOnset(t *testing.T) {
+	const frame = 100 // bytes per frame
+	const bps = 1000  // bytes/sec -> each frame = 0.1s
+	// 0.3s of self-echo, a 0.2s gap, then the victim's real 0.2s reply.
+	frames := [][]byte{
+		signalFrame(frame),  // echo tail (0.1s) -- must be drained
+		signalFrame(frame),  // echo tail (0.2s)
+		signalFrame(frame),  // echo tail (0.3s)
+		silenceFrame(frame), // gap before victim replies (0.1s)
+		silenceFrame(frame), // gap (0.2s)
+		signalFrame(frame),  // victim reply onset
+		signalFrame(frame),  // victim reply
+		silenceFrame(frame), // trailing silence (0.1s)
+		silenceFrame(frame), // trailing silence (0.2s) -> finishes
+	}
+	newRouter := func() *audio.CaptureRouter {
+		// Paced so the router does not burst-drop frames at the subscriber buffer
+		// while listenForReply is draining the settle window.
+		src := &pacedFramesSource{frames: append([][]byte(nil), frames...), pace: 2 * time.Millisecond}
+		r := audio.NewCaptureRouter(src, frame)
+		if err := r.Start(); err != nil {
+			t.Fatalf("router start: %v", err)
+		}
+		return r
+	}
+
+	// Without a settle window the echo tail is captured as the "reply": onset on
+	// frame 1, closing after 0.2s of silence at frame 5 -> 5 frames of garbage,
+	// the victim's real reply never reached.
+	r0 := newRouter()
+	defer r0.Close()
+	echo := listenForReply(context.Background(), r0, bps, 0, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	if len(echo) != 5*frame {
+		t.Fatalf("no-settle baseline captured %d bytes, want %d (the self-echo bug)", len(echo), 5*frame)
+	}
+
+	// With a 0.3s settle the echo is drained; onset fires on the victim's real
+	// reply (frame 6) and the capture is the 2 reply frames + 2 trailing-silence
+	// frames that close it.
+	r1 := newRouter()
+	defer r1.Close()
+	reply := listenForReply(context.Background(), r1, bps, 300*time.Millisecond, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	if len(reply) != 4*frame {
+		t.Fatalf("with settle captured %d bytes, want %d (victim reply only, echo drained)", len(reply), 4*frame)
 	}
 }
 
@@ -388,7 +469,7 @@ func TestListenForReplyReturnsNilWhenSilent(t *testing.T) {
 	}
 	defer router.Close()
 
-	pcm := listenForReply(context.Background(), router, 1000, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
+	pcm := listenForReply(context.Background(), router, 1000, 0, prankListenWindow, 200*time.Millisecond, 10*time.Second, 0.01)
 	if pcm != nil {
 		t.Fatalf("expected nil on all-silence input, got %d bytes", len(pcm))
 	}
@@ -498,7 +579,7 @@ func TestListenForReplyReturnsNilWhenOnsetWindowElapses(t *testing.T) {
 	}
 	defer router.Close()
 
-	pcm := listenForReply(context.Background(), router, 1000, time.Nanosecond, 200*time.Millisecond, 10*time.Second, 0.01)
+	pcm := listenForReply(context.Background(), router, 1000, 0, time.Nanosecond, 200*time.Millisecond, 10*time.Second, 0.01)
 	if pcm != nil {
 		t.Fatalf("expected nil when onset window elapses, got %d bytes", len(pcm))
 	}
