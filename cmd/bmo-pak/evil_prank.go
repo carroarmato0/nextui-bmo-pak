@@ -97,20 +97,27 @@ var evilWakePhrases = []string{"Hey, Beemo.", "Hey, Bee-Moh."}
 // sequence can be asserted in tests without pinning the full wording.
 const closerNudgeMarker = "End this exchange"
 
+// The prank nudges are stage directions appended to Evil BMO's persona for each
+// generated line. They establish the scene the persona alone does not know: the
+// nearby device is ANOTHER BMO unit — a naive, chipper counterpart — and Evil
+// BMO is knowingly trying to provoke and outwit it. Every nudge tells the model
+// to address that other BMO directly (second person), so Evil BMO sounds like it
+// is taunting its twin, not narrating about "a BMO" to a user (hardware feedback
+// 2026-06-21).
 const (
-	tauntNudge = "You are about to prank a nearby BMO unit. In one short sentence, ask it a trick question or make a cutting, in-character remark designed to provoke it. Do NOT greet it, do NOT begin with \"Hey\", and do NOT say its name (\"BMO\" or \"Beemo\") — go straight into the barb. Reply with only that single line — no preamble, no quotation marks."
+	tauntNudge = "A nearby device is another BMO unit — a naive, chipper counterpart — and you are deliberately trying to provoke and outwit it. You are speaking directly TO it, not about it. In one short sentence, ask it a trick question or make a cutting, in-character barb designed to get under its circuits. Do NOT greet it, do NOT begin with \"Hey\", and do NOT say its name (\"BMO\" or \"Beemo\") — go straight into the barb. Reply with only that single line — no preamble, no quotation marks."
 
-	noReplyNudge = "You taunted a nearby BMO but no one answered. Make one short, smug, in-character remark about being ignored or there being no one worth talking to. Reply with only that line."
+	noReplyNudge = "You taunted a nearby BMO unit — your naive counterpart — but it never answered. Speaking as if straight at it, make one short, smug, in-character remark about it being too dim or too scared to respond. Reply with only that line."
 
-	lostInterestNudge = "The BMO you were taunting has gone quiet mid-conversation. Make one short, dismissive, in-character remark about it losing its nerve, then drop it. Reply with only that line."
+	lostInterestNudge = "The nearby BMO unit you were taunting — your naive counterpart — has gone quiet mid-exchange. Speaking directly to it, make one short, dismissive, in-character remark about it losing its nerve, then drop it. Reply with only that line."
 
-	comebackNudgeFmt = "A nearby BMO answered your taunt by saying: %q. In one short, in-character line, mock its answer or fire back a cutting comeback. Reply with only that line."
+	comebackNudgeFmt = "You are trading taunts with a nearby BMO unit — your naive counterpart that you are trying to outwit. It just answered you: %q. Speaking directly TO it, fire back one short, in-character line that mocks its answer or one-ups it. Reply with only that line."
 
-	closerNudgeFmt = "End this exchange. A nearby BMO answered: %q. Reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
+	closerNudgeFmt = "End this exchange with a nearby BMO unit — your naive counterpart. It just answered you: %q. Speaking directly to it, reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
 
-	genericComebackNudge = "A nearby BMO answered your taunt, but its reply was too garbled to make out. Fire back one short, in-character comeback mocking its mumbling. Reply with only that line."
+	genericComebackNudge = "You are trading taunts with a nearby BMO unit — your naive counterpart — but its reply was too garbled to make out. Speaking directly to it, fire back one short, in-character comeback mocking its mumbling. Reply with only that line."
 
-	genericCloserNudge = "End this exchange. A nearby BMO mumbled a reply you could not make out. Reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
+	genericCloserNudge = "End this exchange with a nearby BMO unit — your naive counterpart — that just mumbled a reply you could not make out. Speaking directly to it, reply with one short, dismissive, in-character sign-off. Do NOT ask a question or invite any further reply. Reply with only that line."
 )
 
 // wakeAddressPrefix matches a leading greeting that re-addresses BMO by name
