@@ -11,6 +11,28 @@
 
 ---
 
+## Contents
+
+- [What is BMO?](#what-is-bmo)
+- [Features](#features)
+- [Supported devices](#supported-devices)
+- [Gallery](#gallery)
+- [Installation](#installation)
+- [Configuration](#configuration)
+  - [AI providers](#ai-providers)
+    - [Getting an OpenAI API key](#getting-an-openai-api-key-easiest-way-to-enable-ai)
+    - [Wake word (hands-free)](#wake-word-hands-free)
+  - [Controls](#controls)
+- [Documentation](#documentation)
+- [Mods](#mods)
+  - [Evil BMO (bundled mod)](#evil-bmo-bundled-mod)
+- [FAQ](#faq)
+- [Building from source](#building-from-source)
+- [Support](#support)
+- [License](#license)
+
+---
+
 ## What is BMO?
 
 BMO is a fullscreen, animated AI voice assistant and desk companion packaged
