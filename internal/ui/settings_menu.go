@@ -7,7 +7,11 @@ import (
 	"github.com/carroarmato0/nextui-bmo/internal/config"
 )
 
-var logLevelOrder = []string{"debug", "info", "warn", "error"}
+// logLevelDebug is the most verbose log level; named so the cycle order and the
+// "is debug active" check below share a single literal.
+const logLevelDebug = "debug"
+
+var logLevelOrder = []string{logLevelDebug, "info", "warn", "error"}
 
 // ModChoice is one selectable mod in the MOD cycle item. ID is persisted to
 // config.ActiveMod; Label is the already-formatted display string.
@@ -146,7 +150,7 @@ const settingsSlotCount = 22
 // Overlay can never drift out of sync. AI-only rows are hidden (not just
 // disabled) when the assistant is not in AI mode, grouping them under MODE.
 func (m *SettingsMenu) slots() []settingsSlot {
-	isDebug := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) == "debug"
+	isDebug := strings.ToLower(strings.TrimSpace(m.cfg.LogLevel)) == logLevelDebug
 	isAI := m.cfg.Mode == config.ModeAI
 	aiToggle := func(code, label string, on bool) settingsSlot {
 		return settingsSlot{OverlayItem{Code: code, Label: label, Selected: on, Hidden: !isAI, Indent: true}, isAI}
