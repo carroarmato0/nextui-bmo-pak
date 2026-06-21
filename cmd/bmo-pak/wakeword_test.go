@@ -52,7 +52,7 @@ func TestWakeObserveStateRecordsSpeechEnd(t *testing.T) {
 func TestContinuedConversationReopensWindow(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 8 * time.Second
-	c.noteReply(c.now, false)
+	c.captureFinished(c.now, true, false)
 	if !c.windowOpen(c.now.Add(3 * time.Second)) {
 		t.Fatal("follow-up window should be open")
 	}
@@ -64,7 +64,7 @@ func TestContinuedConversationReopensWindow(t *testing.T) {
 func TestContinuedConversationOffNeverOpens(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 0 // off
-	c.noteReply(c.now, false)
+	c.captureFinished(c.now, true, false)
 	if c.windowOpen(c.now.Add(time.Second)) {
 		t.Fatal("window must stay closed when continued conversation is off")
 	}
@@ -74,11 +74,30 @@ func TestFollowUpCapBacksOff(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 8 * time.Second
 	c.maxFollowUps = 2
-	c.noteReply(c.now, false) // initial command reply: free, opens the window
-	c.noteReply(c.now, true)  // follow-up 1
-	c.noteReply(c.now, true)  // follow-up 2 -> hits the cap
+	c.captureFinished(c.now, true, false) // initial command reply: free, opens window
+	c.captureFinished(c.now, true, true)  // follow-up 1
+	c.captureFinished(c.now, true, true)  // follow-up 2 -> hits the cap
 	if c.windowOpen(c.now.Add(time.Second)) {
 		t.Fatal("window must stay closed after max follow-ups")
+	}
+}
+
+// TestInitialSilentCommandKeepsListening is the regression for the victim
+// ignoring the Evil BMO taunt (hardware 2026-06-21): the taunt lands a beat
+// after the wake word, so the victim's first capture is silence. It must keep
+// listening (window open) to catch the taunt instead of dropping straight to
+// idle and cycling idle-face animations.
+func TestInitialSilentCommandKeepsListening(t *testing.T) {
+	c := newTestController()
+	c.continuedWindow = 20 * time.Second
+	if !c.captureFinished(c.now, false, false) {
+		t.Fatal("a silent initial command must keep BMO listening for the real utterance")
+	}
+	if c.followUps != 0 {
+		t.Fatalf("a silent initial command must not spend budget, followUps=%d", c.followUps)
+	}
+	if !c.windowOpen(c.now.Add(5 * time.Second)) {
+		t.Fatal("window should be open to catch the delayed utterance")
 	}
 }
 
@@ -86,26 +105,25 @@ func TestFollowUpCapBacksOff(t *testing.T) {
 // dropping out mid-prank (hardware 2026-06-21): the other device is silent for
 // several seconds each round while it transcribes/thinks/speaks, and those
 // no-signal captures used to each spend a follow-up slot, exhausting the budget
-// after only a couple of real exchanges. Only productive replies may spend it.
+// after only a couple of real exchanges. Only productive follow-ups may spend it.
 func TestSilentCapturesDoNotSpendFollowUpBudget(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 20 * time.Second
 	c.maxFollowUps = 2
 
-	c.noteReply(c.now, false) // initial command reply: free
+	c.captureFinished(c.now, true, false) // initial command reply: free
 	if c.followUps != 0 {
 		t.Fatalf("initial reply must not spend budget, followUps=%d", c.followUps)
 	}
-	// Silent captures within the window call noteReply for nobody: budget intact,
-	// window still anchored to the initial reply.
-	if !c.windowOpen(c.now.Add(5 * time.Second)) {
-		t.Fatal("window should still be open after silence within it")
+	// A silent follow-up within the window keeps listening without spending.
+	if !c.captureFinished(c.now.Add(5*time.Second), false, true) {
+		t.Fatal("silent follow-up within the window should keep listening")
 	}
 	if c.followUps != 0 {
 		t.Fatalf("silence must not spend budget, followUps=%d", c.followUps)
 	}
 	// A real follow-up spends one unit and re-anchors the window.
-	c.noteReply(c.now.Add(6*time.Second), true)
+	c.captureFinished(c.now.Add(6*time.Second), true, true)
 	if c.followUps != 1 {
 		t.Fatalf("real follow-up should spend exactly one unit, followUps=%d", c.followUps)
 	}
@@ -115,16 +133,17 @@ func TestSilentCapturesDoNotSpendFollowUpBudget(t *testing.T) {
 }
 
 // TestFollowUpWindowExpiresFromLastRealReply confirms silence is bounded by the
-// window (time since the last genuine reply), not by burning the turn budget.
+// window (time since the last genuine reply), not by burning the turn budget: a
+// silent follow-up past the window returns to idle.
 func TestFollowUpWindowExpiresFromLastRealReply(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 20 * time.Second
-	c.noteReply(c.now, false)
+	c.captureFinished(c.now, true, false)
 	if !c.windowOpen(c.now.Add(19 * time.Second)) {
 		t.Fatal("window should be open up to the continued-window duration")
 	}
-	if c.windowOpen(c.now.Add(21 * time.Second)) {
-		t.Fatal("window must expire 20s after the last real reply")
+	if c.captureFinished(c.now.Add(21*time.Second), false, true) {
+		t.Fatal("a silent follow-up past the window must return to idle")
 	}
 }
 

@@ -67,26 +67,44 @@ func (c *wakeController) onDetection(t time.Time) bool {
 	return true
 }
 
-// noteReply records a productive utterance (one that actually carried speech).
-// It (re)anchors the continued-conversation window to this reply and, for
-// follow-up turns, spends one unit of the turn budget. Silent/dropped captures
-// never call this, so the window stays anchored to the last genuine reply and
-// the budget is spent only on real back-and-forth — otherwise the seconds the
-// other party spends transcribing/thinking between turns generate no-signal
-// captures that each used to burn a slot, draining the budget after a couple of
-// exchanges (observed cross-device 2026-06-21). The window closes once the turn
-// cap is reached or continued conversation is off.
-func (c *wakeController) noteReply(t time.Time, isFollowUp bool) {
+// engageWindow (re)anchors the continued-conversation window to t, keeping BMO
+// listening for the continued-window duration — unless the turn budget is spent
+// or continued conversation is off, in which case it closes the window.
+func (c *wakeController) engageWindow(t time.Time) {
 	c.speaking = false
 	c.speechEndedAt = t
-	if isFollowUp {
-		c.followUps++
-	}
 	if c.continuedWindow <= 0 || c.followUps >= c.maxFollowUps {
 		c.windowUntil = time.Time{}
 		return
 	}
 	c.windowUntil = t.Add(c.continuedWindow)
+}
+
+// captureFinished updates continued-conversation state after a capture ends and
+// reports whether to keep listening. productive means the capture carried
+// speech; followUp means it was a continued-conversation follow-up rather than
+// the initial post-wake command.
+//
+//   - productive: (re)anchor the window; for a follow-up, spend one turn so the
+//     budget tracks real back-and-forth.
+//   - silent initial command: keep the window open anyway, without spending a
+//     turn, so a command that lands a beat after the wake word (e.g. the Evil
+//     BMO taunt, or a user who pauses after "Hey BMO") is still caught instead
+//     of dropping straight to idle (regression fix, hardware 2026-06-21).
+//   - silent follow-up: leave the window anchored to the last real reply, so a
+//     quiet stretch (the other party transcribing/thinking) is bounded by time,
+//     not by burning the budget.
+func (c *wakeController) captureFinished(t time.Time, productive, followUp bool) bool {
+	switch {
+	case productive:
+		if followUp {
+			c.followUps++
+		}
+		c.engageWindow(t)
+	case !followUp:
+		c.engageWindow(t)
+	}
+	return c.windowOpen(t)
 }
 
 // windowOpen reports whether the follow-up window is still open at time t.
@@ -320,13 +338,7 @@ func (l *wakeLoop) finishCapture(ctx context.Context) {
 	wasFollowUp := l.captureIsFollowUp
 	productive := processWakeUtterance(ctx, l.logger, l.pipeline, l.gov, payload)
 	l.detector.Reset()
-	if productive {
-		// Only a real reply (re)anchors the window and, for follow-ups, spends a
-		// turn. Silent captures during the other party's processing gaps fall
-		// through untouched, so the window stays anchored to the last real reply.
-		l.wc.noteReply(time.Now(), wasFollowUp)
-	}
-	if l.wc.windowOpen(time.Now()) {
+	if l.wc.captureFinished(time.Now(), productive, wasFollowUp) {
 		l.logger.Debugf("continued conversation: follow-up window open")
 		l.beginCapture(time.Now(), true)
 		return
