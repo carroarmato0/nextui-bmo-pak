@@ -9,8 +9,15 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 Usage: release.sh [--runtime docker|podman]
 
 Run tests, cross-compile the BMO binary for the tg5040/tg5050 family using
-the LoveRetro platform toolchain containers, and assemble dist/BMO.pak plus
-dist/all/Tools/<platform>/BMO.pak.
+the LoveRetro platform toolchain containers, and assemble the release archives.
+
+Output in dist/:
+  BMO.pak.zip   Single combined pak (both platform binaries inside) zipped at
+                top level. This is the Pak Store release_filename; a user
+                extracts it into Tools/<platform>/ on the SD card.
+  BMO.pakz      Multi-device bundle: the Tools/<platform>/BMO.pak tree (one
+                directory per platform) zipped with the Tools/ prefix, for
+                manual SD-card-root install / Pak Store recognition.
 
 Options:
   --runtime docker|podman   Override container runtime (default: auto-detect, prefers podman)
@@ -171,12 +178,27 @@ fi
 copy_pak tg5040 dist/all/Tools/tg5040/BMO.pak
 copy_pak tg5050 dist/all/Tools/tg5050/BMO.pak
 
-echo "==> Creating release archive..."
-rm -f dist/BMO.pak.zip
+echo "==> Creating release archives..."
+rm -f dist/BMO.pak.zip dist/BMO.pakz
+
+# Single combined pak zipped at top level (Pak Store release_filename).
+# Contains both platform binaries + libs so one zip installs on any device.
 (
     cd dist/BMO.pak
     zip -qr ../BMO.pak.zip .
-)
+) &
+pid_zip=$!
+
+# Multi-device bundle (.pakz): the Tools/<platform>/BMO.pak tree zipped with
+# the Tools/ prefix, one directory per platform, for SD-card-root install.
+(
+    cd dist/all
+    zip -qr ../BMO.pakz Tools
+) &
+pid_pakz=$!
+
+wait $pid_zip
+wait $pid_pakz
 
 # Package each example mod as its own distributable archive. The zip contains a
 # top-level <name>/ directory, so a user unzips it straight into their device's
@@ -197,4 +219,4 @@ if [ -d examples/mods ]; then
 fi
 
 echo "==> Release artifacts:"
-find dist -maxdepth 5 \( -name '*.zip' -o -name 'bmo-pak' -o -name '*.so*' \) | sort
+find dist -maxdepth 5 \( -name '*.zip' -o -name '*.pakz' -o -name 'bmo-pak' -o -name '*.so*' \) | sort
