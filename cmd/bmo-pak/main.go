@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -157,6 +158,14 @@ func run(stdout io.Writer, stderr io.Writer) error {
 	log.SetOutput(logger.ConsoleWriter())
 	log.SetFlags(0)
 
+	// Startup banner: administratively interesting details that make GitHub bug
+	// reports diagnosable at a glance. The version line is emitted first so it
+	// doubles as the run-start marker when scanning a rotated log.
+	logger.Infof("BMO %s starting", buildinfo.VersionString())
+	logger.Infof("runtime:    %s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	logger.Infof("device:     %s (%s)", deviceDescription(platform), platform)
+	logger.Infof("nextui:     %s", readNextUIVersion())
+
 	logger.Infof("active mod: %s (self-contained=%t)", activeMod.ID, activeMod.SelfContained())
 
 	for _, secret := range cfg.Secrets() {
@@ -165,7 +174,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 
 	logger.Infof("hardware profile: %s", hardwareProfile.Summary())
 	logger.Infof("hardware availability: framebuffer=%t input=%t audio=%t", hardwareProfile.FramebufferAvailable(), hardwareProfile.InputAvailable(), hardwareProfile.AudioAvailable())
-	logger.Infof("BMO starting (platform=%s mode=%s trigger=%s)", platform, cfg.Mode, cfg.InputTrigger)
+	logger.Infof("session:    mode=%s trigger=%s", cfg.Mode, cfg.InputTrigger)
 	logger.Debugf("config path: %s", cfgPath)
 	logger.Debugf("log path: %s", logPath)
 	logger.Debugf("config snapshot: %+v", cfg.Redacted())
@@ -1279,6 +1288,36 @@ func acquireLock(path string) (release func(), ok bool) {
 		_ = f.Close()
 		_ = os.Remove(path)
 	}, true
+}
+
+// deviceDescription maps a platform code to the friendly device name(s) it
+// covers. tg5040 ships on two distinct devices (Brick and Smart Pro), so the
+// code alone is ambiguous in a bug report; this spells it out.
+func deviceDescription(platform string) string {
+	switch platform {
+	case "tg5040":
+		return "TrimUI Brick / Smart Pro"
+	case "tg5050":
+		return "TrimUI Smart Pro S"
+	default:
+		return "unknown device"
+	}
+}
+
+// readNextUIVersion returns the first non-empty line of NextUI's version file,
+// or "unknown" when it cannot be read (e.g. local dev builds off-device). It is
+// logged at startup so GitHub bug reports capture the firmware version.
+func readNextUIVersion() string {
+	data, err := os.ReadFile("/mnt/SDCARD/.system/version.txt")
+	if err != nil {
+		return "unknown"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			return s
+		}
+	}
+	return "unknown"
 }
 
 func mustHomeDir() string {
