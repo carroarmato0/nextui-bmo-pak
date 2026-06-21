@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	wakeGuardTail   = 600 * time.Millisecond // suppress detection this long after TTS ends
-	wakeMaxCapture  = 10 * time.Second       // hard cap on a single utterance
-	wakeMaxFollowUp = 6                      // continued-conversation follow-up cap
-	wakeVADLevel    = 0.01                   // matches voice.go silence rejection
+	wakeGuardTail      = 600 * time.Millisecond  // suppress detection this long after TTS ends
+	wakeFollowUpSettle = 1000 * time.Millisecond // drain self-echo before a follow-up records
+	wakeMaxCapture     = 10 * time.Second        // hard cap on a single utterance
+	wakeMaxFollowUp    = 6                        // continued-conversation follow-up cap
+	wakeVADLevel       = 0.01                    // matches voice.go silence rejection
 )
 
 // wakeAssets locates the ONNX runtime library and openWakeWord models.
@@ -240,6 +241,11 @@ type wakeLoop struct {
 	// from the initial post-wake command, so only follow-up turns spend the
 	// follow-up budget when they prove productive.
 	captureIsFollowUp bool
+	// settleUntil drains BMO's own decaying speaker tail at the start of a
+	// follow-up capture: batches before it are discarded so self-echo on the
+	// shared mic can't trip VAD into a spurious utterance. Zero for the initial
+	// post-wake capture, where BMO was not just speaking.
+	settleUntil time.Time
 }
 
 func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
@@ -259,6 +265,11 @@ func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
 
 func (l *wakeLoop) beginCapture(now time.Time, followUp bool) {
 	l.captureIsFollowUp = followUp
+	if followUp {
+		l.settleUntil = now.Add(wakeFollowUpSettle)
+	} else {
+		l.settleUntil = time.Time{}
+	}
 	l.wc.startSession()
 	l.machine.SetWakeEngaged(l.wc.Engaged())
 	l.machine.Transition(assistant.EventListen)
@@ -302,6 +313,12 @@ func (l *wakeLoop) handleBatch(ctx context.Context, batch []byte) {
 // continueCapture appends a batch to the current utterance and finishes it once
 // trailing silence or the hard duration cap is reached.
 func (l *wakeLoop) continueCapture(ctx context.Context, batch []byte, now time.Time) {
+	if now.Before(l.settleUntil) {
+		// Drain BMO's own decaying speaker tail (shared mic) before recording a
+		// follow-up, so self-echo can't trip VAD into a spurious utterance that
+		// talks over the other party's real reply (hardware 2026-06-21).
+		return
+	}
 	l.buffer.Append(batch)
 	if audio.PCMHasSignal(batch, wakeVADLevel) {
 		l.silenceRun = 0

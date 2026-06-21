@@ -1,12 +1,28 @@
 package main
 
 import (
+	"context"
+	"encoding/binary"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/carroarmato0/nextui-bmo/internal/config"
+	"github.com/carroarmato0/nextui-bmo/internal/input"
 )
+
+// signalPCM returns nBytes of S16LE audio well above wakeVADLevel, standing in
+// for a speaker tail / speech batch in capture tests.
+func signalPCM(nBytes int) []byte {
+	if nBytes%2 != 0 {
+		nBytes++
+	}
+	b := make([]byte, nBytes)
+	for i := 0; i+1 < len(b); i += 2 {
+		binary.LittleEndian.PutUint16(b[i:i+2], uint16(int16(6000)))
+	}
+	return b
+}
 
 func newTestController() *wakeController {
 	return &wakeController{
@@ -144,6 +160,57 @@ func TestFollowUpWindowExpiresFromLastRealReply(t *testing.T) {
 	}
 	if c.captureFinished(c.now.Add(21*time.Second), false, true) {
 		t.Fatal("a silent follow-up past the window must return to idle")
+	}
+}
+
+// TestFollowUpCaptureDrainsSelfEcho is the regression for the victim talking
+// over Evil BMO (hardware 2026-06-21): a continued-conversation follow-up
+// capture armed the instant BMO stopped speaking and recorded its own decaying
+// speaker tail on the shared mic. The low VAD floor kept that self-echo alive
+// long enough for Whisper to hallucinate an utterance, so the victim fired a
+// premature reply on top of Evil BMO's real one. A follow-up capture must drain
+// the self-echo settle window before it records anything.
+func TestFollowUpCaptureDrainsSelfEcho(t *testing.T) {
+	const bytesPerSec = 32000
+	l := &wakeLoop{
+		buffer:      input.NewBuffer(bytesPerSec * 15),
+		bytesPerSec: bytesPerSec,
+		endSilence:  1300 * time.Millisecond,
+	}
+	start := time.Unix(100, 0)
+	l.buffer.Begin()
+	l.capturing = true
+	l.captureStart = start
+	l.settleUntil = start.Add(wakeFollowUpSettle)
+
+	// Self-echo tail arriving within the settle window must be discarded.
+	echo := signalPCM(bytesPerSec / 5) // 0.2s of speaker tail
+	l.continueCapture(context.Background(), echo, start.Add(200*time.Millisecond))
+	if got := l.buffer.End(); len(got) != 0 {
+		t.Fatalf("self-echo within settle must be discarded, captured %d bytes", len(got))
+	}
+}
+
+// TestFollowUpCaptureRecordsAfterSettle confirms the settle only suppresses the
+// immediate post-speech tail: once it elapses, the other party's real reply is
+// captured normally.
+func TestFollowUpCaptureRecordsAfterSettle(t *testing.T) {
+	const bytesPerSec = 32000
+	l := &wakeLoop{
+		buffer:      input.NewBuffer(bytesPerSec * 15),
+		bytesPerSec: bytesPerSec,
+		endSilence:  1300 * time.Millisecond,
+	}
+	start := time.Unix(100, 0)
+	l.buffer.Begin()
+	l.capturing = true
+	l.captureStart = start
+	l.settleUntil = start.Add(wakeFollowUpSettle)
+
+	speech := signalPCM(bytesPerSec / 5)
+	l.continueCapture(context.Background(), speech, start.Add(wakeFollowUpSettle+10*time.Millisecond))
+	if got := l.buffer.End(); len(got) != len(speech) {
+		t.Fatalf("post-settle speech must be captured, got %d of %d bytes", len(got), len(speech))
 	}
 }
 
