@@ -1,0 +1,97 @@
+name: Bug Report
+description: Report a problem with the BMO Pak
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as you can — especially the log file, which is the most useful thing for diagnosing problems.
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      description: Which device are you running the Pak on?
+      options:
+        - TrimUI Brick
+        - TrimUI Smart Pro
+        - TrimUI Smart Pro S
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Pak Version
+      description: |
+        **Preferred:** Open the Pak → press **Start** to open Settings → scroll to **About**. The version is shown there (e.g. `v1.0.0`).
+
+        **If the app won't open or is crashing**, you can find the version two other ways:
+        - **Log file:** The first line of each run in the log file contains the version (e.g. `BMO v1.0.0 starting`). See the Log File field below for how to find it.
+        - **pak.json on SD card:** Remove the SD card, open `Tools/<device-folder>/BMO.pak/pak.json` in a text editor, and read the `"version"` field.
+      placeholder: "e.g. v1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: nextui-version
+    attributes:
+      label: NextUI Version
+      description: |
+        The version of NextUI installed on your device (shown in the NextUI main menu or About section). It is also logged at the top of each run as `nextui: <version>`.
+      placeholder: "e.g. v1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. What did you see? What did you expect to see?
+      placeholder: "Describe the bug here..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we trigger the bug?
+      placeholder: |
+        1. Open the Pak
+        2. Say "Hey BMO" (or press the talk button)
+        3. Ask "..."
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log File
+      description: |
+        The log file contains the most useful information for debugging. Please attach it or paste its contents here.
+
+        **How to find it** — power off the device, remove the SD card, and insert it into your computer. The log file is at:
+
+        | Device | Log path on SD card |
+        |--------|-------------------|
+        | TrimUI Brick / Smart Pro | `.userdata/tg5040/logs/BMO.txt` |
+        | TrimUI Smart Pro S | `.userdata/tg5050/logs/BMO.txt` |
+
+        The top of each run records the Pak version, Go runtime, device, and NextUI version — please include those lines.
+
+        You can drag the file into this text box or paste its contents directly.
+
+        > For voice, network, or audio issues, set **Log Level → Debug** in Settings (press **Start**, scroll to **Log Level**, and cycle it to `debug`), reproduce the issue, then attach the log. Debug logs capture far more detail and are much more useful for diagnosing these problems.
+      placeholder: "Paste log contents here, or drag-and-drop the file above..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, additional context, or anything else that might help.
+    validations:
+      required: false
