@@ -127,6 +127,29 @@ Each entry in the `providers` array accepts these fields:
 | `api_key` | for hosted APIs | Bearer token. Leave empty (`""`) for most local servers. |
 | `voice` | TTS only | Voice name for speech synthesis (e.g. `nova`, `alloy`). |
 
+#### Getting an OpenAI API key (easiest way to enable AI)
+
+The fastest way to get BMO talking is with an OpenAI key — one key powers all
+three providers (STT, chat, and TTS). To get one:
+
+1. Create an account (or sign in) at **[platform.openai.com](https://platform.openai.com)**.
+   The API is **separate from ChatGPT** — a ChatGPT Plus subscription does *not*
+   include API access, and vice versa.
+2. Add a payment method and a little credit under
+   **[Settings → Billing](https://platform.openai.com/settings/organization/billing)**.
+   The API is pay-as-you-go; casual BMO use typically costs only cents per day,
+   and you can set a low monthly spend limit to stay in control.
+3. Go to **[API keys](https://platform.openai.com/api-keys)** and click
+   **Create new secret key**. Copy it immediately — it starts with `sk-` and is
+   shown **only once**.
+4. Paste that key into the `api_key` field of all three provider sets in
+   `config.json` (see the example below). The same key works for `stt`, `chat`,
+   and `tts`.
+
+> **Keep your key private.** Treat it like a password — anyone with it can spend
+> against your account. Never commit it or share screenshots of it. If it leaks,
+> revoke it on the API keys page and create a new one.
+
 #### Example: OpenAI
 
 ```json
