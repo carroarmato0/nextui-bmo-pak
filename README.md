@@ -4,9 +4,9 @@
 
 ![BMO](docs/images/banner.png)
 
-[![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/carroarmato0)
-![Platforms](https://img.shields.io/badge/platforms-tg5040%20%C2%B7%20tg5050-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/carroarmato0)<br>
+![Platforms](https://img.shields.io/badge/platforms-tg5040%20%C2%B7%20tg5050-blue)<br>
+![License](https://img.shields.io/badge/license-MIT-green)<br>
 ![Go](https://img.shields.io/badge/go-1.25-00ADD8)
 
 ---
@@ -64,7 +64,7 @@ The correct binary is selected automatically at launch.
 
 ## Installation
 
-1. Download `BMO.pak.zip` from the [Releases](https://github.com/carroarmato0/nextui-bmo/releases) page.
+1. Download `BMO.pak.zip` from the [Releases](https://github.com/carroarmato0/nextui-bmo-pak/releases) page.
 2. Unzip the archive — you will get a `BMO.pak/` folder.
 3. Copy `BMO.pak/` onto your SD card:
    ```
@@ -73,6 +73,11 @@ The correct binary is selected automatically at launch.
    For example: `Tools/tg5040/BMO.pak/`
 4. Eject the SD card, insert it into your device, and launch **BMO** from
    NextUI's Tools menu.
+
+> **Prefer a one-shot install?** Each release also ships `BMO.pakz` — the same
+> pak laid out as a `Tools/<platform>/BMO.pak/` tree for both platforms. Unzip
+> it at the **root** of your SD card (or install it via NextUI's Pak Store) and
+> the right binary is placed for every supported device at once.
 
 ---
 
@@ -290,6 +295,30 @@ Drop a mod folder into `<dataRoot>/BMO/mods/` and select it in
 **Settings → MOD**.
 
 See the [Modding guide](docs/MODDING.md).
+
+### Evil BMO (bundled mod)
+
+Every release ships with **Evil BMO** — a snobbish, condescending alter-ego
+that grills you about your games, achievements, and hardware. It's the same
+pak with a meaner face set, persona, and voice.
+
+To install it:
+
+1. Download `evil-bmo.zip` from the [Releases](https://github.com/carroarmato0/nextui-bmo-pak/releases) page.
+2. Copy it **as-is** (no need to unzip) into your mods folder on the SD card:
+   ```
+   <dataRoot>/BMO/mods/evil-bmo.zip
+   ```
+   For example: `/mnt/SDCARD/.userdata/tg5040/BMO/mods/evil-bmo.zip`
+   (a `Tools/<platform>/BMO.pak/` install shares the same `mods/` folder).
+3. On the device, press **Start** to open **Settings**, navigate to **MOD**,
+   and select **evil-bmo**.
+4. Close Settings. Evil BMO takes over on the next interaction.
+
+> 👀 **Teaser:** Evil BMO does *not* play well with others. If a second BMO
+> unit ever ends up within earshot, something special happens — turn on the
+> wake word (**Settings → WAKE WORD**) and find out for yourself. We won't
+> spoil it here.
 
 ---
 
