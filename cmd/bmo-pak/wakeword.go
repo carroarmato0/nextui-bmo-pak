@@ -67,11 +67,21 @@ func (c *wakeController) onDetection(t time.Time) bool {
 	return true
 }
 
-// onReplyFinished opens the continued-conversation follow-up window unless the
-// follow-up cap is reached or continued conversation is off.
-func (c *wakeController) onReplyFinished(t time.Time) {
+// noteReply records a productive utterance (one that actually carried speech).
+// It (re)anchors the continued-conversation window to this reply and, for
+// follow-up turns, spends one unit of the turn budget. Silent/dropped captures
+// never call this, so the window stays anchored to the last genuine reply and
+// the budget is spent only on real back-and-forth — otherwise the seconds the
+// other party spends transcribing/thinking between turns generate no-signal
+// captures that each used to burn a slot, draining the budget after a couple of
+// exchanges (observed cross-device 2026-06-21). The window closes once the turn
+// cap is reached or continued conversation is off.
+func (c *wakeController) noteReply(t time.Time, isFollowUp bool) {
 	c.speaking = false
 	c.speechEndedAt = t
+	if isFollowUp {
+		c.followUps++
+	}
 	if c.continuedWindow <= 0 || c.followUps >= c.maxFollowUps {
 		c.windowUntil = time.Time{}
 		return
@@ -82,12 +92,6 @@ func (c *wakeController) onReplyFinished(t time.Time) {
 // windowOpen reports whether the follow-up window is still open at time t.
 func (c *wakeController) windowOpen(t time.Time) bool {
 	return !c.windowUntil.IsZero() && t.Before(c.windowUntil)
-}
-
-// startFollowUp consumes the open window for one follow-up utterance.
-func (c *wakeController) startFollowUp() {
-	c.followUps++
-	c.windowUntil = time.Time{}
 }
 
 // startSession marks the beginning of a wake interaction. Idempotent: it is
@@ -214,6 +218,10 @@ type wakeLoop struct {
 	capturing    bool
 	captureStart time.Time
 	silenceRun   time.Duration
+	// captureIsFollowUp distinguishes a continued-conversation follow-up capture
+	// from the initial post-wake command, so only follow-up turns spend the
+	// follow-up budget when they prove productive.
+	captureIsFollowUp bool
 }
 
 func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
@@ -231,7 +239,8 @@ func (l *wakeLoop) run(ctx context.Context, sub <-chan []byte) {
 	}
 }
 
-func (l *wakeLoop) beginCapture(now time.Time) {
+func (l *wakeLoop) beginCapture(now time.Time, followUp bool) {
+	l.captureIsFollowUp = followUp
 	l.wc.startSession()
 	l.machine.SetWakeEngaged(l.wc.Engaged())
 	l.machine.Transition(assistant.EventListen)
@@ -254,10 +263,10 @@ func (l *wakeLoop) handleBatch(ctx context.Context, batch []byte) {
 		l.continueCapture(ctx, batch, now)
 		return
 	}
-	// A follow-up window can open capture without a fresh wake word.
+	// A follow-up window can open capture without a fresh wake word. The turn is
+	// only counted later, in finishCapture, if it proves productive.
 	if l.wc.windowOpen(now) {
-		l.wc.startFollowUp()
-		l.beginCapture(now)
+		l.beginCapture(now, true)
 		return
 	}
 	// Only detect while fully idle and not gated by playback / guard tail.
@@ -267,7 +276,7 @@ func (l *wakeLoop) handleBatch(ctx context.Context, batch []byte) {
 	}
 	for _, det := range l.detector.Write(batch) {
 		l.logger.Infof("wake word detected: score=%.2f", det.Score)
-		l.beginCapture(now)
+		l.beginCapture(now, false)
 		break
 	}
 }
@@ -308,13 +317,18 @@ func (l *wakeLoop) finishCapture(ctx context.Context) {
 		l.machine.Transition(assistant.EventRest)
 	}
 	payload := l.buffer.End()
-	processWakeUtterance(ctx, l.logger, l.pipeline, l.gov, payload)
-	l.wc.onReplyFinished(time.Now())
+	wasFollowUp := l.captureIsFollowUp
+	productive := processWakeUtterance(ctx, l.logger, l.pipeline, l.gov, payload)
 	l.detector.Reset()
+	if productive {
+		// Only a real reply (re)anchors the window and, for follow-ups, spends a
+		// turn. Silent captures during the other party's processing gaps fall
+		// through untouched, so the window stays anchored to the last real reply.
+		l.wc.noteReply(time.Now(), wasFollowUp)
+	}
 	if l.wc.windowOpen(time.Now()) {
-		l.wc.startFollowUp()
 		l.logger.Debugf("continued conversation: follow-up window open")
-		l.beginCapture(time.Now())
+		l.beginCapture(time.Now(), true)
 		return
 	}
 	l.wc.resetFollowUps()
@@ -322,11 +336,13 @@ func (l *wakeLoop) finishCapture(ctx context.Context) {
 }
 
 // processWakeUtterance runs the voice pipeline for a captured utterance with the
-// performance governor held for the burst. Near-silent payloads are skipped.
-func processWakeUtterance(ctx context.Context, logger pttLogger, pipeline *assistant.VoicePipeline, gov *power.Governor, payload []byte) {
+// performance governor held for the burst. Near-silent payloads are skipped. It
+// reports whether the utterance was productive (carried speech and was handed to
+// the pipeline) so the caller can spend the follow-up budget only on real turns.
+func processWakeUtterance(ctx context.Context, logger pttLogger, pipeline *assistant.VoicePipeline, gov *power.Governor, payload []byte) bool {
 	if !audio.PCMHasSignal(payload, wakeVADLevel) {
 		logger.Debugf("wake utterance dropped: no signal (%d bytes)", len(payload))
-		return
+		return false
 	}
 	if gov != nil {
 		_ = gov.Request()
@@ -335,4 +351,5 @@ func processWakeUtterance(ctx context.Context, logger pttLogger, pipeline *assis
 	if err := pipeline.ProcessBatch(ctx, payload); err != nil {
 		logger.Warnf("voice pipeline error: %v", err)
 	}
+	return true
 }

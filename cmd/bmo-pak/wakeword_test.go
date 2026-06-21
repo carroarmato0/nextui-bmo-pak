@@ -52,7 +52,7 @@ func TestWakeObserveStateRecordsSpeechEnd(t *testing.T) {
 func TestContinuedConversationReopensWindow(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 8 * time.Second
-	c.onReplyFinished(c.now)
+	c.noteReply(c.now, false)
 	if !c.windowOpen(c.now.Add(3 * time.Second)) {
 		t.Fatal("follow-up window should be open")
 	}
@@ -64,7 +64,7 @@ func TestContinuedConversationReopensWindow(t *testing.T) {
 func TestContinuedConversationOffNeverOpens(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 0 // off
-	c.onReplyFinished(c.now)
+	c.noteReply(c.now, false)
 	if c.windowOpen(c.now.Add(time.Second)) {
 		t.Fatal("window must stay closed when continued conversation is off")
 	}
@@ -74,13 +74,57 @@ func TestFollowUpCapBacksOff(t *testing.T) {
 	c := newTestController()
 	c.continuedWindow = 8 * time.Second
 	c.maxFollowUps = 2
-	for i := 0; i < 2; i++ {
-		c.onReplyFinished(c.now)
-		c.startFollowUp()
-	}
-	c.onReplyFinished(c.now)
+	c.noteReply(c.now, false) // initial command reply: free, opens the window
+	c.noteReply(c.now, true)  // follow-up 1
+	c.noteReply(c.now, true)  // follow-up 2 -> hits the cap
 	if c.windowOpen(c.now.Add(time.Second)) {
 		t.Fatal("window must stay closed after max follow-ups")
+	}
+}
+
+// TestSilentCapturesDoNotSpendFollowUpBudget is the regression for the victim
+// dropping out mid-prank (hardware 2026-06-21): the other device is silent for
+// several seconds each round while it transcribes/thinks/speaks, and those
+// no-signal captures used to each spend a follow-up slot, exhausting the budget
+// after only a couple of real exchanges. Only productive replies may spend it.
+func TestSilentCapturesDoNotSpendFollowUpBudget(t *testing.T) {
+	c := newTestController()
+	c.continuedWindow = 20 * time.Second
+	c.maxFollowUps = 2
+
+	c.noteReply(c.now, false) // initial command reply: free
+	if c.followUps != 0 {
+		t.Fatalf("initial reply must not spend budget, followUps=%d", c.followUps)
+	}
+	// Silent captures within the window call noteReply for nobody: budget intact,
+	// window still anchored to the initial reply.
+	if !c.windowOpen(c.now.Add(5 * time.Second)) {
+		t.Fatal("window should still be open after silence within it")
+	}
+	if c.followUps != 0 {
+		t.Fatalf("silence must not spend budget, followUps=%d", c.followUps)
+	}
+	// A real follow-up spends one unit and re-anchors the window.
+	c.noteReply(c.now.Add(6*time.Second), true)
+	if c.followUps != 1 {
+		t.Fatalf("real follow-up should spend exactly one unit, followUps=%d", c.followUps)
+	}
+	if !c.windowOpen(c.now.Add(7 * time.Second)) {
+		t.Fatal("window should re-anchor to the real follow-up reply")
+	}
+}
+
+// TestFollowUpWindowExpiresFromLastRealReply confirms silence is bounded by the
+// window (time since the last genuine reply), not by burning the turn budget.
+func TestFollowUpWindowExpiresFromLastRealReply(t *testing.T) {
+	c := newTestController()
+	c.continuedWindow = 20 * time.Second
+	c.noteReply(c.now, false)
+	if !c.windowOpen(c.now.Add(19 * time.Second)) {
+		t.Fatal("window should be open up to the continued-window duration")
+	}
+	if c.windowOpen(c.now.Add(21 * time.Second)) {
+		t.Fatal("window must expire 20s after the last real reply")
 	}
 }
 
@@ -105,8 +149,9 @@ func TestWakeSessionEngagedLifecycle(t *testing.T) {
 	if !c.Engaged() {
 		t.Fatal("startSession must engage")
 	}
-	// A follow-up capture keeps the session engaged.
-	c.startFollowUp()
+	// A follow-up capture keeps the session engaged (startSession is idempotent;
+	// every capture, initial or follow-up, runs it).
+	c.startSession()
 	if !c.Engaged() {
 		t.Fatal("follow-up must remain engaged")
 	}
