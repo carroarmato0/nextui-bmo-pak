@@ -1,6 +1,6 @@
 {
   "name": "BMO",
-  "version": "v1.0.0",
+  "version": "v1.0.1",
   "type": "TOOL",
   "description": "Fullscreen BMO-inspired AI assistant and desk companion.",
   "author": "Carroarmato0",
@@ -13,6 +13,7 @@
   ],
   "platforms": ["tg5040", "tg5050"],
   "changelog": {
+    "v1.0.1": "Wake-word setting now applies immediately when toggled in Settings, and a 'restart required' notice appears when enabling AI mode (or the wake word) needs a relaunch.",
     "v1.0.0": "First stable release: animated BMO face, LLM-directed emotion, voice assistant pipeline, and mods.",
     "v0.1.0": "Initial BMO Pak scaffold."
   }
