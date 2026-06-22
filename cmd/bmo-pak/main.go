@@ -40,6 +40,10 @@ import (
 
 const menuTitleSettings = "SETTINGS"
 
+// restartToastDuration is how long the "restart required" notice stays on
+// screen after a wake-word change that can't be applied to a live detector.
+const restartToastDuration = 3 * time.Second
+
 // mouthReleaseDecay is the per-frame factor by which the mouth-amplitude
 // envelope eases toward a falling raw signal (attack is instant). At the ~60fps
 // face loop this is roughly a 100ms release time constant.
@@ -578,6 +582,11 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		logger.Warnf("setup flow required; rendering a concerned idle face until the user opens the menu shortcuts")
 	}
 
+	// toastMsg/toastUntil drive the transient "restart required" modal: commitMenu
+	// arms them, the face loop renders the modal until toastUntil passes.
+	var toastMsg string
+	var toastUntil time.Time
+
 	commitMenu := func(menu ui.Menu) error {
 		if menu == nil {
 			return nil
@@ -586,10 +595,28 @@ func run(stdout io.Writer, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
+		prev := cfg
 		cfg = saved
 		// Apply the (possibly changed) mode immediately: it gates the PTT
 		// watcher and the voice pipeline.
 		machine.SetMode(cfg.Mode)
+		// Rebuild the wake-word detector against the new config when a
+		// wake-relevant setting changed, so toggling WAKE WORD (or its
+		// dependent settings) in the live menu takes effect immediately instead
+		// of only after a mod switch or restart. Gated on an actual change
+		// because commitMenu auto-saves on every keypress and rebuilding the
+		// ONNX detector is expensive.
+		if restartWake != nil && wakeSettingsChanged(prev, cfg) {
+			restartWake(activeMod)
+		}
+		// When the AI subsystem isn't live (BMO booted outside AI mode), a change
+		// that needs it — switching into AI mode, or toggling the wake word — only
+		// takes effect on the next launch, so tell the user to restart. restartWake
+		// is non-nil exactly when that subsystem was started at boot.
+		if msg, show := restartNotice(prev, cfg, restartWake != nil); show {
+			toastMsg = msg
+			toastUntil = time.Now().Add(restartToastDuration)
+		}
 		// Apply awareness toggles, library detail, and proactive level immediately.
 		deviceCtx.SetEnabled(cfg.DeviceContext)
 		deviceCtx.SetLibraryDetail(cfg.LibraryDetail)
@@ -1140,6 +1167,10 @@ func run(stdout io.Writer, stderr io.Writer) error {
 				speakAmp = floor
 			}
 		}
+		var toast string
+		if now.Before(toastUntil) {
+			toast = toastMsg
+		}
 		frame := renderer.FrameState{
 			Expression:      expr,
 			Now:             now,
@@ -1152,6 +1183,7 @@ func run(stdout io.Writer, stderr io.Writer) error {
 			Thinking:        snap.Current == assistant.StateThinking,
 			Overlay:         overlay,
 			SpeakAmplitude:  speakAmp,
+			Toast:           toast,
 		}
 		if snap.Quota.Exhausted && frame.SleepUntil.IsZero() {
 			frame.SleepUntil = now.Add(45 * time.Minute)

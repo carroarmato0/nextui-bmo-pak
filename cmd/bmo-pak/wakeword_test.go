@@ -299,3 +299,76 @@ func TestWakeLoopSuppressed(t *testing.T) {
 		t.Fatal("flag true must report suppressed")
 	}
 }
+
+func TestWakeSettingsChanged(t *testing.T) {
+	base := config.Config{
+		Mode:                  config.ModeAI,
+		WakeWordEnabled:       true,
+		InputTrigger:          config.InputTriggerWakeWord,
+		ContinuedConversation: config.ContinuedConvoShort,
+		WakeEndSilence:        config.WakeEndSilenceBalanced,
+	}
+	if wakeSettingsChanged(base, base) {
+		t.Fatal("identical configs must not report a wake-relevant change")
+	}
+
+	cases := map[string]func(*config.Config){
+		"mode":        func(c *config.Config) { c.Mode = config.ModeIdle },
+		"enabled":     func(c *config.Config) { c.WakeWordEnabled = false },
+		"trigger":     func(c *config.Config) { c.InputTrigger = config.InputTriggerPTT },
+		"continued":   func(c *config.Config) { c.ContinuedConversation = config.ContinuedConvoLong },
+		"end_silence": func(c *config.Config) { c.WakeEndSilence = config.WakeEndSilenceSnappy },
+	}
+	for name, mut := range cases {
+		next := base
+		mut(&next)
+		if !wakeSettingsChanged(base, next) {
+			t.Errorf("%s change must report a wake-relevant change", name)
+		}
+	}
+
+	// A change to an unrelated field must NOT trigger a costly detector rebuild.
+	next := base
+	next.LogLevel = "debug"
+	if wakeSettingsChanged(base, next) {
+		t.Error("unrelated field change must not report a wake-relevant change")
+	}
+}
+
+func TestRestartNotice(t *testing.T) {
+	idle := config.Config{Mode: config.ModeIdle}
+	ai := config.Config{Mode: config.ModeAI}
+	aiWakeOff := config.Config{Mode: config.ModeAI, WakeWordEnabled: false, InputTrigger: config.InputTriggerPTT}
+	aiWakeOn := config.Config{Mode: config.ModeAI, WakeWordEnabled: true, InputTrigger: config.InputTriggerWakeWord}
+
+	// A live AI subsystem applies changes in place (mode gating / restartWake):
+	// never a restart notice, whatever changed.
+	if _, ok := restartNotice(idle, aiWakeOn, true); ok {
+		t.Error("a live AI subsystem must not prompt a restart")
+	}
+
+	// Subsystem not live: switching into AI mode needs a relaunch.
+	if msg, ok := restartNotice(idle, ai, false); !ok || msg != aiRestartMessage {
+		t.Errorf("switching to AI with no live subsystem must prompt restart; got (%q, %v)", msg, ok)
+	}
+	// Leaving AI mode does not (the subsystem stays unused either way).
+	if _, ok := restartNotice(ai, idle, false); ok {
+		t.Error("leaving AI mode must not prompt a restart")
+	}
+
+	// Subsystem not live, already in AI: a wake on/off change needs a relaunch.
+	if msg, ok := restartNotice(aiWakeOff, aiWakeOn, false); !ok || msg != wakeRestartMessage {
+		t.Errorf("enabling wake with no live subsystem must prompt restart; got (%q, %v)", msg, ok)
+	}
+	if msg, ok := restartNotice(aiWakeOn, aiWakeOff, false); !ok || msg != wakeRestartMessage {
+		t.Errorf("disabling wake with no live subsystem must prompt restart; got (%q, %v)", msg, ok)
+	}
+
+	// No relevant change (or staying in idle): no notice.
+	if _, ok := restartNotice(aiWakeOn, aiWakeOn, false); ok {
+		t.Error("no relevant change must not prompt a restart")
+	}
+	if _, ok := restartNotice(idle, idle, false); ok {
+		t.Error("staying in idle must not prompt a restart")
+	}
+}

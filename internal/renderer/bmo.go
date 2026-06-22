@@ -32,6 +32,10 @@ type FrameState struct {
 	LastInteraction time.Time
 	Overlay         *OverlayState
 	SpeakAmplitude  float32 // RMS amplitude [0,1] during TTS playback; drives mouth height
+	// Toast, when non-empty, draws a small auto-dismissing modal centred on
+	// screen (on top of the face or open overlay). Newlines split it into
+	// centred lines. The caller owns the dismissal timer — it simply clears this.
+	Toast string
 }
 
 // exprTracker remembers when the current expression became active so time
@@ -380,6 +384,9 @@ func (r *Renderer) Draw(frame FrameState) error {
 		// Hide the face while the settings overlay is open so eye arcs
 		// cannot bleed outside the panel regardless of the current expression.
 		r.drawOverlay(layout, *frame.Overlay)
+		if frame.Toast != "" {
+			r.drawToast(layout, frame.Toast)
+		}
 		return r.presentDirty()
 	}
 
@@ -388,6 +395,9 @@ func (r *Renderer) Draw(frame FrameState) error {
 	}
 
 	r.drawCornerClock(layout, frame)
+	if frame.Toast != "" {
+		r.drawToast(layout, frame.Toast)
+	}
 	return r.presentDirty()
 }
 
@@ -407,6 +417,7 @@ func (r *Renderer) Draw(frame FrameState) error {
 func (r *Renderer) frameSignature(frame FrameState, canonical string, phase, epoch float64) string {
 	if frame.Speaking ||
 		frame.QuotaExhausted ||
+		frame.Toast != "" ||
 		canonical == face.ExprSleeping ||
 		(frame.Overlay != nil && frame.Overlay.Visible) {
 		return ""
@@ -794,6 +805,43 @@ func overlayWindow(total, maxRows, focus int) int {
 		offset = 0
 	}
 	return offset
+}
+
+// drawToast draws a small auto-dismissing modal centred on screen: a rounded
+// panel sized to its text, with one or more centred lines (split on newlines).
+// It is drawn last so it sits above the face or an open settings overlay. The
+// caller owns the dismissal timer; the renderer just draws whatever is set.
+func (r *Renderer) drawToast(layout Layout, msg string) {
+	lines := strings.Split(msg, "\n")
+	const scale = int32(4)  // 28px glyphs — larger than overlay rows for emphasis
+	const lineH = int32(40) // 28px line + 12px gap
+	const padY = int32(34)  // vertical breathing room inside the panel
+	const border = int32(6) // bright accent border thickness
+
+	// Fixed at ~80% of the screen width so the notice is a prominent modal, not
+	// a text-hugging tooltip. Centred on screen.
+	panelW := clampInt32(layout.W*80/100, 360, layout.W-2*layout.Margin)
+	panelH := int32(len(lines))*lineH + 2*padY
+	panelX := (layout.W - panelW) / 2
+	panelY := (layout.H - panelH) / 2
+
+	radius := clampInt32(layout.CornerRadius/2, 14, 48)
+	// A bright amber border around a near-black fill — both distinct from the
+	// teal settings panel behind it — so the notice clearly stands apart from
+	// the menu instead of blending into it.
+	r.fillRoundedRect(panelX, panelY, panelW, panelH, radius, rgba{255, 196, 87, 255})
+	r.fillRoundedRect(panelX+border, panelY+border, panelW-2*border, panelH-2*border, clampInt32(radius-border, 8, 44), rgba{8, 22, 30, 255})
+
+	cx := layout.W / 2
+	y := panelY + padY
+	for i, ln := range lines {
+		c := rgba{236, 245, 240, 255} // body: near-white for legibility on dark
+		if i == 0 {
+			c = rgba{255, 196, 87, 255} // header echoes the amber border
+		}
+		r.drawTextCentered(cx, y, scale, c, ln)
+		y += lineH
+	}
 }
 
 func (r *Renderer) drawOverlay(layout Layout, overlay OverlayState) {

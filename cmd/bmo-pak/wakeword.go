@@ -17,7 +17,7 @@ const (
 	wakeGuardTail      = 600 * time.Millisecond  // suppress detection this long after TTS ends
 	wakeFollowUpSettle = 1000 * time.Millisecond // drain self-echo before a follow-up records
 	wakeMaxCapture     = 10 * time.Second        // hard cap on a single utterance
-	wakeMaxFollowUp    = 6                        // continued-conversation follow-up cap
+	wakeMaxFollowUp    = 6                       // continued-conversation follow-up cap
 	wakeVADLevel       = 0.01                    // matches voice.go silence rejection
 )
 
@@ -154,6 +154,48 @@ func wakeEndSilenceFor(tier string) time.Duration {
 	default: // balanced / empty / unknown
 		return 1300 * time.Millisecond
 	}
+}
+
+// wakeSettingsChanged reports whether the difference between two configs affects
+// the wake-word loop's gating or behavior (the fields startWakeWord reads). The
+// live settings menu auto-saves on every keypress, so commitMenu uses this to
+// rebuild the detector only on a real wake-relevant change — rebuilding the ONNX
+// detector on each keypress would be wasteful and risks an OOM on the device.
+func wakeSettingsChanged(a, b config.Config) bool {
+	return a.Mode != b.Mode ||
+		a.WakeWordEnabled != b.WakeWordEnabled ||
+		a.InputTrigger != b.InputTrigger ||
+		a.ContinuedConversation != b.ContinuedConversation ||
+		a.WakeEndSilence != b.WakeEndSilence
+}
+
+// Auto-dismissing notices shown when a saved change needs the AI subsystem
+// (audio pipeline, PTT, wake detector) but it wasn't started at boot. That
+// subsystem is built once at startup, only when BMO boots in AI mode, so
+// switching into AI mode — or toggling the wake word — at runtime cannot take
+// effect until the next launch.
+const (
+	aiRestartMessage   = "RESTART REQUIRED\nTO ENABLE AI MODE"
+	wakeRestartMessage = "RESTART REQUIRED\nTO APPLY WAKE WORD"
+)
+
+// restartNotice reports the user-facing notice to show after a settings save,
+// and whether to show it. subsystemLive reports whether the AI subsystem is
+// running (it is when BMO booted in AI mode): when it is, changes apply live
+// (mode gating) or via restartWake, so no notice is needed. When it is not, a
+// change that needs it — switching into AI mode, or an on/off (or trigger) wake
+// change — only takes effect after a relaunch.
+func restartNotice(prev, cfg config.Config, subsystemLive bool) (string, bool) {
+	if subsystemLive {
+		return "", false
+	}
+	switch {
+	case !prev.UsesAI() && cfg.UsesAI():
+		return aiRestartMessage, true
+	case cfg.UsesAI() && (prev.WakeWordEnabled != cfg.WakeWordEnabled || prev.InputTrigger != cfg.InputTrigger):
+		return wakeRestartMessage, true
+	}
+	return "", false
 }
 
 // startWakeWord runs the on-device wake-word detector and, on a detection,

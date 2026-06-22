@@ -204,6 +204,39 @@ func TestFrameSignatureStaticVsAnimating(t *testing.T) {
 	if r.frameSignature(FrameState{Overlay: &ov}, "neutral", 0, 0) != "" {
 		t.Error("open overlay must not be skippable")
 	}
+	if r.frameSignature(FrameState{Toast: "RESTART REQUIRED"}, "neutral", 0, 0) != "" {
+		t.Error("an active toast must not be skippable (it auto-dismisses)")
+	}
+}
+
+func TestDrawToastDrawsCentredPanel(t *testing.T) {
+	const w, h = int32(1024), int32(768) // TrimUI Brick resolution
+	r := &Renderer{W: w, H: h, stride: int(w), pixels: make([]uint32, int(w*h))}
+	r.drawToast(LayoutFor(w, h), "RESTART REQUIRED\nTO APPLY WAKE WORD")
+
+	// The screen corner is outside the centred panel: untouched (background).
+	if got := r.pixels[0]; got != 0 {
+		t.Errorf("corner pixel = %#x, want 0 (panel must not cover the whole screen)", got)
+	}
+	// The screen centre is inside the panel: something was drawn there.
+	if got := r.pixels[(h/2)*w+w/2]; got == 0 {
+		t.Error("centre pixel is blank; the toast panel was not drawn")
+	}
+	// The panel is ~80% of the screen width: a left-edge column (outside the
+	// centred 80% band) stays background, proving it is not full-bleed.
+	if got := r.pixels[(h/2)*w+w/20]; got != 0 {
+		t.Errorf("near-edge pixel = %#x, want 0 (panel should be ~80%% wide, not full width)", got)
+	}
+	// The panel is a modal, not a full repaint: only a subset of pixels are set.
+	var set int
+	for _, p := range r.pixels {
+		if p != 0 {
+			set++
+		}
+	}
+	if set == 0 || set >= len(r.pixels) {
+		t.Errorf("set pixels = %d/%d, want a centred subset", set, len(r.pixels))
+	}
 }
 
 // stepStub is a minimal face.StepSource: it reports a fixed set of expressions
